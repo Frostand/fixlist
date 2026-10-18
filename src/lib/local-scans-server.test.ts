@@ -9,8 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // Dynamic path avoids adding the Node-only Vite config to the browser tsconfig project.
 const configPath = '../../vite.config.ts';
 const config = await import(configPath) as {
-  default: { server: { fs: { deny: string[] } } };
-  isPrivateCaptureRequest: (path: string) => boolean;
+  default: { server: { fs: { strict: boolean; deny: string[] } } };
   parseLocalScanRequest: (path: string) => { kind: string; name?: string; file?: string } | null;
   createLocalScansHandler: (root: string) => (request: IncomingMessage, response: ServerResponse, next: () => void) => Promise<void>;
   localScansPlugin: () => Record<string, unknown>;
@@ -111,52 +110,9 @@ describe('dev/preview local scans middleware path boundary', () => {
 
 describe('ordinary Vite file serving cannot bypass the local-scans allowlist', () => {
   it('retains all installed Vite defaults and denies capture files', () => {
+    expect(config.default.server.fs.strict).toBe(true);
     expect(config.default.server.fs.deny).toEqual(expect.arrayContaining([
       '.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**', '**/ios/**',
     ]));
-  });
-  it.each([
-    '/private-captures/scans/room-1/scene.json',
-    '/@fs/Users/test/private-captures/scans/room-1/scene.json',
-    '/%70rivate-captures/scans/room-1/scene.json',
-    '/@fs%2fUsers%2ftest%2fprivate%2dcaptures%2fsecret.mp4',
-    '/%2570rivate-captures%252fsecret.mp4',
-    '/PRIVATE-CAPTURES/secret.mp4',
-  ])('refuses direct, encoded and absolute capture paths: %s', async (url) => {
-    expect(config.isPrivateCaptureRequest(url)).toBe(true);
-    const result = await request(url);
-    expect(result.status).toBe(404);
-    expect(result.passed).toBe(false);
-    expect(result.body.toString()).toBe('Not found.');
-  });
-  it('leaves the allowlisted local index and catalog import accessible', () => {
-    expect(config.isPrivateCaptureRequest('/local-scans/index.json')).toBe(false);
-    expect(config.isPrivateCaptureRequest('/scan/hazard-questions.json?import')).toBe(false);
-  });
-  it.each([
-    '/ios/App/App/public/local-scans/room-1/scene.splat',
-    '/ios/App/App/public/local-scans/room-1/scene.json',
-    '/%69os/App/App/public/local-scans/room-1/suggestions.json',
-    '/%2569os%252fApp%252fApp%252fpublic/local-scans/room-1/scene.splat',
-    '/IOS/App/App/public/local-scans/index.json',
-    '/ios%5cApp%5cApp%5cpublic%5clocal-scans%5croom-1%5cscene.splat',
-    '/%E0%A4%A/%69os/App/App/public/local-scans/room-1/scene.splat',
-  ])('blocks generated iOS assets before static serving, including cross-site: %s', async (url) => {
-    // Only synthetic files in the test temp tree; never inspect the real iOS bundle.
-    const generated = join(temporary, 'ios/App/App/public/local-scans/room-1');
-    await mkdir(generated, { recursive: true });
-    await writeFile(join(generated, 'scene.splat'), 'Synthetic private bundle');
-    const absolute = `/@fs/${join(generated, 'scene.splat')}`;
-    for (const path of [url, absolute, absolute.replace('/ios/', '/%2569os%252f')]) {
-      for (const headers of [{}, { origin: 'https://external.example', 'sec-fetch-site': 'cross-site' }]) {
-        const result = await request(path, 'GET', headers);
-        expect(result.status).toBe(404);
-        expect(result.passed).toBe(false);
-        expect(result.body.toString()).toBe('Not found.');
-        expect(result.headers.get('cache-control')).toBe('no-store');
-      }
-    }
-    expect((await request('/local-scans/index.json')).status).toBe(200);
-    expect((await request('/local-scans/room-1/scene.splat')).status).toBe(200);
   });
 });

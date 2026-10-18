@@ -39,11 +39,6 @@ function decodedRequestPaths(url: string): string[] | null {
   // Reject excessive nesting rather than passing it to another URL decoder.
   return null;
 }
-export function isPrivateCaptureRequest(url: string): boolean {
-  const paths = decodedRequestPaths(url);
-  // Offline iOS builds also contain private generated web assets.
-  return !paths || paths.some((path) => path.toLowerCase().includes('private-captures') || /(?:^|[\\/])ios(?:[\\/]|$)/i.test(path));
-}
 function notFound(response: ServerResponse) {
   response.statusCode = 404;
   response.setHeader('Cache-Control', 'no-store');
@@ -75,32 +70,97 @@ async function canonicalFilePath(path: string) {
   if (!target) throw new Error('Unresolvable file path.');
   return { target, ancestors };
 }
-function createPrivateFilesGuard(projectRoot: string, servingRoots: string[], allowedRoots: string[]) {
-  return async (request: IncomingMessage, response: ServerResponse, next: () => void): Promise<void> => {
+async function createRouteAllowlist(projectRoot: string, publicDir: string, distRoot?: string, hmrPath = '/') {
+  const development = distRoot === undefined;
+  const servingRoots = development ? [projectRoot, publicDir].filter(Boolean) : [distRoot];
+  const canonicalRoots = async (roots: string[]) => Promise.all(roots.map(async (root) => (await canonicalFilePath(root)).target));
+  const privateRoots = await canonicalRoots([join(projectRoot, 'private-captures'), join(projectRoot, 'ios')]);
+  const safeTarget = async (path: string) => {
+    const { target, ancestors } = await canonicalFilePath(path);
+    // Retain the ancestor check even if a symlink enters and then leaves a private root.
+    if ([target, ...ancestors].some((entry) => privateRoots.some((root) => isInside(entry, root)))) throw new Error('Private file.');
+    return target;
+  };
+  const publicFiles = new Set<string>();
+  const publicRoot = publicDir ? (await canonicalFilePath(publicDir)).target : '';
+  const listPublicFiles = async (directory: string, prefix: string) => {
+    await safeTarget(directory);
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) await listPublicFiles(join(directory, entry.name), path);
+      else if (entry.isFile()) publicFiles.add(path);
+      else if (entry.isSymbolicLink()) {
+        // Never traverse symlinked directories or admit private/outside sources,
+        // even if a build has already copied that source to a regular dist file.
+        try {
+          const target = await safeTarget(join(directory, entry.name));
+          if (isInside(target, publicRoot) && (await stat(target)).isFile()) publicFiles.add(path);
+        } catch { /* Unsafe or broken public symlinks are not published routes. */ }
+      }
+    }
+  };
+  if (publicDir) {
+    try { await listPublicFiles(publicDir, ''); }
+    catch (error) {
+      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error;
+    }
+  }
+  const htmlRequests = new WeakMap<IncomingMessage, string>();
+  const before = async (request: IncomingMessage, response: ServerResponse, next: () => void): Promise<void> => {
     try {
-      const paths = decodedRequestPaths(request.url ?? '');
-      if (!paths) { notFound(response); return; }
-      const canonicalRoots = async (roots: string[]) => Promise.all(roots.map(async (root) => (await canonicalFilePath(root)).target));
-      const privateRoots = await canonicalRoots([join(projectRoot, 'private-captures'), join(projectRoot, 'ios')]);
-      let allowed: string[] | undefined;
-      for (const path of paths) {
-        // Mirror root/publicDir static serving in dev and dist serving in preview.
-        const candidates = servingRoots.map((root) => ({ path: resolve(root, path.replace(/^\/+/, '')), rawFs: false }));
-        if (path.startsWith('/@fs/')) candidates.push({ path: resolve('/', path.slice('/@fs/'.length)), rawFs: true });
-        for (const candidate of candidates) {
-          const { target, ancestors } = await canonicalFilePath(candidate.path);
-          // Check ancestors too: an alias may enter a private directory and
-          // leave it through another symlink, or end at a nonexistent file.
-          if ([target, ...ancestors].some((entry) => privateRoots.some((root) => isInside(entry, root)))) { notFound(response); return; }
-          if (candidate.rawFs) {
-            allowed ??= await canonicalRoots(allowedRoots);
-            if (!allowed.some((root) => isInside(target, root))) { notFound(response); return; }
-          }
-        }
+      const url = request.url ?? '';
+      if (/[#\\\0]/.test(url)) { notFound(response); return; }
+      const paths = decodedRequestPaths(url);
+      if (!paths || paths.some((path) => /[#?\\\0]/.test(path) || path.split('/').some((part) => part === '.' || part === '..'))) { notFound(response); return; }
+      const path = paths.at(-1) ?? '';
+      if (!path.startsWith('/') || path.startsWith('//') || path.includes('%')) { notFound(response); return; }
+      // Give downstream decoders the same path we validated, retaining the query.
+      const query = url.indexOf('?');
+      request.url = encodeURI(path) + (query === -1 ? '' : url.slice(query));
+      if (path === '/local-scans' || path.startsWith('/local-scans/')) { next(); return; }
+
+      let file: string | undefined, roots: string[] = [];
+      if (path === '/' || path === '/index.html') {
+        const root = distRoot ?? projectRoot;
+        file = join(root, 'index.html'); roots = [root];
+      } else if (publicFiles.has(path)) {
+        const root = distRoot ?? publicDir;
+        file = join(root, path); roots = [root];
+      } else if (development && path.startsWith('/src/')) {
+        file = join(projectRoot, path); roots = [join(projectRoot, 'src')];
+      } else if (development && path.startsWith('/node_modules/')) {
+        file = join(projectRoot, path); roots = [join(projectRoot, 'node_modules')];
+      } else if (development && path.startsWith('/@fs/')) {
+        file = resolve('/', path.slice('/@fs/'.length)); roots = [join(projectRoot, 'src'), join(projectRoot, 'node_modules')];
+      } else if (distRoot && path.startsWith('/assets/')) {
+        file = join(distRoot, path); roots = [join(distRoot, 'assets')];
+      } else if (!(development && (path.startsWith('/@vite/') || path.startsWith('/@id/') || path === '/@react-refresh' || (path === hmrPath && request.headers.upgrade?.toLowerCase() === 'websocket')))) {
+        notFound(response); return;
+      }
+
+      // Second layer: check every static location Vite could serve for an allowed
+      // path, including public files shadowing a development source/module URL.
+      for (const root of servingRoots) {
+        const target = await safeTarget(join(root, path === '/' ? 'index.html' : path));
+        if (!isInside(target, (await canonicalFilePath(root)).target)) { notFound(response); return; }
+      }
+      if (file) {
+        const target = await safeTarget(file);
+        const allowed = await canonicalRoots(roots);
+        if (!allowed.some((root) => isInside(target, root)) || !(await stat(target)).isFile()) { notFound(response); return; }
+        // Require an actual file, never an implicit directory or extension alias.
+        if (path === '/' || path.endsWith('.html')) htmlRequests.set(request, path === '/' ? '/index.html' : encodeURI(path));
       }
     } catch { notFound(response); return; }
     next();
   };
+  // Virtual Vite routes must be handled by Vite's module middleware. If they fall
+  // through, stop before indexHtmlMiddleware can read an implicit HTML alias.
+  const after = (request: IncomingMessage, response: ServerResponse, next: () => void) => {
+    if (htmlRequests.get(request) === request.url?.split('?')[0]) next();
+    else notFound(response);
+  };
+  return { before, after };
 }
 async function safeRoot(root: string) {
   // Do not follow symlinked private-captures/scans directories outside the project.
@@ -118,13 +178,8 @@ async function safeFile(root: string, name: string, file: LocalScanFile) {
 export function createLocalScansHandler(capturesRoot: string) {
   return async (request: IncomingMessage, response: ServerResponse, next: () => void): Promise<void> => {
     // The dedicated route validates its own names/files, origin and symlinks.
-    // Dispatch it first so valid scan names such as "ios" remain loadable.
     const route = parseLocalScanRequest(request.url ?? '');
-    if (!route) {
-      if (isPrivateCaptureRequest(request.url ?? '')) notFound(response);
-      else next();
-      return;
-    }
+    if (!route) { next(); return; }
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
     const finish = (status: number, message: string) => { response.statusCode = status; response.setHeader('Content-Type', 'text/plain; charset=utf-8'); response.end(message); };
@@ -164,15 +219,23 @@ export function localScansPlugin(): Plugin {
   let root = '';
   return {
     name: 'fixlist-local-scans',
+    enforce: 'pre',
     configResolved(config) { root = join(config.root, 'private-captures', 'scans'); },
     // There is deliberately no generateBundle, copy or production-build asset hook.
-    configureServer(server) {
+    async configureServer(server) {
+      const ws = server.config.server.ws;
+      const boundary = await createRouteAllowlist(server.config.root, server.config.publicDir, undefined, join(server.config.base, typeof ws === 'object' ? ws.path ?? '' : ''));
+      // Vite installs its raw-# rejection before configureServer hooks. Prepend
+      // our allowlist so all rejected wire targets consistently receive our 404.
+      server.middlewares.stack.unshift({ route: '', handle: boundary.before });
       server.middlewares.use(createLocalScansHandler(root));
-      server.middlewares.use(createPrivateFilesGuard(server.config.root, [server.config.root, server.config.publicDir].filter(Boolean), server.config.server.fs.allow));
+      return () => { server.middlewares.use(boundary.after); };
     },
-    configurePreviewServer(server) {
+    async configurePreviewServer(server) {
+      const boundary = await createRouteAllowlist(server.config.root, server.config.publicDir, resolve(server.config.root, server.config.build.outDir));
+      server.middlewares.stack.unshift({ route: '', handle: boundary.before });
       server.middlewares.use(createLocalScansHandler(root));
-      server.middlewares.use(createPrivateFilesGuard(server.config.root, [resolve(server.config.root, server.config.build.outDir)], server.config.server.fs.allow));
+      return () => { server.middlewares.use(boundary.after); };
     },
   };
 }
@@ -183,7 +246,7 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
-    fs: { deny: ['.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**', '**/ios/**'] },
+    fs: { strict: true, deny: ['.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**', '**/ios/**'] },
   },
   preview: {
     host: '127.0.0.1',
