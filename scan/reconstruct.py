@@ -20,7 +20,8 @@ from PIL import Image, ImageOps
 
 from scan_core import (ScanError, PIPELINE, bake_transform, build_metadata, check_registration,
                        decode_splat, encode_splat, estimate_scene_alignment, laplacian_variance,
-                       read_gaussian_ply, select_sharpest)
+                       read_gaussian_ply, select_sharpest, frame_budget, load_transforms,
+                       should_try_exhaustive, should_fallback_to_learned)
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT/'private-captures'
@@ -56,7 +57,18 @@ class Run:
             if not self.path.is_file():
                 raise ScanError('--resume needs an existing run.json; otherwise choose a new --name.')
             self.report = json.loads(self.path.read_text())
-            if self.report['config'] != config:
+            comparison=dict(config)
+            old=self.report['config']
+            # Completed pre-mode runs used --features as a SIFT keypoint cap.
+            # Permit their original default CLI to resume training unchanged;
+            # retain the original config as the provenance record.
+            if isinstance(old.get('features'),int) and comparison.get('features') in {'auto','sift'}:
+                cap=comparison.pop('sift_max_features',8192)
+                if cap in {8192,old['features']}:
+                    comparison['features']=old['features']
+                if comparison.get('max_frames') is None and old.get('max_frames') == 150:
+                    comparison['max_frames']=150
+            if old != comparison:
                 raise ScanError('Resume settings/input differ from the saved run. Use the same options or a new --name.')
         else:
             self.report = {'pipeline':PIPELINE,'createdAt':now(),'status':'running','config':config,
@@ -125,7 +137,10 @@ class Run:
         self.note('Running '+Path(args[0]).name+'; details: '+log_name)
         env=os.environ.copy()
         # Brush uses a disk shader/autotuning cache. Keep it under ignored output.
-        env['XDG_CACHE_HOME']=str(self.output/'work'/'cache')
+        if log_name == 'brush.log':
+            env['XDG_CACHE_HOME']=str(self.output/'work'/'cache')
+        if log_name == 'learned.log':
+            env['PYTORCH_ENABLE_MPS_FALLBACK']='1'
         with (self.output/log_name).open('ab') as log:
             log.write(('\nCOMMAND '+json.dumps([str(a) for a in args])+'\n').encode())
             log.flush()
@@ -144,6 +159,8 @@ class Run:
                                     'See brush.log and scan/README.md for the parent handoff.')
             advice = ('For Brush: run on a Mac with Metal available; close memory-heavy apps.'
                       if log_name == 'brush.log' else
+                      'For ALIKED/LightGlue: check the same venv and cached weights (scan/README.md).'
+                      if log_name == 'learned.log' else
                       'For video decoding: use a playable MP4/MOV and check free disk space.')
             raise ScanError(f'{Path(args[0]).name} exited {proc.returncode}. Inspect {self.output/log_name}. '
                             f'{advice} No output is uploaded.')
@@ -172,11 +189,12 @@ def prepare_frames(args,run,ffmpeg,ffprobe):
     candidate_dir.mkdir(parents=True)
     image_dir.mkdir()
     if args.input.is_dir():
+        budget=frame_budget(explicit=args.max_frames)
         sources=sorted((p for p in args.input.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES),key=natural_key)
         if not sources:
             raise ScanError('No supported images in the directory. Supply ordered JPEG/PNG photos (no recursive search).')
         # At most three candidates per desired temporal window, preserving full sequence coverage.
-        indices=np.unique(np.linspace(0,len(sources)-1,min(len(sources),args.max_frames*3),dtype=int))
+        indices=np.unique(np.linspace(0,len(sources)-1,min(len(sources),budget*3),dtype=int))
         candidates=[sources[i] for i in indices]
         source_info={'kind':'images','availableImages':len(sources)}
     else:
@@ -194,11 +212,12 @@ def prepare_frames(args,run,ffmpeg,ffprobe):
             raise ScanError('Video duration is unknown/zero. Re-export it as a regular MP4 first.')
         rate=stream.get('avg_frame_rate','0/1').split('/')
         native_fps=float(rate[0])/max(float(rate[-1]),1)
-        fps=min(args.max_frames*3/duration,native_fps or 30)
+        budget=frame_budget(duration,args.max_frames)
+        fps=min(budget*3/duration,native_fps or 30)
         # ffmpeg autorotation is explicitly enabled. Only local path input is accepted.
         scale=f"scale=w='min({args.long_side},iw)':h='min({args.long_side},ih)':force_original_aspect_ratio=decrease"
         run.command([ffmpeg,'-hide_banner','-loglevel','warning','-nostdin','-n','-autorotate',
-                     '-i',args.input,'-vf',f'fps={fps:.9f},{scale}','-frames:v',str(args.max_frames*3),
+                     '-i',args.input,'-vf',f'fps={fps:.9f},{scale}','-frames:v',str(budget*3),
                      '-q:v','2',candidate_dir/'%06d.jpg'],'ffmpeg.log')
         candidates=sorted(candidate_dir.glob('*.jpg'))
         source_info={'kind':'video','durationSeconds':duration,'sourceFps':native_fps,'sampleFps':fps}
@@ -216,7 +235,7 @@ def prepare_frames(args,run,ffmpeg,ffprobe):
         raise ScanError('No frames decoded. Re-export the video as MP4.')
     # Absolute floor catches blank/very blurred frames, relative floor is scene-adaptive.
     cutoff=max(2.,float(np.median(scores))*.20)
-    selected=select_sharpest(scores,args.max_frames,cutoff)
+    selected=select_sharpest(scores,budget,cutoff)
     if len(selected)<30:
         raise ScanError(f'Only {len(selected)} sharp frames remain from {len(candidates)} candidates. '
                         'Need at least 30. Use a longer capture, improve lighting and move more slowly.')
@@ -230,7 +249,7 @@ def prepare_frames(args,run,ffmpeg,ffprobe):
             elif output_size!=image.size:
                 raise ScanError('Images have mixed dimensions/orientations. Use one camera/lens with fixed landscape framing.')
             image.save(image_dir/f'{i:06d}.jpg',quality=95)
-    stats={'inputFrames':len(selected),'candidates':len(candidates),'rejectedWindows':min(args.max_frames,len(candidates))-len(selected),
+    stats={'inputFrames':len(selected),'frameBudget':budget,'candidates':len(candidates),'rejectedWindows':min(budget,len(candidates))-len(selected),
            'sharpnessCutoff':cutoff,'sharpnessP10P50P90':np.quantile(scores,[.1,.5,.9]).tolist(),
            'frameSize':list(output_size),**source_info}
     run.report['metrics']['frames']=stats
@@ -238,79 +257,223 @@ def prepare_frames(args,run,ffmpeg,ffprobe):
     run.note(f'Selected {len(selected)}/{len(candidates)} frames; dimensions {output_size}; blur cutoff {cutoff:.2f}')
 
 
+def mapping_options(pc,args):
+    options=pc.IncrementalPipelineOptions()
+    options.num_threads=args.threads
+    options.random_seed=42
+    options.ba_use_gpu=False
+    options.max_num_models=5
+    options.min_model_size=10
+    options.ba_global_max_num_iterations=50
+    return options
+
+
+def pose_metrics(best,total,mode,matching):
+    registered=best.num_reg_images() if best else 0
+    return {'registeredFrames':registered,'inputFrames':total,'registeredFraction':registered/total,
+            'meanReprojectionErrorPixels':float(best.compute_mean_reprojection_error()) if best and best.num_points3D() else None,
+            'sparsePoints':best.num_points3D() if best else 0,'matching':matching,'featureMode':mode}
+
+
+def import_learned_matches(pc, database, exchange, pairs_path):
+    """Read only numeric NPZ arrays; never import torch into this process."""
+    manifest=json.loads((exchange/'manifest.json').read_text())
+    if manifest.get('version') != 1 or len(manifest['names']) != len(manifest['dimensions']):
+        raise ScanError('Invalid learned feature manifest.')
+    names=manifest['names']
+    if len(set(names)) != len(names) or any(not re.fullmatch(r'[0-9]+\.jpg',n) for n in names):
+        raise ScanError('Invalid prepared image names in learned manifest.')
+    image_ids=[]
+    counts=[]
+    cameras={}
+    with pc.Database.open(database) as db:
+        for i,(name,size) in enumerate(zip(names,manifest['dimensions'])):
+            w,h=map(int,size)
+            if min(w,h)<2:
+                raise ScanError('Invalid learned image dimensions.')
+            if (w,h) not in cameras:
+                camera=pc.Camera(model='SIMPLE_RADIAL',width=w,height=h,params=[1.2*max(w,h),w/2,h/2,0.])
+                cameras[w,h]=db.write_camera(camera)
+            image_id=db.write_image(pc.Image(name=name,camera_id=cameras[w,h]))
+            with np.load(exchange/f'features-{i:06d}.npz',allow_pickle=False) as data:
+                keypoints=np.asarray(data['keypoints'],dtype=np.float32)
+            if keypoints.ndim != 2 or keypoints.shape[1] != 2 or not np.isfinite(keypoints).all():
+                raise ScanError('Invalid learned keypoints.')
+            if np.any(keypoints<0) or np.any(keypoints>np.array([w,h])):
+                raise ScanError('Learned keypoints are outside the image grid.')
+            db.write_keypoints(image_id,keypoints)
+            image_ids.append(image_id)
+            counts.append(len(keypoints))
+        pairs=[]
+        seen=set()
+        for i,j in manifest['pairs']:
+            if not 0<=i<j<len(names) or (i,j) in seen:
+                raise ScanError('Invalid/duplicate learned image pair.')
+            seen.add((i,j))
+            with np.load(exchange/f'matches-{i:06d}-{j:06d}.npz',allow_pickle=False) as data:
+                raw=data['matches']
+            if (raw.ndim != 2 or raw.shape[1] != 2 or raw.dtype.kind not in 'ui'
+                    or np.any(raw<0) or np.any(raw>=np.array([counts[i],counts[j]]))):
+                raise ScanError('Learned match indices are outside their feature arrays.')
+            matches=raw.astype(np.uint32)
+            db.write_matches(image_ids[i],image_ids[j],matches)
+            pairs.append(f'{names[i]} {names[j]}\n')
+    pairs_path.write_text(''.join(pairs))
+    return manifest['metrics']
+
+
 def estimate_poses(args,run):
     import pycolmap as pc
     work=run.output/'work'
-    db=work/'colmap.db'
     images=work/'images'
-    models_dir=work/'models'
-    models_dir.mkdir(exist_ok=True)
-    def extract():
-        reader=pc.ImageReaderOptions()
-        reader.camera_model='SIMPLE_RADIAL'
-        extraction=pc.FeatureExtractionOptions()
-        extraction.use_gpu=False
-        extraction.num_threads=args.threads
-        extraction.max_image_size=args.long_side
-        extraction.sift.max_num_features=args.features
-        with native_log(run.output/'colmap.log'):
-            pc.extract_features(db,images,camera_mode=pc.CameraMode.SINGLE,reader_options=reader,
-                                extraction_options=extraction,device=pc.Device.cpu)
-    run.stage('features',extract)
-    matching=pc.FeatureMatchingOptions()
-    matching.use_gpu=False
-    matching.num_threads=args.threads
-    def match():
-        pairing=pc.SequentialPairingOptions()
-        pairing.overlap=10
-        pairing.quadratic_overlap=True
-        # Vocabulary trees require an extra download: explicitly disable loop detection.
-        pairing.loop_detection=False
-        pairing.num_threads=args.threads
-        with native_log(run.output/'colmap.log'):
-            pc.match_sequential(db,matching_options=matching,pairing_options=pairing,device=pc.Device.cpu)
-    run.stage('matching',match)
     total=run.report['metrics']['frames']['inputFrames']
     chosen=work/'sparse'
-    def map_images():
-        options=pc.IncrementalPipelineOptions()
-        options.num_threads=args.threads
-        options.random_seed=42
-        options.ba_use_gpu=False
-        options.max_num_models=5
-        options.min_model_size=10
-        options.ba_global_max_num_iterations=50
-        with native_log(run.output/'colmap.log'):
-            models=pc.incremental_mapping(db,images,models_dir,options=options)
-        best=max(models.values(),key=lambda r:r.num_reg_images(),default=None)
-        registered=best.num_reg_images() if best else 0
-        mode='sequential (overlap=10, quadratic overlap, no downloaded vocabulary)'
-        # Bounded fallback: no unbounded quadratic work on long captures.
-        if (registered<30 or registered/total<.6) and total<=150:
-            run.note(f'Sequential model registered {registered}/{total}; trying exhaustive matching (<=150 frames).')
-            start=time.perf_counter()
-            fallback=work/'exhaustive-models'
-            fallback.mkdir()
+    if chosen.is_dir() and 'poses' in run.report['metrics']:
+        check_registration(run.report['metrics']['poses']['registeredFrames'],total)
+        return pc.Reconstruction(chosen)
+    options=mapping_options(pc,args)
+    candidates=[]
+    attempts=run.report['metrics'].setdefault('featureAttempts',{})
+    if args.features in {'auto','sift'}:
+        db=work/'colmap.db'
+        def extract():
+            reader=pc.ImageReaderOptions()
+            reader.camera_model='SIMPLE_RADIAL'
+            extraction=pc.FeatureExtractionOptions()
+            extraction.use_gpu=False
+            extraction.num_threads=args.threads
+            extraction.max_image_size=args.long_side
+            extraction.sift.max_num_features=args.sift_max_features
+            extraction.sift.peak_threshold=.003
+            extraction.sift.estimate_affine_shape=True
+            extraction.sift.domain_size_pooling=True
+            # Three scale samples bound the CPU cost of DSP on walkthroughs.
+            extraction.sift.dsp_num_scales=3
+            run.report['metrics']['siftSettings']={k:v for k,v in extraction.sift.todict().items() if k!='normalization'}
             with native_log(run.output/'colmap.log'):
-                pc.match_exhaustive(db,matching_options=matching,device=pc.Device.cpu)
-                other=pc.incremental_mapping(db,images,fallback,options=options)
-            candidates=list(models.values())+list(other.values())
-            best=max(candidates,key=lambda r:r.num_reg_images(),default=None)
+                pc.extract_features(db,images,camera_mode=pc.CameraMode.SINGLE,reader_options=reader,
+                                    extraction_options=extraction,device=pc.Device.cpu)
+        run.stage('features',extract)
+        matching=pc.FeatureMatchingOptions()
+        matching.use_gpu=False
+        matching.num_threads=args.threads
+        def match():
+            pairing=pc.SequentialPairingOptions()
+            pairing.overlap=12
+            pairing.quadratic_overlap=True
+            pairing.loop_detection=False
+            pairing.num_threads=args.threads
+            with native_log(run.output/'colmap.log'):
+                pc.match_sequential(db,matching_options=matching,pairing_options=pairing,device=pc.Device.cpu)
+        run.stage('matching',match)
+        sift_chosen=work/'sift-sparse'
+        def map_sift():
+            models_dir=work/'models'
+            models_dir.mkdir()
+            with native_log(run.output/'colmap.log'):
+                models=pc.incremental_mapping(db,images,models_dir,options=options)
+            best=max(models.values(),key=lambda r:r.num_reg_images(),default=None)
             registered=best.num_reg_images() if best else 0
-            mode+=' + exhaustive fallback'
-            run.report['metrics']['exhaustiveFallbackSeconds']=round(time.perf_counter()-start,3)
-        metric={'registeredFrames':registered,'inputFrames':total,'registeredFraction':registered/total,
-                'meanReprojectionErrorPixels':float(best.compute_mean_reprojection_error()) if best else None,
-                'sparsePoints':best.num_points3D() if best else 0,'matching':mode}
-        run.report['metrics']['poses']=metric
-        run.flush()
-        run.note(f'Registered {registered}/{total} ({registered/total:.1%}); mean reprojection error {metric["meanReprojectionErrorPixels"]} px')
-        check_registration(registered,total)
-        chosen.mkdir()
-        best.write(chosen)
-    run.stage('mapping',map_images)
-    check_registration(run.report['metrics']['poses']['registeredFrames'],total)
+            mode='sequential (overlap=12, quadratic overlap, no downloaded vocabulary)'
+            run.report['metrics']['siftSequential']=pose_metrics(best,total,'sift',mode)
+            if should_try_exhaustive(registered,total):
+                run.note(f'SIFT sequential model registered {registered}/{total}; trying exhaustive matching (<=150 frames, 95% coverage target).')
+                start=time.perf_counter()
+                fallback=work/'exhaustive-models'
+                fallback.mkdir()
+                with native_log(run.output/'colmap.log'):
+                    pc.match_exhaustive(db,matching_options=matching,device=pc.Device.cpu)
+                    other=pc.incremental_mapping(db,images,fallback,options=options)
+                best=max(list(models.values())+list(other.values()),key=lambda r:r.num_reg_images(),default=None)
+                mode+=' + exhaustive fallback'
+                run.report['metrics']['exhaustiveFallbackSeconds']=round(time.perf_counter()-start,3)
+            metric=pose_metrics(best,total,'sift',mode)
+            attempts['sift']=metric
+            if best:
+                sift_chosen.mkdir()
+                best.write(sift_chosen)
+            run.note(f'SIFT registered {metric["registeredFrames"]}/{total}; {metric["sparsePoints"]} points; reprojection {metric["meanReprojectionErrorPixels"]} px')
+        run.stage('mapping',map_sift)
+        candidates.append((attempts['sift'],sift_chosen))
+    if args.features=='aliked' or should_fallback_to_learned(args.features,attempts['sift']['registeredFrames'],total):
+        if args.features=='auto':
+            run.note('SIFT missed the 30-frame/60% gate; falling back to ALIKED + LightGlue in an isolated process.')
+        exchange=work/'learned'
+        run.stage('learned-features-matching',lambda:run.command(
+            [sys.executable,Path(__file__).with_name('learned_match.py'),images,exchange,
+             '--threads',args.threads],'learned.log'))
+        db=work/'learned.db'
+        pairs=work/'learned-pairs.txt'
+        def import_matches():
+            run.report['metrics']['learned']=import_learned_matches(pc,db,exchange,pairs)
+        run.stage('learned-import',import_matches)
+        def verify():
+            with native_log(run.output/'colmap.log'):
+                pc.verify_matches(db,pairs)
+        run.stage('learned-verification',verify)
+        learned_chosen=work/'learned-sparse'
+        def map_learned():
+            models_dir=work/'learned-models'
+            models_dir.mkdir()
+            with native_log(run.output/'colmap.log'):
+                models=pc.incremental_mapping(db,images,models_dir,options=options)
+            best=max(models.values(),key=lambda r:r.num_reg_images(),default=None)
+            attempts['aliked']=pose_metrics(best,total,'aliked','temporal window=12 + sparse loop keyframes; LightGlue + geometric verification')
+            if best:
+                learned_chosen.mkdir()
+                best.write(learned_chosen)
+            m=attempts['aliked']
+            run.note(f'ALIKED registered {m["registeredFrames"]}/{total}; {m["sparsePoints"]} points; reprojection {m["meanReprojectionErrorPixels"]} px')
+        run.stage('learned-mapping',map_learned)
+        candidates.append((attempts['aliked'],learned_chosen))
+    metric,model=max(candidates,key=lambda c:c[0]['registeredFrames'])
+    run.report['metrics']['poses']=metric
+    run.flush()
+    check_registration(metric['registeredFrames'],total)
+    shutil.copytree(model,chosen)
+    run.note(f'Selected {metric["featureMode"]}: {metric["registeredFrames"]}/{total} ({metric["registeredFraction"]:.1%})')
     return pc.Reconstruction(chosen)
+
+
+def import_pose_capture(args,run,frames):
+    """Preserve supplied poses; no feature extraction, matching, or SfM."""
+    import pycolmap as pc
+    work=run.output/'work'
+    images=work/'images'
+    images.mkdir()
+    budget=frame_budget(explicit=args.max_frames)
+    indices=np.unique(np.linspace(0,len(frames)-1,min(len(frames),budget),dtype=int))
+    recon=pc.Reconstruction()
+    cameras={}
+    for n,index in enumerate(indices):
+        frame=frames[index]
+        values=frame['intrinsics']
+        with Image.open(frame['source']) as image:
+            image=image.convert('RGB')
+            image.thumbnail((args.long_side,args.long_side),Image.Resampling.LANCZOS)
+            w,h=image.size
+            image.save(images/f'{n:06d}.jpg',quality=95)
+        sx,sy=w/values['w'],h/values['h']
+        params=[values['fl_x']*sx,values['fl_y']*sy,values['cx']*sx,values['cy']*sy]
+        distortion=[values[k] for k in ['k1','k2','p1','p2']]
+        model='OPENCV' if any(distortion) else 'PINHOLE'
+        if model=='OPENCV':
+            params+=distortion
+        key=(model,w,h,*params)
+        if key not in cameras:
+            camera_id=len(cameras)+1
+            recon.add_camera_with_trivial_rig(pc.Camera(camera_id=camera_id,model=model,width=w,height=h,params=params))
+            cameras[key]=camera_id
+        im=pc.Image(name=f'{n:06d}.jpg',image_id=n+1,camera_id=cameras[key])
+        recon.add_image_with_trivial_frame(im,pc.Rigid3d(frame['camFromWorld']))
+    chosen=work/'sparse'
+    chosen.mkdir()
+    recon.write(chosen)
+    run.report['metrics']['frames']={'kind':'transforms','availableImages':len(frames),'inputFrames':len(indices),
+                                      'frameBudget':budget,'worldUp':'+Y (supplied ARKit gravity)'}
+    run.report['metrics']['poses']=pose_metrics(recon,len(indices),'imported','supplied OpenGL camera-to-world transforms; no SfM')
+    run.report['metrics']['poses']['reprojectionErrorStatus']='not measured; imported poses have no feature tracks'
+    run.note(f'Imported {len(indices)} supplied poses; no measured sparse points. Brush will use random initialization.')
 
 
 def prepare_dataset(args,run):
@@ -345,7 +508,10 @@ def prepare_alignment(run,recon):
     diagnostics=estimate_scene_alignment(
         [im.projection_center() for im in ordered],
         [im.cam_from_world().rotation.matrix() for im in ordered],
-        [p.xyz for p in recon.points3D.values()])
+        [p.xyz for p in recon.points3D.values()],
+        preserve_world_up=run.report['metrics']['poses'].get('featureMode')=='imported')
+    if run.report['metrics']['poses'].get('featureMode')=='imported':
+        diagnostics['alignmentSource']='supplied y-up world; recenter only, camera trajectory median'
     chosen=diagnostics.pop('initialCameraIndex')
     diagnostics['initialCameraSourceImage']=ordered[chosen].name
     save_json(run.output/'work'/'alignment.json',diagnostics)
@@ -391,16 +557,18 @@ def postprocess(args,run):
 
 def parser():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('input',type=Path,help='Local video file or ordered image directory')
+    p.add_argument('input',type=Path,help='Local video, ordered photos, or y-up ARKit/nerfstudio transforms.json directory')
     p.add_argument('--name',required=True,help='New local output name (letters, digits, hyphen, underscore)')
     p.add_argument('--steps',type=int,default=7000)
-    p.add_argument('--max-frames',type=int,default=150,help='Selected frame cap; <=150 enables bounded exhaustive recovery')
+    p.add_argument('--max-frames',type=int,default=None,help='Override adaptive video budget (~2.5 fps, 150–300); photos/imports default 150')
     p.add_argument('--long-side',type=int,default=1600)
     p.add_argument('--train-resolution',type=int,default=1200,help='Brush maximum image side (default 1200)')
     p.add_argument('--max-splats',type=int,default=1_500_000)
     p.add_argument('--min-opacity',type=float,default=.02)
     p.add_argument('--threads',type=int,default=min(os.cpu_count() or 4,8))
-    p.add_argument('--features',type=int,default=4096)
+    p.add_argument('--features',choices=['auto','sift','aliked'],default='auto',
+                   help='auto: tuned SIFT first, ALIKED+LightGlue if the 30-frame/60%% registration gate fails')
+    p.add_argument('--sift-max-features',type=int,default=8192)
     p.add_argument('--stop-after',choices=['frames','poses'],help='Diagnostic partial run; resume with identical options and --resume')
     p.add_argument('--resume',action='store_true',help='Reuse completed stages only; never overwrite a failed stage')
     p.add_argument('--retry-training',action='store_true',help='With --resume, archive a failed training attempt and retry it')
@@ -414,16 +582,17 @@ def main(argv=None):
     try:
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}',args.name):
             raise ScanError('--name must be 1–64 letters/digits/hyphens/underscores, starting with a letter/digit.')
-        for k in ['steps','max_frames','long_side','train_resolution','max_splats','threads','features']:
+        for k in ['steps','long_side','train_resolution','max_splats','threads','sift_max_features']:
             if getattr(args,k)<1:
                 raise ScanError(f'--{k.replace("_","-")} must be positive.')
-        if args.max_frames<30 or not 0<=args.min_opacity<1:
+        if (args.max_frames is not None and args.max_frames<30) or not 0<=args.min_opacity<1:
             raise ScanError('--max-frames must be >=30 and --min-opacity must be [0,1).')
         if args.retry_training and (not args.resume or args.stop_after):
             raise ScanError('--retry-training requires --resume and a full run (no --stop-after).')
         args.input=args.input.expanduser().resolve()
         if not args.input.exists():
             raise ScanError('Input does not exist. Use a local video or image directory; URLs are not accepted.')
+        pose_frames=load_transforms(args.input) if args.input.is_dir() and (args.input/'transforms.json').exists() else None
         import pycolmap
         if pycolmap.__version__!='4.2.1':
             raise ScanError('This pipeline requires pycolmap 4.2.1. Follow scan/README.md setup.')
@@ -446,12 +615,13 @@ def main(argv=None):
         run=Run(output,config,args.resume)
         if args.retry_training:
             run.retry_training()
-        run.stage('frames',lambda:prepare_frames(args,run,ffmpeg,ffprobe))
+        run.stage('frames',lambda:import_pose_capture(args,run,pose_frames) if pose_frames is not None
+                  else prepare_frames(args,run,ffmpeg,ffprobe))
         if args.stop_after!='frames':
-            recon=estimate_poses(args,run)
+            recon=pycolmap.Reconstruction(output/'work'/'sparse') if pose_frames is not None else estimate_poses(args,run)
             run.stage('alignment',lambda:prepare_alignment(run,recon))
+            run.stage('undistort',lambda:prepare_dataset(args,run))
             if args.stop_after!='poses':
-                run.stage('undistort',lambda:prepare_dataset(args,run))
                 run.stage('training',lambda:train(args,run,brush))
                 run.stage('postprocess',lambda:postprocess(args,run))
         run.report['status']='partial' if args.stop_after else 'complete'

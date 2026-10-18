@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -14,6 +15,29 @@ from scan_core import decode_splat, quaternion_matrix, rotation_between, validat
 
 
 class LocalBoundaryTests(unittest.TestCase):
+    def test_feature_modes_are_explicit_and_old_training_resume_keeps_provenance(self):
+        from reconstruct import parser
+        self.assertEqual(parser().parse_args(['x','--name','x']).features,'auto')
+        self.assertEqual(parser().parse_args(['x','--name','x','--features','aliked']).features,'aliked')
+        with tempfile.TemporaryDirectory() as tmp:
+            output=Path(tmp)
+            old={'features':4096,'max_frames':150,'steps':7000}
+            Run(output,old,False)
+            current={'features':'auto','sift_max_features':8192,'max_frames':None,'steps':7000}
+            resumed=Run(output,current,True)
+            self.assertEqual(resumed.report['config'],old)
+            with self.assertRaises(ScanError):
+                Run(output,dict(current,features='aliked'),True)
+
+    def test_lightglue_optional_sift_cannot_load_pycolmap_in_torch_child(self):
+        # A real subprocess catches LightGlue's eager optional SIFT import.
+        # torch and pycolmap must never meet in this test runner, either.
+        scan=Path(__file__).resolve().parents[1]
+        script='import sys; sys.path.insert(0,sys.argv[1]); from learned_match import import_lightglue; import_lightglue(); assert sys.modules["pycolmap"] is None; print("isolated")'
+        result=subprocess.run([sys.executable,'-c',script,str(scan)],capture_output=True,text=True,timeout=90)
+        self.assertEqual(result.returncode,0,result.stderr[-2000:])
+        self.assertIn('isolated',result.stdout)
+
     def test_bad_input_or_path_name_fails_before_creating_outputs(self):
         self.assertEqual(main(['/nonexistent/video.mp4','--name','../escape']),2)
         self.assertEqual(main(['/nonexistent/video.mp4','--name','test']),2)

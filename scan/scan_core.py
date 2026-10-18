@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 import math
 from pathlib import Path
 
@@ -47,7 +48,150 @@ def check_registration(registered: int, total: int) -> None:
     if total < 1 or registered > total or registered < 30 or registered/total < .60:
         raise ScanError(f'Only {registered}/{total} frames registered — need at least 30 and 60%. '
                         'Walk around the room instead of spinning in place, improve lighting, '
-                        'add visible texture, keep more overlap, and avoid mirrors or moving people.')
+                        'add visible texture, keep more overlap, and avoid mirrors or moving people. '
+                        'For white walls, keep furniture, door frames and floor edges in view; '
+                        "don't film blank walls straight on. An ARKit pose export can avoid visual pose estimation.")
+
+
+def registration_sufficient(registered: int, total: int) -> bool:
+    return total >= registered >= 30 and registered / total >= .60
+
+
+def should_fallback_to_learned(mode: str, registered: int, total: int) -> bool:
+    return mode == 'auto' and not registration_sufficient(registered, total)
+
+
+def should_try_exhaustive(registered: int, total: int) -> bool:
+    # A passing 60% gate can still lose much of a short room. Spend the bounded
+    # recovery budget below 95% coverage; keep the acceptance gate unchanged.
+    return 0 < total <= 150 and (registered < 30 or registered/total < .95)
+
+
+def frame_budget(duration_seconds: float | None = None, explicit: int | None = None) -> int:
+    """Preserve the short-room preset; sample long walkthroughs at ~2.5 fps."""
+    if explicit is not None:
+        if isinstance(explicit, bool) or explicit < 30:
+            raise ScanError('--max-frames must be >=30.')
+        return explicit
+    if duration_seconds is None:
+        return 150
+    if not math.isfinite(duration_seconds) or duration_seconds <= 0:
+        raise ScanError('Video duration must be finite and positive.')
+    return min(300, max(150, math.ceil(duration_seconds * 2.5)))
+
+
+def matching_pairs(count: int, overlap: int = 12, keyframe_stride: int = 12) -> list[tuple[int, int]]:
+    """Temporal neighbours + a sparse keyframe loop-closure graph, never all pairs.
+
+    At most ~32 loop keyframes even on very long manually configured captures.
+    Consecutive windows preserve local overlap; keyframes reconnect revisits.
+    """
+    if count < 0 or overlap < 1 or keyframe_stride < 1:
+        raise ValueError('Invalid pair count/window/stride')
+    pairs = {(i, j) for i in range(count) for j in range(i+1, min(count, i+overlap+1))}
+    stride = max(keyframe_stride, math.ceil(count/32))
+    keyframes = list(range(0, count, stride))
+    if count and (not keyframes or keyframes[-1] != count-1):
+        keyframes.append(count-1)
+    pairs.update((a, b) for k, a in enumerate(keyframes) for b in keyframes[k+1:])
+    return sorted(pairs)
+
+
+def opengl_to_colmap(transform):
+    """OpenGL c2w -> COLMAP w2c; flip camera Y/Z, preserve world axes/scale."""
+    try:
+        a = np.asarray(transform, dtype=float)
+    except (ValueError, TypeError) as e:
+        raise ScanError('transform_matrix must be a finite rigid 4x4 matrix.') from e
+    if (a.shape != (4, 4) or not np.isfinite(a).all()
+            or not np.allclose(a[3], [0, 0, 0, 1], atol=1e-7, rtol=0)):
+        raise ScanError('transform_matrix must be a finite rigid 4x4 matrix.')
+    rotation = a[:3, :3]
+    if (not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-4, rtol=0)
+            or not np.isclose(np.linalg.det(rotation), 1, atol=1e-4, rtol=0)):
+        raise ScanError('transform_matrix rotation must be right-handed and orthonormal (no scale/shear).')
+    # Roundoff in exported poses is tolerated, but the returned matrix is rigid.
+    u, _, vt = np.linalg.svd(rotation)
+    rotation = (u @ vt @ np.diag([1., -1., -1.])).T
+    return np.column_stack([rotation, -rotation @ a[:3, 3]])
+
+
+def load_transforms(directory: Path) -> list[dict]:
+    """Validate local ARKit/nerfstudio perspective exports without importing torch/COLMAP.
+
+    World must already be +Y up (ARKit gravity); generic z-up nerfstudio exports
+    must be converted by their exporter first. No implicit world-axis guess.
+    """
+    directory = Path(directory).resolve()
+    path = directory/'transforms.json'
+    def unique_object(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ScanError(f'Duplicate transforms.json key: {key}')
+            result[key] = value
+        return result
+    def invalid_constant(value):
+        raise ScanError(f'Nonfinite JSON constant in transforms.json: {value}')
+    try:
+        if path.stat().st_size > 16*1024*1024:
+            raise ScanError('transforms.json exceeds the 16 MiB limit.')
+        data = json.loads(path.read_text(), object_pairs_hook=unique_object, parse_constant=invalid_constant)
+    except (OSError, ValueError) as e:
+        raise ScanError(f'Cannot read transforms.json: {e}') from e
+    if not isinstance(data, dict) or not isinstance(data.get('frames'), list) or len(data['frames']) < 30:
+        raise ScanError('transforms.json needs an object with at least 30 posed frames.')
+    model = data.get('camera_model', 'OPENCV')
+    if not isinstance(model,str) or model not in {'PINHOLE', 'OPENCV'}:
+        raise ScanError('Only perspective PINHOLE/OPENCV transforms are supported; export rectified images for fisheye.')
+    fields = ['w', 'h', 'fl_x', 'fl_y', 'cx', 'cy']
+    distortion = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4']
+    frames, seen = [], set()
+    for i, frame in enumerate(data['frames']):
+        if not isinstance(frame, dict):
+            raise ScanError(f'Frame {i} must be an object.')
+        if 'camera_model' in frame or any(k in frame for k in ['mask_path', 'depth_file_path']):
+            raise ScanError('Per-frame camera models, masks and depth are not supported by this RGB import.')
+    for key in fields + distortion:
+        per_frame = [key in f for f in data['frames']]
+        if any(per_frame) and not all(per_frame):
+            raise ScanError(f'Per-frame {key} must be supplied for every frame.')
+    for i, frame in enumerate(data['frames']):
+        name = frame.get('file_path')
+        if (not isinstance(name, str) or not name or any(c.isspace() for c in name)
+                or '\\' in name or Path(name).is_absolute() or '..' in Path(name).parts):
+            raise ScanError(f'Frame {i} file_path must be a local relative image path without whitespace or traversal.')
+        source = (directory/name).resolve()
+        if not source.is_relative_to(directory) or not source.is_file():
+            raise ScanError(f'Frame {i} image is missing or escapes the capture directory.')
+        if source in seen:
+            raise ScanError(f'Frame {i} repeats an image.')
+        seen.add(source)
+        values = {}
+        for key in fields + distortion:
+            value = frame.get(key, data.get(key, 0 if key in distortion else None))
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ScanError(f'Frame {i}: {key} must be a finite number.')
+            values[key] = value
+        w, h = values['w'], values['h']
+        if (w != int(w) or h != int(h) or min(w, h) < 2 or max(w, h) > 32768
+                or min(values['fl_x'], values['fl_y']) <= 0
+                or not 0 <= values['cx'] <= w or not 0 <= values['cy'] <= h):
+            raise ScanError(f'Frame {i} has invalid image dimensions/focal length/principal point.')
+        if values['k3'] or values['k4'] or (model == 'PINHOLE' and any(values[k] for k in distortion)):
+            raise ScanError('Unsupported distortion: use OPENCV k1/k2/p1/p2 or export rectified PINHOLE images.')
+        try:
+            with Image.open(source) as image:
+                if image.size != (w, h) or image.getexif().get(274, 1) != 1:
+                    raise ScanError(f'Frame {i} image dimensions/orientation disagree with intrinsics; export upright calibrated images.')
+                # getexif() can load/close PNG streams; load() also validates
+                # decoding and remains valid after that metadata read.
+                image.load()
+        except (OSError, ValueError) as e:
+            raise ScanError(f'Cannot decode transforms image {i}: {e}') from e
+        frames.append({'source':source, 'intrinsics':values,
+                       'camFromWorld':opengl_to_colmap(frame.get('transform_matrix'))})
+    return frames
 
 
 def _unit(v):
@@ -117,24 +261,28 @@ def bake_transform(positions, quaternions, R, center):
     return (positions-center)@np.asarray(R).T, _unit(quaternion_multiply(matrix_to_quaternion(R),q))
 
 
-def estimate_scene_alignment(camera_centers, world_to_camera_rotations, sparse_points):
+def estimate_scene_alignment(camera_centers, world_to_camera_rotations, sparse_points, preserve_world_up=False):
     """Estimate rigid y-up alignment and an inward real-camera starting view."""
     centers = np.asarray(camera_centers,dtype=float)
     rotations = np.asarray(world_to_camera_rotations,dtype=float)
     sparse = np.asarray(sparse_points,dtype=float)
     if centers.ndim != 2 or centers.shape[1:] != (3,) or not len(centers) or rotations.shape != (len(centers),3,3):
         raise ScanError('Missing or malformed registered cameras for scene alignment.')
+    if preserve_world_up and sparse.size == 0:
+        # Pose-only exports have no measured structure. Recenter on the camera
+        # trajectory; never fabricate sparse points or infer a floor from it.
+        sparse = centers.copy()
     if sparse.ndim != 2 or sparse.shape[1:] != (3,) or not len(sparse) or not np.isfinite(sparse).all():
         raise ScanError('No finite sparse points to center the scene.')
     if not np.isfinite(centers).all():
         raise ScanError('Nonfinite camera centers.')
     ups = _unit(-rotations[:,1,:])
-    rough = _unit(np.median(ups,axis=0))
+    rough = np.array([0.,1.,0.]) if preserve_world_up else _unit(np.median(ups,axis=0))
     keep = ups@rough > .5
-    if keep.mean() < .6:
+    if not preserve_world_up and keep.mean() < .6:
         raise ScanError('Camera up directions disagree. Keep the phone landscape/upright; avoid changing orientation during capture.')
-    up = _unit(ups[keep].mean(axis=0))
-    R = rotation_between(up,[0,1,0])
+    up = rough if preserve_world_up else _unit(ups[keep].mean(axis=0))
+    R = np.eye(3) if preserve_world_up else rotation_between(up,[0,1,0])
     center = np.median(sparse,axis=0)
     aligned_centers = (centers-center)@R.T
     forwards = rotations[:,2,:]@R.T

@@ -1,3 +1,5 @@
+import { validateSuggestionLayer, type ScanSuggestionLayer, type SuggestionCatalog } from './scan-suggestions';
+
 /** Local-only scan contracts. These never enter the workflow state or its storage key. */
 export type Point3 = [number, number, number];
 export const MAX_SCAN_BYTES = 300 * 1024 * 1024;
@@ -20,7 +22,14 @@ export interface ScanMetadata {
 }
 export interface ScanPin { id: string; concernId: string; position: Point3; createdAt: string }
 export interface ScanAsset { name: string; blob: Blob; metadata: ScanMetadata | null; kind: 'imported' | 'generated' }
-export interface ScanDocument { version: 1; asset: ScanAsset; flipUpright: boolean; pins: ScanPin[] }
+interface ScanDocumentBase { asset: ScanAsset; flipUpright: boolean; pins: ScanPin[] }
+/** The legacy shape remains accepted at the old API boundary; the app always uses v2. */
+export interface ScanDocumentV1 extends ScanDocumentBase { version: 1 }
+export interface ScanDocumentV2 extends ScanDocumentBase { version: 2; suggestions: ScanSuggestionLayer | null }
+export type ScanDocument = ScanDocumentV1 | ScanDocumentV2;
+export function upgradeScanDocument(document: ScanDocument): ScanDocumentV2 {
+  return document.version === 1 ? { ...document, version: 2, suggestions: null } : document;
+}
 export type ScanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
 
@@ -124,13 +133,24 @@ export function validateScanAsset(value: unknown): ScanResult<ScanAsset> {
   return { ok: true, value: { name: value.name, blob: value.blob, metadata, kind: value.kind } };
 }
 
-export function validateScanDocument(value: unknown, concernIds: ReadonlySet<string>): ScanResult<{ document: ScanDocument; dropped: number }> {
-  if (!record(value) || !shape(value, ['version', 'asset', 'flipUpright', 'pins']) || value.version !== 1 || typeof value.flipUpright !== 'boolean') return fail('Saved scan has an unsupported schema; import it again or reset the demo.');
+export function validateScanDocument(value: unknown, concernIds: ReadonlySet<string>, catalog?: SuggestionCatalog): ScanResult<{ document: ScanDocument; dropped: number }> {
+  if (!record(value) || (value.version !== 1 && value.version !== 2)
+    || !shape(value, value.version === 1 ? ['version', 'asset', 'flipUpright', 'pins'] : ['version', 'asset', 'flipUpright', 'pins', 'suggestions'])
+    || typeof value.flipUpright !== 'boolean') return fail('Saved scan has an unsupported schema; import it again or reset the demo.');
   const asset = validateScanAsset(value.asset);
   if (!asset.ok) return asset;
   const pins = validateScanPins(value.pins, concernIds);
   if (!pins.ok) return pins;
-  return { ok: true, value: { document: { version: 1, asset: asset.value, flipUpright: value.flipUpright, pins: pins.value.pins }, dropped: pins.value.dropped } };
+  const legacy: ScanDocumentV1 = { version: 1, asset: asset.value, flipUpright: value.flipUpright, pins: pins.value.pins };
+  if (value.version === 1) return { ok: true, value: { document: catalog ? upgradeScanDocument(legacy) : legacy, dropped: pins.value.dropped } };
+  let suggestions: ScanSuggestionLayer | null = null;
+  if (value.suggestions !== null) {
+    if (!catalog) return fail('Saved model suggestions need the current checklist catalog to be validated.');
+    const result = validateSuggestionLayer(value.suggestions, catalog, asset.value);
+    if (!result.ok) return result;
+    suggestions = result.value;
+  }
+  return { ok: true, value: { document: { ...legacy, version: 2, suggestions }, dropped: pins.value.dropped } };
 }
 
 /** Validate selection before reading the large binary. Unknown JSON is reconstructed above. */

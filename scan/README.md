@@ -1,6 +1,6 @@
 # Local room scans
 
-This command turns a local phone video or an ordered image directory into a Gaussian-splat scene for FixList. CPU pycolmap estimates new poses; Brush trains locally on Metal. The scan is an approximate visual record with arbitrary units. It does not measure distances, detect hazards, assess completeness, or certify a room as safe.
+This command turns a local phone video or an ordered image directory into a Gaussian-splat scene for FixList. CPU pycolmap estimates new poses, or a validated ARKit/nerfstudio export supplies them; Brush trains locally on Metal. The scan is an approximate visual record with arbitrary units. It does not measure distances, detect hazards, assess completeness, or certify a room as safe.
 
 Run from the FixList repository root:
 
@@ -8,7 +8,7 @@ Run from the FixList repository root:
 scan/venv-python scan/reconstruct.py /path/to/room.mp4 --name living-room
 ```
 
-The default quick preset uses at most 150 selected frames, a 1600-pixel extraction limit, 1200-pixel training limit, 7000 steps, SH degree 0, and a 1,500,000-Gaussian cap. The 150-frame default keeps exhaustive recovery bounded on this CPU setup. You can request 200–250 frames for a longer well-overlapped video, but exhaustive recovery is then disabled. To set the frame budget or training length explicitly:
+The default preset uses `--features auto`: tuned CPU SIFT first, then ALIKED keypoints + LightGlue matches if SIFT misses the 30-frame/60% gate. Video budgets adapt to duration: `min(300, max(150, ceil(seconds × 2.5)))`, so a 100-second walkthrough gets 250 windows; photos and pose imports default to 150. Blur filtering may select fewer frames. Exhaustive SIFT recovery remains bounded to **at most 150 selected frames**. Other defaults are a 1600-pixel image limit, 1200-pixel training limit, 7000 steps, SH degree 0, and a 1,500,000-Gaussian cap. To override the frame budget, mode or training length:
 
 ```sh
 scan/venv-python scan/reconstruct.py /path/to/room.mp4 \
@@ -17,15 +17,17 @@ scan/venv-python scan/reconstruct.py /path/to/ordered-photos \
   --name living-room-photos --max-frames 150
 ```
 
+`--features sift` forces SIFT; `--features aliked` bypasses SIFT. `--sift-max-features` (default 8192) controls the SIFT keypoint budget; the old numeric `--features 4096` syntax is replaced by these two flags. Existing pre-mode runs can still resume training with their original default options and retain their original configuration record.
+
 Photo directories are read nonrecursively in natural filename order (`frame2` before `frame10`). Use one fixed camera/lens and consistent image dimensions. JPEG, PNG, TIFF, WebP and BMP are supported; convert HEIC to JPEG locally first. Video autorotation and image EXIF orientation are applied before pose estimation. Input URLs are not accepted.
 
 ## Prerequisites and exact setup
 
-Parent-supplied hardware: Apple M5 Pro, 48 GB unified memory. macOS 26.5.2 was verified; this worker's CPU-identification `sysctl` query was denied. No CUDA and no COLMAP CLI. Pose estimation is CPU-only. Brush needs Metal access in the process running it. Internet is needed only to acquire tools/test data initially; reconstruction has no download step.
+Parent-supplied hardware: Apple M5 Pro, 48 GB unified memory. macOS 26.5.2 was verified; this worker's CPU-identification `sysctl` query was denied. No CUDA and no COLMAP CLI. COLMAP pose estimation is CPU-only. The learned worker selects MPS when available, otherwise CPU (observed here). Brush needs Metal access in the process running it. Internet is needed only to acquire tools/test data initially; reconstruction has no download step.
 
 The parent prepared the following tools before this worker started. No installation was performed by this worker:
 
-- `~/.local/share/fixlist-scan/venv/bin/python`: Python 3.13.13, pycolmap 4.2.1, NumPy 2.5.4, Pillow 13.0.0 (versions inspected).
+- `~/.local/share/fixlist-scan/venv/bin/python`: Python 3.13.13, pycolmap 4.2.1, NumPy 2.5.4, Pillow 13.0.0; learned packages torch 2.14.1, torchvision 0.29.1, kornia 0.8.3, LightGlue package metadata 0.0 (versions inspected).
 - `~/.local/share/fixlist-scan/brush/brush-app-aarch64-apple-darwin/brush_app`: `brush-cli 0.3.0` (inspected with `--version`). Parent reports the release archive SHA-256 was verified and quarantine removed.
 - `~/.homebrew/bin/ffmpeg` and `ffprobe`: ffmpeg 9.0.1. Existing Homebrew installation; no new brew install here.
 
@@ -37,6 +39,19 @@ uv venv --python 3.13 "$HOME/.local/share/fixlist-scan/venv"
 uv pip install --python "$HOME/.local/share/fixlist-scan/venv/bin/python" \
   -r scan/requirements.txt
 ```
+
+ALIKED/LightGlue were already installed by the parent into the **same venv**. For a fresh authorized setup, use the upstream [LightGlue package](https://github.com/cvg/LightGlue):
+
+```sh
+uv pip install --python "$HOME/.local/share/fixlist-scan/venv/bin/python" \
+  torch torchvision kornia "git+https://github.com/cvg/LightGlue.git"
+# One-time weight acquisition, in a torch-only process with network access:
+scan/venv-python -c 'import sys; sys.modules["pycolmap"]=None; from lightglue import ALIKED, LightGlue; ALIKED(max_num_keypoints=2048); LightGlue(features="aliked")'
+```
+
+Weights must already be cached under `~/.cache/torch/hub/checkpoints` (`aliked-n16.pth`, `aliked_lightglue_v0-1_arxiv.pth`), or the corresponding `TORCH_HOME` cache. Reconstruction explicitly checks for them and fails rather than downloading. No install or weight acquisition was performed by this worker. These setup lines are acquisition instructions, not a fully pinned recreation of torch/LightGlue.
+
+**OpenMP constraint:** importing pycolmap and torch together crashes this environment with duplicate `libomp.dylib` runtimes. `learned_match.py` is a separate Python process that never loads pycolmap. LightGlue eagerly imports an optional SIFT adapter, so that child also marks the optional `pycolmap` module unavailable before importing LightGlue. The main process imports only numeric NPZ arrays into the COLMAP database, then performs geometric verification and mapping. Do not use `KMP_DUPLICATE_LIB_OK` to hide this failure. MPS uses PyTorch's CPU fallback for unsupported ALIKED operations; MPS behavior was not exercised in this sandbox.
 
 Brush is the prebuilt Apple Silicon release, not a source build. These are the repeatable acquisition commands for a fresh setup with network access; the worker did not re-run them:
 
@@ -51,21 +66,21 @@ xattr -dr com.apple.quarantine brush-app-aarch64-apple-darwin
 ./brush-app-aarch64-apple-darwin/brush_app --version
 ```
 
-Return to the repository root before the run commands. If your paths differ, set `FIXLIST_SCAN_PYTHON`, `FIXLIST_FFMPEG`, `FIXLIST_FFPROBE`, and/or `FIXLIST_BRUSH` to the existing executable paths. The launcher does not activate or modify shell environments and does not install anything. No additional Python dependencies are needed for tests or PLY conversion.
+Return to the repository root before the run commands. If your paths differ, set `FIXLIST_SCAN_PYTHON`, `FIXLIST_FFMPEG`, `FIXLIST_FFPROBE`, and/or `FIXLIST_BRUSH` to the existing executable paths. The launcher does not activate or modify shell environments and does not install anything. Learned runtime validation also needs the parent-prepared torch/LightGlue packages below; PLY conversion needs only NumPy/Pillow.
 
 ## Capture guidance for families
 
 Capture 60–120 seconds in landscape. Walk slowly around the room's edge while aiming across the room; do a second overlapping loop at a different height. Keep nearby and far objects in view so the camera observes parallax. Spinning in place gives no depth. Keep the phone upright with a fixed lens/zoom; lock exposure where available. Use even lighting, move slowly to avoid blur, and keep consecutive views overlapping.
 
-Avoid mirrors, bright windows, changing light, moving people/pets, blank walls and reflective surfaces. Keep private items, documents, screens, faces, addresses and identifying photos out of frame. Only scan with household permission. Review the source video and resulting scene before sharing either. Unseen/occluded areas remain unknown even if the reconstruction looks complete.
+For white walls, keep furniture, door frames and floor edges in view; do not film blank walls straight on. Aim obliquely across textured objects and maintain overlap through doorways. Learned matching cannot invent texture, parallax or unseen surfaces. An ARKit pose export can avoid visual pose-estimation failure, but does not prove scene quality. Avoid mirrors, bright windows, changing light, moving people/pets and reflective surfaces. Keep private items, documents, screens, faces, addresses and identifying photos out of frame. Only scan with household permission. Review the source video and resulting scene before sharing either. Unseen/occluded areas remain unknown even if the reconstruction looks complete.
 
 ## Pipeline and failure handling
 
 1. ffmpeg samples at most three candidates per desired frame (limited by the video's native frame rate), autorotates, and scales the long side to at most 1600. Images are sampled over the entire ordered sequence. Pillow/NumPy compute a Laplacian-variance score at a consistent thumbnail size. Each temporal window contributes its sharpest candidate, with stable ties; windows below `max(2, 20% of median sharpness)` are dropped. Scores/selection remain in `work/frame-selection.json`.
-2. pycolmap 4.2.1 extracts CPU SIFT with a shared `SIMPLE_RADIAL` camera (requested feature budget 4096), then performs sequential matching with overlap 10 and quadratic overlap. Loop detection is explicitly disabled because it requires a downloaded vocabulary tree. Incremental mapping uses a fixed seed; the largest reconstruction wins. If it misses the registration gate and at most 150 images were selected, exhaustive matching and mapping are tried once. Larger runs stop; no unbounded quadratic fallback occurs.
+2. pycolmap 4.2.1 extracts CPU SIFT with a shared `SIMPLE_RADIAL` camera, up to 8192 features, peak threshold 0.003, affine-shape estimation, and domain-size pooling with three scales to bound CPU cost. Sequential matching uses overlap 12 plus quadratic overlap, without a downloaded vocabulary. For at most 150 selected images, exhaustive matching/remapping runs once if sequential registration is below a 95% coverage target (or below 30 images). The required acceptance gate remains 30 images and 60%; this extra bounded attempt preserves short-room coverage when SIFT passes the gate with an incomplete component. `auto` then falls back to an isolated ALIKED + LightGlue process if SIFT still fails. The learned budget is at most 1024 pixels on the long side and 2048 keypoints; four CPU threads maximum. Pairs combine 12 sequential neighbours with sparse loop keyframes (stride at least 12, at most about 32 keyframes), avoiding exhaustive learned matching. All matches undergo COLMAP geometric verification before mapping. Both attempts and their registered frames/errors/point counts are retained in `metrics.featureAttempts`; the largest model wins, with SIFT retaining a tie. ALIKED exchange arrays and a `learned.log` remain local.
 3. The run requires **at least 30 registered frames and at least 60% registration**, and logs mean sparse-point reprojection error in pixels. A failure says, for example, `Only 23/180 frames registered — need at least 30 and 60%` and explains overlap, lighting, translation and texture. Recapture with more overlap/parallax; for a long sequence, try a new run with `--max-frames 150` to enable bounded exhaustive recovery. Registration passing is not proof of accurate or complete geometry.
-4. pycolmap undistorts to a clean COLMAP `images/` + `sparse/` dataset with `PINHOLE`/`SIMPLE_PINHOLE` cameras. Brush accepts COLMAP and nerfstudio, but does not undistort this pipeline's radial observations itself. The training input contains only this run's newly estimated model and undistorted images, not the dataset's supplied poses or old training exports. Brush runs headlessly without `--with-viewer`; `--export-every <steps> --export-path <private path> --export-name final.ply` selects the final PLY. SH degree 0 avoids training higher-order color coefficients that the `.splat` output discards; visual equivalence to degree 3 has not been established.
-5. Postprocessing estimates up from the registered cameras' negative world-space camera Y axes, rejects strongly disagreeing directions, aligns up to +Y with a proper rotation, recenters on the coordinatewise median sparse point, and applies that same transform to positions and Gaussian rotations. No scale normalization is applied. Near-transparent splats (sigmoid opacity below 0.02 by default) are removed; the remaining splats are sorted by scale-volume × opacity and capped at 1.5M. `--min-opacity` and `--max-splats` are configurable.
+4. pycolmap undistorts to a clean COLMAP `images/` + `sparse/` dataset with `PINHOLE`/`SIMPLE_PINHOLE` cameras. Brush accepts COLMAP and nerfstudio, but does not undistort this pipeline's radial observations itself. The training input contains only this run's chosen model and matching undistorted images. The explicit pose-import path instead preserves supplied poses; it never silently reuses old training exports. Brush runs headlessly without `--with-viewer`; `--export-every <steps> --export-path <private path> --export-name final.ply` selects the final PLY. SH degree 0 avoids training higher-order color coefficients that the `.splat` output discards; visual equivalence to degree 3 has not been established.
+5. Alignment (before training) estimates up from the registered cameras' negative world-space camera Y axes, rejects strongly disagreeing directions, aligns up to +Y with a proper rotation, recenters on the coordinatewise median sparse point, and applies that same transform to positions and Gaussian rotations. For pose imports, the supplied +Y world is preserved with identity rotation and recentering on the median camera trajectory; no floor or sparse structure is inferred. No scale normalization is applied. Near-transparent splats (sigmoid opacity below 0.02 by default) are removed; the remaining splats are sorted by scale-volume × opacity and capped at 1.5M. `--min-opacity` and `--max-splats` are configurable.
 6. Exact output bytes are decoded for numerical checks. `work/alignment.json` records camera centers/up axes, rotation determinant, robust/full bounds, positive scales, quaternion norms and SHA-256. A 5th–95th-percentile camera-height band / horizontal-span ratio below 0.5 is a useful single-level capture sanity check; other captures warn for human inspection. This heuristic does not establish a measured floor plane.
 
 Other errors:
@@ -77,7 +92,7 @@ Other errors:
 - Nonfinite positions/scales or malformed PLY: the run fails; inspect training before lowering pruning thresholds.
 - Existing output name: choose a new name. Runs never delete or silently overwrite previous media/work.
 
-For a diagnostic run through poses:
+For a diagnostic run through poses **and the undistorted training dataset**, without attempting training:
 
 ```sh
 scan/venv-python scan/reconstruct.py /path/to/room.mp4 \
@@ -89,6 +104,24 @@ scan/venv-python scan/reconstruct.py /path/to/room.mp4 \
 
 `--stop-after frames` is also available. Resume reuses completed stages with identical input/options. It refuses interrupted/failed stages and preserves their artifacts: choose a new output name for a restart. The explicit exception is `--resume --retry-training`: this archives a failed training directory as `work/training-attempt-N`, retains its stage record in `previousTrainingAttempts` and tool log, and retries training/postprocessing while reusing completed poses and undistortion. It never overwrites an existing final scene. Use this only after addressing the reported environment problem in an authorized runtime; it does not grant access. Do not edit source media between a partial run and resume.
 
+## ARKit / nerfstudio pose import
+
+```sh
+scan/venv-python scan/reconstruct.py /path/to/arkit-export \
+  --name arkit-room --stop-after poses
+# Same options, then train in an authorized Metal-capable session:
+scan/venv-python scan/reconstruct.py /path/to/arkit-export \
+  --name arkit-room --resume
+```
+
+The directory must contain `transforms.json` plus at least 30 images, with [nerfstudio-format](https://docs.nerf.studio/quickstart/data_conventions.html) `frames[].file_path` and rigid 4×4 OpenGL camera-to-world `transform_matrix` values. Camera axes are +X right, +Y up, −Z forward. **World must already be +Y up from ARKit gravity**. Nerfstudio's usual world convention is +Z up; a generic z-up export needs explicit conversion before this command. The importer never guesses gravity or applies a world-axis rotation.
+
+Provide finite `w`, `h`, `fl_x`, `fl_y`, `cx`, `cy` globally or for every frame of an overridden field. The default camera model is `OPENCV`; `PINHOLE` is accepted. OPENCV supports `k1/k2/p1/p2` and is undistorted by pycolmap; fisheye and nonzero `k3/k4` require rectified export. Image dimensions and orientation must match calibration, with EXIF orientation 1. Masks, depth and per-frame camera-model switches are rejected rather than silently dropped. Duplicate JSON keys, missing/repeated images, nonfinite/nonrigid/reflected matrices, invalid intrinsics, absolute paths, whitespace paths, traversal and escaping symlinks fail validation. Files must be inside the export directory; validation does not upload anything. The 150-frame default/`--max-frames` override subsamples the posed sequence evenly, with intrinsics scaled to the prepared image size.
+
+This path skips feature extraction, matching and COLMAP pose estimation. It writes a minimal **real COLMAP-format** model at `work/sparse`, including camera intrinsics and registered poses but **zero triangulated points/tracks**. The same undistortion step writes `work/dataset`; `alignment.json`, Brush invocation, postprocessing and `scene.*` schema are shared. Reprojection error is `null` and explicitly unmeasured. `scene.json` retains the shared schema and pipeline identifier; `run.json` records the actual `featureMode: imported` path and the absence of SfM/tracks. `sparseCenterOriginal` is the median camera center when no sparse points exist. Brush 0.3.0's [COLMAP loader](https://github.com/ArthurBrussee/brush/blob/v0.3.0/crates/brush-dataset/src/formats/colmap.rs) accepts an empty point cloud and its [training code](https://github.com/ArthurBrussee/brush/blob/v0.3.0/crates/brush-process/src/train_stream.rs) uses random initialization around camera bounds; that training behavior remains unvalidated on real ARKit capture here. Downstream tools requiring triangulated sparse evidence must handle the empty point cloud as unknown, not fabricated geometry.
+
+The import was exercised with **146 synthetic transforms generated from the existing playroom PINHOLE model**, after applying that model's existing y-up alignment and converting camera axes. No real ARKit capture was available. Artifacts: `private-captures/test-datasets/arkit-synthetic-playroom/transforms.json` and `private-captures/scans/playroom-import-v2/`. All 146 poses survived conversion; alignment rotation is exactly identity; import took 8.799 s, alignment 0.005 s and PINHOLE dataset preparation 4.198 s in the concurrent CPU session. No training or final scene from this import is claimed. Unit tests also execute import/undistortion against generated calibrated images and compare camera centers, scaled intrinsics and identity alignment.
+
 ## Output contract
 
 All output is below `private-captures/scans/<name>/`:
@@ -96,7 +129,10 @@ All output is below `private-captures/scans/<name>/`:
 - `scene.splat`: browser interchange, exactly 32 bytes per Gaussian.
 - `scene.json`: versioned metadata; no source photographs or original media paths in this file.
 - `run.json`, `run.log`: stage wall times, settings, registration, reprojection error, counts, byte sizes and diagnostics. Source paths occur here; these are private too.
-- `ffmpeg.log`, `colmap.log`, `brush.log`: tool output.
+- `ffmpeg.log`, `colmap.log`, `learned.log`, `brush.log`: tool output when the respective path runs.
+- `work/sparse`: the chosen original COLMAP-format model (including imported poses).
+- `work/dataset/{images,sparse}`: undistorted PINHOLE training images and the corresponding model.
+- `work/alignment.json`: `rotationWorldToAligned` (3×3) and `sparseCenterOriginal`; aligned points satisfy `R · (x − center)`. Pose import uses identity R. Scene outputs use exactly this transform.
 - `work/`: candidates, selected images, COLMAP databases/models, undistorted training dataset, original `training/final.ply`, cache, frame scores and alignment diagnostics. After a successful run, `work/` can be removed manually if you no longer need reproducibility or a retraining source; the pipeline never removes it automatically.
 
 The `.splat` layout follows the [antimatter15 implementation](https://github.com/antimatter15/splat/blob/main/main.js):
@@ -146,6 +182,8 @@ scan/venv-python -m unittest discover -s scan/tests -v
 
 Tests cover temporal coverage/sharpness/blur rejection, independent byte-offset checks and round-trip decode, opacity pruning/count cap/importance order, little-endian and ASCII PLY properties, quaternion composition and anisotropic covariance, antiparallel up alignment, schema validation, registration boundaries, local input failures and preservation on resume/failure. Actual reconstruction evidence follows below; unit tests do not stand in for training or viewer inspection.
 
+The expanded suite also covers adaptive budgets, bounded temporal/loop pairing, the 95% short-room recovery target, both auto-fallback branches and failure advice, actual pycolmap database import/geometric verification of a synthetic nonplanar pair, an isolated LightGlue import regression, strict transforms validation, and actual calibrated pose import/PINHOLE undistortion. Full discovery after integration ran **68 tests: 66 passed, two skipped** because this sandbox denies loopback socket binding; those two belong to the separate suggestion HTTP integration and need execution on the authorized local host. Log: `private-captures/scan-tests-v3.log`. This worker's scan reconstruction/import tests all executed and passed.
+
 ### Measured public-data run (October 17, 2026 EDT)
 
 **End to end, the video path produced a browser-ready scene.** The implementation worker's sandbox had no Metal adapter (`no_adapter_backends: Backends(METAL)`), so training was completed afterwards from a normal terminal session on the same Mac with `--resume --retry-training`, reusing the worker's CPU stages. Brush trained 7000 steps (max side 1200, SH degree 0) in **589.4 s**; post-processing pruned **200,425 → 192,508** Gaussians in 0.5 s and wrote a **6,160,256-byte** `scene.splat` plus `scene.json`. Imported into the FixList viewer, the scene rendered upright from the metadata camera, and click-placed pins landed on the clicked surface. Total for this 45-second clip: about **17 minutes** (≈430 s CPU stages + 589 s training).
@@ -177,7 +215,7 @@ The video attempt selected **148/225** candidates, dropped two blurry windows, r
 | Post-processing (prune, align, encode .splat) | 0.5 s |
 | Total | ≈1,020 s |
 
-These measurements describe this Apple M5 Pro/48 GB run, not a latency guarantee. The independent photo run began late in the video's recovery phase, so some CPU work overlapped. The initial attempt at a 200-frame budget selected 195, registered only 111/195 (56.92%) and correctly failed at the 60% gate (0.404241 px mean reprojection error in its largest model). This motivated the bounded 150-frame default; the registration requirement was unchanged. The earliest failed attempt also exposed and fixed an ffmpeg boolean-flag syntax error before the reported runs.
+These measurements describe this Apple M5 Pro/48 GB run, not a latency guarantee. The independent photo run began late in the video's recovery phase, so some CPU work overlapped. The initial attempt at a 200-frame budget selected 195, registered only 111/195 (56.92%) and correctly failed at the 60% gate (0.404241 px mean reprojection error in its largest model). This motivated the earlier 150-frame preset; the new adaptive preset and learned recovery are evaluated separately below. The registration requirement is unchanged. The earliest failed attempt also exposed and fixed an ffmpeg boolean-flag syntax error before the reported runs.
 
 Because training was blocked, the real-pose alignment check was executed separately afterward and marked `alignmentCheckAfterTrainingBlock` in the run log. Future full runs check alignment before training. It preserved scale, used a median sparse center and produced rotation determinant **1.000000**, camera-up positive fraction **91.10%**, and mean aligned camera-up Y **0.538967**. The 5th–95th-percentile camera-height band is **[0.575928, 5.054310]** arbitrary units, versus horizontal spans **[8.912474, 11.097420]**, giving ratio **0.314643**. This passes the documented <0.5 heuristic, but the camera axes vary substantially; floor orientation and visual uprightness still need human review. After training, the baked scene was inspected in the FixList viewer and rendered upright.
 
@@ -190,7 +228,75 @@ scan/venv-python scan/reconstruct.py private-captures/test-datasets/db/playroom/
 
 The photo path selected **148/225** candidates, independently registered **146/148 (98.65%)**, and reconstructed **28,157 sparse points**, with mean reprojection error **0.572589 px**. It initially registered 78/148 and also exercised exhaustive recovery. Its measured stage times were frame preparation **15.180 s**, CPU SIFT **62.136 s**, sequential matching **65.640 s**, mapping/recovery **431.541 s**, and alignment **0.215 s**: **574.712 s** total through poses/alignment. These timings include concurrent CPU work and are not directly comparable to an isolated run. The initial process stopped after poses; a subsequent `--resume --stop-after poses` reused all completed CPU stages and ran the newly added pre-training alignment check. It reported determinant 1.0 and camera-height ratio **0.316**. This path completed its requested pose-only validation and did not attempt training. Its `run.json` remains `partial` because no scene was requested. It uses an independent database and mapping, not the video's poses.
 
-The final deterministic suite passed **21 tests**. A synthetic-PLY integration test also exercised the complete converter to an exact 32-byte scene plus matching metadata in an automatically cleaned temporary test directory. It does not count as a trained benchmark scene. The shell launcher passed `sh -n scan/venv-python`.
+The original deterministic suite passed **21 tests** before this extension; updated tests and pose comparisons are recorded below. A synthetic-PLY integration test also exercised the complete converter to an exact 32-byte scene plus matching metadata in an automatically cleaned temporary test directory. It does not count as a trained benchmark scene. The shell launcher passed `sh -n scan/venv-python`.
+
+### White-wall walkthrough and feature-mode validation (October 17, 2026 EDT)
+
+The parent supplied `private-captures/test-datasets/viennese-walk.mp4`: a 100-second continuous 1080p photoreal apartment walkthrough with many white walls. Parent-supplied provenance: UE4Arch “Viennese apartment,” Wikimedia Commons, CC BY-SA 4.0, segment 58–158 seconds. This is rendered public test imagery, not a real family capture or an ARKit recording.
+
+```sh
+scan/venv-python scan/reconstruct.py private-captures/test-datasets/viennese-walk.mp4 \
+  --name viennese-v2 --stop-after poses
+scan/venv-python scan/reconstruct.py private-captures/test-datasets/playroom.mp4 \
+  --name playroom-sift-v3 --stop-after poses
+scan/venv-python scan/reconstruct.py private-captures/test-datasets/playroom.mp4 \
+  --name playroom-aliked-v2 --features aliked --max-frames 90 --stop-after poses
+```
+
+The parent ran the original `viennese-baseline` before these edits. The improved walkthrough selected 247/750 candidates under the adaptive 250-frame budget, versus baseline 148/450 under its fixed 150-frame budget. The improved mode was **SIFT**; no exhaustive or learned fallback was needed on that >150-frame sequence.
+
+| Walkthrough run | Registered / selected | Registration | Sparse points | Mean reprojection error | Winning mode |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `viennese-baseline` | 134 / 148 | 90.54% | 9,737 | 0.632225 px | original SIFT + exhaustive recovery |
+| `viennese-v2` | 225 / 247 | 91.09% | 27,532 | 0.743161 px | tuned SIFT, sequential |
+
+| Stage | Baseline | Improved |
+| --- | ---: | ---: |
+| Frame preparation | 28.509 s | 33.006 s |
+| SIFT extraction | 54.974 s | 211.047 s |
+| Sequential matching | 5.011 s | 54.422 s |
+| Mapping (includes recovery where used) | 66.209 s | 101.253 s |
+| Alignment | 0.028 s | 0.118 s |
+| PINHOLE dataset preparation | excluded from original pose-only run | 3.722 s |
+| Through poses/alignment | 154.731 s | 399.846 s |
+| Through prepared training dataset | — | 403.568 s |
+
+The improved run supplies 91 more registered views and more sparse points, at higher CPU cost and a higher mean residual. Sampling and features both changed, so this is a pipeline comparison, not an isolated feature ablation. More points/views and a passing registration gate do not establish physical accuracy, complete wall surfaces or reliable dimensions. Several CPU runs and parent work overlapped; these are observed stage times, not isolated benchmarks or latency claims. The chosen reconstruction and undistorted PINHOLE dataset are ready for the parent's separate Metal training/visual review; this worker did not train them.
+
+A first tuned playroom trial (`playroom-sift-v2`) exposed a coverage regression: 106/148 (71.62%) registered, 14,522 points, 0.473591 px. It passed the 60% gate, so the original recovery condition stopped early, whereas the old 146/148 run had needed exhaustive recovery. This motivated the bounded 95% coverage target for <=150-frame exhaustive recovery, without changing the acceptance gate or enabling exhaustive work on walkthroughs. That trial is preserved; it is not presented as the no-regression result.
+
+The revised playroom run `playroom-sift-v3` recovered **145/148 frames (97.97%)**, **41,747 points**, and **0.711821 px** mean reprojection error. Its sequential component had 104/148; the bounded exhaustive attempt took 571.319 s within mapping. Compared with the original 146/148, 26,128 points and 0.597626 px, this is one fewer registered frame, more points and a higher residual. **The strict no-regression acceptance criterion is not met.** The parent must judge this coverage/residual/cost tradeoff before accepting the change; no equivalence margin was defined beforehand, so this report does not invent one after seeing the result.
+
+| Playroom stage | Original `playroom-video-150` | Revised `playroom-sift-v3` |
+| --- | ---: | ---: |
+| Frame preparation | 2.867 s | 8.842 s |
+| SIFT extraction | 20.364 s | 152.719 s |
+| Sequential matching | 28.974 s | 72.654 s |
+| Mapping including exhaustive recovery | 375.802 s | 593.851 s |
+| Alignment | 0.336 s | 0.127 s |
+| PINHOLE dataset preparation | 1.475 s | 2.712 s |
+| Total through prepared dataset | 429.818 s | 830.905 s |
+
+Final artifact verification read `work/sparse` and `work/dataset/sparse` for the walkthrough, revised playroom, learned playroom and synthetic pose import. All chosen registered images survived dataset preparation, camera centers matched exactly, every training image's dimensions matched its camera, all dataset cameras were PINHOLE, and every alignment was a proper rotation. Machine-readable stage/pose/contract evidence, test summary and unmet acceptance criterion: `private-captures/scan-v2-validation.json`. The separate suggestion loader handles the pose import's empty observed point arrays as unplaced/unknown; no sparse evidence was fabricated.
+
+The explicit learned run `playroom-aliked-v2` completed on CPU: **64/90 registered (71.11%)**, **8,923 sparse points**, mean reprojection error **0.871651 px**. The worker used a 1024-pixel long side, at most 2048 keypoints, and four CPU threads. It processed **1,030 pairs** (versus 4,005 exhaustive pairs), produced 69,910 raw matches across 1,029 nonempty pairs, then imported them through `Database.write_keypoints` / `write_matches`, ran `verify_matches`, and successfully mapped the resulting database. The chosen model, y-up alignment and PINHOLE training dataset were written; training was not attempted.
+
+| Learned stage | Measured wall time |
+| --- | ---: |
+| Frame preparation | 16.862 s |
+| Isolated extraction + matching subprocess | 1,284.243 s |
+| ALIKED extraction within that subprocess | 337.001 s |
+| LightGlue matching within that subprocess | 935.221 s |
+| Numeric array import into COLMAP database | 3.019 s |
+| Geometric verification | 21.697 s |
+| Incremental mapping | 28.576 s |
+| Alignment | 0.043 s |
+| PINHOLE dataset preparation | 0.615 s |
+| Total through prepared dataset | 1,355.055 s |
+
+The subprocess's extraction/matching rows are components of the subprocess time, not additional stages to add again. This learned test uses a different 90-frame sample and was concurrent with SIFT work; it demonstrates the isolated feature-to-database-to-model path, not superior coverage, accuracy or speed. The observed CPU cost is substantial (~22.6 minutes here), which is why `auto` keeps passing SIFT results. No MPS timing or real white-wall family study is claimed. Auto fallback selection and both-fail behavior were exercised in deterministic orchestration tests; the walkthrough itself selected SIFT and therefore did not trigger learned fallback.
+
+The first isolated learned attempt (`playroom-aliked-90`) failed at import because LightGlue eagerly imported its optional SIFT adapter and therefore pycolmap. Its `learned.log` preserves the OpenMP abort. The corrected child suppresses only that optional dependency, and a real subprocess regression test verifies pycolmap remains unloaded. No unsafe OpenMP override was used.
 
 ### Resuming after a training failure
 

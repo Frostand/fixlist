@@ -70,6 +70,13 @@ function DemoApp() {
   const [report, setReport] = useState(() => createPrintSnapshot(initial.state));
   const [reportIsCurrent, setReportIsCurrent] = useState(true);
   const activeSection = useActiveSection();
+  // Content renders after the browser's own hash jump, so honour deep links (e.g. #scan-heading) once mounted.
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (!id) return;
+    const frame = requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView());
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   function announce(text: string) {
     setFeedback((previous) => ({ id: previous.id + 1, text }));

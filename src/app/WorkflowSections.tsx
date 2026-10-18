@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import type { Concern, ConcernEvidence, DemoScenario } from '../domain/types';
 import {
   canConfirmConcern, computeCoverage, computePlan, getRequestViews, getRequiredChecklistItemIds,
@@ -7,6 +7,8 @@ import {
 import { actionTitle, LocalTime, requestStatusLabels, SourceNote } from './display';
 import { ActionMetadata, CoverageSummary, ProfileFacts, ProgramDetails, RequestWorkContext } from './CatalogViews';
 import { ScanPanel } from './ScanPanel';
+import { suggestionForChecklist, type ScanSuggestionLayer } from '../lib/scan-suggestions';
+import { ScanSuggestionChip } from './ScanSuggestions';
 
 interface WorkflowProps { scenario: DemoScenario; state: DemoState; onCommand: (command: DemoCommand) => void }
 
@@ -18,8 +20,11 @@ export function StepHead({ step, id, title, children }: { step: number; id: stri
   return <header className="step-head"><p className="step-index">Step {step} of 5</p><h2 id={id}>{title}</h2>{children}</header>;
 }
 
-export function ChecklistSection({ scenario, state, onCommand, scanResetVersion = 0, scanResetting = false }: WorkflowProps & { scanResetVersion?: number; scanResetting?: boolean }) {
+export function ChecklistSection({ scenario, state, onCommand, scanResetVersion = 0, scanResetting = false, scanSuggestions }: WorkflowProps & { scanResetVersion?: number; scanResetting?: boolean; scanSuggestions?: ScanSuggestionLayer | null }) {
   const coverage = computeCoverage(scenario, state);
+  const [loadedSuggestions, setLoadedSuggestions] = useState<{ version: number; layer: ScanSuggestionLayer | null }>({ version: scanResetVersion, layer: null });
+  const onSuggestionsChange = useCallback((layer: ScanSuggestionLayer | null) => setLoadedSuggestions({ version: scanResetVersion, layer }), [scanResetVersion]);
+  const suggestions = scanResetting ? null : scanSuggestions ?? (loadedSuggestions.version === scanResetVersion ? loadedSuggestions.layer : null);
   return (
     <section id="checklist" className="step" aria-labelledby="checklist-heading">
       <StepHead step={1} id="checklist-heading" title="Walk through each room">
@@ -28,7 +33,7 @@ export function ChecklistSection({ scenario, state, onCommand, scanResetVersion 
       </StepHead>
       <CoverageSummary scenario={scenario} state={state} />
       {scanResetting ? <p className="screen-only" role="status">Clearing the saved room scan and pins…</p>
-        : <ScanPanel key={scanResetVersion} scenario={scenario} state={state} restoreSaved={scanResetVersion === 0} />}
+        : <ScanPanel key={scanResetVersion} scenario={scenario} state={state} restoreSaved={scanResetVersion === 0} onSuggestionsChange={onSuggestionsChange} />}
       <div className="rooms">
         {scenario.rooms.map((room) => {
           const evidence = scenario.evidence.filter((item) => item.roomId === room.id);
@@ -40,7 +45,7 @@ export function ChecklistSection({ scenario, state, onCommand, scanResetVersion 
                 {tally ? <p className="room-tally" data-complete={tally.unknown === 0}>{tally.answered}/{tally.total} answered</p> : null}
               </header>
               <div className="room-items">
-                {evidence.map((item) => <ObservationItem key={item.id} scenario={scenario} state={state} onCommand={onCommand} evidence={item} />)}
+                {evidence.map((item) => <ObservationItem key={item.id} scenario={scenario} state={state} onCommand={onCommand} evidence={item} suggestions={suggestions} />)}
               </div>
             </article>
           );
@@ -50,11 +55,12 @@ export function ChecklistSection({ scenario, state, onCommand, scanResetVersion 
   );
 }
 
-function ObservationItem({ scenario, state, onCommand, evidence }: WorkflowProps & { evidence: ConcernEvidence }) {
+function ObservationItem({ scenario, state, onCommand, evidence, suggestions }: WorkflowProps & { evidence: ConcernEvidence; suggestions: ScanSuggestionLayer | null }) {
   const item = scenario.checklist.find((entry) => entry.id === evidence.checklistItemId);
   const concerns = scenario.concerns.filter((concern) => concern.evidenceIds[0] === evidence.id);
   const confirmed = concerns.some((concern) => state.confirmations[concern.id]?.humanConfirmed === true);
   const answer = item ? state.checklistAnswers[item.id] ?? 'unknown' : 'unknown';
+  const suggestion = item ? suggestionForChecklist(suggestions, item.id) : undefined;
   return (
     <div className="item" data-confirmed={confirmed}>
       <div className="item-evidence">
@@ -65,6 +71,7 @@ function ObservationItem({ scenario, state, onCommand, evidence }: WorkflowProps
       {item ? (
         <fieldset className="answer">
           <legend>{item.prompt}</legend>
+          {suggestion ? <ScanSuggestionChip item={suggestion} /> : null}
           <div className="segmented" data-answer={answer}>
             {answerOptions.map((option) => (
               <label className="segment" key={option.value}>

@@ -1,4 +1,5 @@
 import { validateScanDocument, type ScanDocument } from './scan-model';
+import type { SuggestionCatalog } from './scan-suggestions';
 
 export const SCAN_DATABASE = 'fixlist-scan';
 const STORE = 'local-scan';
@@ -11,26 +12,28 @@ export interface ScanStore {
 export type ScanStorageResult = { ok: boolean; message: string };
 
 /** The injectable store boundary keeps the validation/failure contract testable without a DOM. */
-export async function loadScan(store: ScanStore, concernIds: ReadonlySet<string>): Promise<ScanStorageResult & { document: ScanDocument | null }> {
+export async function loadScan(store: ScanStore, concernIds: ReadonlySet<string>, catalog?: SuggestionCatalog): Promise<ScanStorageResult & { document: ScanDocument | null }> {
   try {
     const raw = await store.read();
     if (raw === undefined || raw === null) return { ok: true, document: null, message: 'No saved room scan in this browser.' };
-    const result = validateScanDocument(raw, concernIds);
+    const result = validateScanDocument(raw, concernIds, catalog);
     if (!result.ok) return { ok: false, document: null, message: `Saved scan was not opened: ${result.error} Saved bytes were left untouched.` };
     const { document, dropped } = result.value;
-    return { ok: true, document, message: dropped > 0
+    const suggestionNotice = document.version === 2 && document.suggestions?.droppedItems
+      ? ` ${document.suggestions.droppedItems} model suggestion(s) were dropped because their checklist/concern links are unknown or no longer match the catalog.` : '';
+    return { ok: true, document, message: (dropped > 0
       ? `Saved scan loaded. ${dropped} pin${dropped === 1 ? ' was' : 's were'} dropped because the linked concern is no longer in the catalog.`
-      : 'Saved scan and pins loaded from this browser. Open the viewer to see them.' };
+      : 'Saved scan and pins loaded from this browser. Open the viewer to see them.') + suggestionNotice };
   } catch {
     return { ok: false, document: null, message: 'Scan storage could not be read. You can still import or generate a room in memory; it may not survive a reload.' };
   }
 }
-export async function saveScan(store: ScanStore, document: ScanDocument, concernIds: ReadonlySet<string>): Promise<ScanStorageResult> {
-  const validated = validateScanDocument(document, concernIds);
+export async function saveScan(store: ScanStore, document: ScanDocument, concernIds: ReadonlySet<string>, catalog?: SuggestionCatalog): Promise<ScanStorageResult> {
+  const validated = validateScanDocument(document, concernIds, catalog);
   if (!validated.ok || validated.value.dropped > 0) return { ok: false, message: 'Scan was not saved because its data or linked concerns are invalid.' };
   try {
     await store.write(validated.value.document);
-    return { ok: true, message: 'Scan, upright setting and pins saved in this browser only.' };
+    return { ok: true, message: 'Scan, upright setting, pins and model suggestion choices saved in this browser only.' };
   } catch {
     return { ok: false, message: 'Scan changes are in memory only: browser storage could not save them. Reload may restore an older scan or lose these changes.' };
   }

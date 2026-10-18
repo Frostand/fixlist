@@ -1,0 +1,452 @@
+"""Local suggestion tests. No model, torch, internet, or private media fixtures."""
+import base64
+import copy
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError, URLError
+
+import numpy as np
+from PIL import Image
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import suggest as s
+
+
+def make_scan(root):
+    """A real on-disk COLMAP text model, read by pycolmap in the runner."""
+    (root / 'work/dataset/images').mkdir(parents=True)
+    sparse = root / 'work/dataset/sparse'
+    sparse.mkdir()
+    (root / 'scene.json').write_text(json.dumps({'splatCount': 10}))
+    (root / 'work/alignment.json').write_text(json.dumps({
+        'rotationWorldToAligned': np.eye(3).tolist(),
+        'sparseCenterOriginal': [1, 2, 3],
+    }))
+    (sparse / 'cameras.txt').write_text('1 PINHOLE 90 90 90 90 45 45\n')
+    (sparse / 'images.txt').write_text(
+        '1 1 0 0 0 0 0 0 1 000001.jpg\n45 45 1\n'
+        '2 1 0 0 0 0 0 0 1 000002.jpg\n45 45 1\n')
+    (sparse / 'points3D.txt').write_text('1 0 0 6 255 255 255 0 1 0 2 0\n')
+    for name in ['000001.jpg', '000002.jpg']:
+        Image.new('RGB', (90, 90), (60, 80, 100)).save(root / 'work/dataset/images' / name)
+
+
+def fixture_response(request, probability=.8, relevance=.9, none=.1):
+    answers = {}
+    for key, question in request['questions'].items():
+        if question['type'] == 'noul':
+            answers[key] = {'type': 'noul', 'noul': relevance if key.startswith('relevance.') else probability}
+        else:
+            answers[key] = {'type': 'choice', 'choice': 'middle-center', 'confidence': .8,
+                            'probabilities': {k: .84 if k == 'middle-center' else .02
+                                              for k in question['criteria']}, 'none_probability': none}
+    return {'answers': answers, 'model': 'fake-http-model', 'usage': {'input_tokens': 1, 'output_tokens': 0}}
+
+
+class RequestTests(unittest.TestCase):
+    def setUp(self):
+        self.catalog = s.load_questions()
+
+    def test_catalog_has_exact_app_links_and_photo_limits(self):
+        self.assertEqual(len(self.catalog), 8)
+        self.assertEqual({q['checklistItemId']: q['concernId'] for q in self.catalog}, s.ITEM_LINKS)
+        for q in self.catalog:
+            self.assertTrue(q['question'].endswith('?'))
+            self.assertTrue(q['relevanceQuestion'])
+            self.assertTrue(q['limitation'])
+
+    def test_documented_request_uses_one_marker_and_all_noul_questions(self):
+        req = s.build_review_request(self.catalog, 'data:image/jpeg;base64,eA==', 'never')
+        self.assertEqual(req['state'].count('<image>'), len(req['images']))
+        self.assertEqual(len(req['questions']), 16)
+        self.assertEqual(req['think_mode'], 'never')
+        self.assertTrue(all(q['type'] == 'noul' and q['instructions'] for q in req['questions'].values()))
+        self.assertEqual(req['questions']['rug-check']['instructions'], self.catalog[0]['question'])
+        model, answers = s.parse_response(fixture_response(req), req['questions'])
+        self.assertEqual(model, 'fake-http-model')
+        self.assertEqual(answers['rug-check']['noul'], .8)
+
+    def test_grid_choice_and_none_signal_are_separate(self):
+        req = s.build_location_request(self.catalog[0], 'data:image/jpeg;base64,eA==', 'auto')
+        self.assertEqual(set(req['questions']['location']['criteria']), set(s.GRID))
+        self.assertTrue(req['allow_none'])
+        self.assertTrue(req['none_check'])
+        self.assertEqual(req['state'].count('<image>'), 1)
+        response = fixture_response(req)
+        _, answers = s.parse_response(response, req['questions'])
+        self.assertEqual(s.parse_grid_choice(answers['location']), 'middle-center')
+        for none in [.2, .9]:
+            response = fixture_response(req, none=none)
+            _, answers = s.parse_response(response, req['questions'])
+            self.assertIsNone(s.parse_grid_choice(answers['location']))
+        response = fixture_response(req)
+        response['answers']['location']['choice'] = None
+        _, answers = s.parse_response(response, req['questions'])
+        self.assertIsNone(s.parse_grid_choice(answers['location']))
+
+    def test_malformed_answers_fail_instead_of_becoming_low_probabilities(self):
+        req = s.build_review_request(self.catalog, 'x', 'auto')
+        for bad in [float('nan'), float('inf'), 10**400, -1, 1.1, True, '0.6', None]:
+            response = fixture_response(req)
+            response['answers']['rug-check']['noul'] = bad
+            with self.subTest(bad=bad), self.assertRaises(s.SuggestionError):
+                s.parse_response(response, req['questions'])
+        response = fixture_response(req)
+        del response['answers']['rug-check']
+        with self.assertRaises(s.SuggestionError):
+            s.parse_response(response, req['questions'])
+        loc = s.build_location_request(self.catalog[0], 'x', 'auto')
+        for field, value in [('choice', 'off-grid'), ('none_probability', None), ('confidence', 2),
+                             ('probabilities', {'middle-center': 1})]:
+            response = fixture_response(loc)
+            response['answers']['location'][field] = value
+            with self.subTest(field=field), self.assertRaises(s.SuggestionError):
+                s.parse_response(response, loc['questions'])
+
+    def test_only_loopback_http_and_no_credentials_or_redirects(self):
+        for url in ['https://example.com', 'http://example.com', 'http://127.0.0.1.evil.test',
+                    'http://user:secret@localhost', 'http://localhost/path', 'http://localhost?token=x']:
+            with self.subTest(url=url), self.assertRaises(s.SuggestionError):
+                s.DecisionClient(url)
+
+
+class GeometryTests(unittest.TestCase):
+    def frame(self, points, rotation=None, translation=None):
+        return s.Frame('frame.jpg', Path('/unused'), 90, 90, np.array([90., 90., 45., 45.]),
+                       np.eye(3) if rotation is None else rotation,
+                       np.zeros(3) if translation is None else translation, np.asarray(points, dtype=float).reshape(-1, 3))
+
+    def test_even_keyframes_sorted_naturally_and_include_endpoints(self):
+        names = ['10.jpg', '1.jpg', '3.jpg', '2.jpg', '4.jpg']
+        self.assertEqual(s.select_keyframes(names, 3), ['1.jpg', '3.jpg', '10.jpg'])
+        self.assertEqual(s.select_keyframes(names, 9), ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '10.jpg'])
+        self.assertEqual(s.select_keyframes(['a'], 1), ['a'])
+        for args in [([], 3), (names, 0), (names, True), (names, 201)]:
+            with self.subTest(args=args), self.assertRaises(s.SuggestionError):
+                s.select_keyframes(*args)
+
+    def test_cell_center_ray_uses_median_camera_z_not_euclidean_distance(self):
+        f = self.frame([[0, 0, 4], [0, 0, 8], [0, 0, 100], [20, 20, 3], [0, 0, -1]])
+        np.testing.assert_allclose(s.locate_in_frame(f, 'middle-center', np.eye(3), np.zeros(3)), [0, 0, 8])
+        f = self.frame([[1, 1, 3], [2, 2, 6]])
+        np.testing.assert_allclose(s.locate_in_frame(f, 'bottom-right', np.eye(3), np.zeros(3)), [1.5, 1.5, 4.5])
+
+    def test_world_pose_and_alignment_order(self):
+        rotation = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0.]])
+        # world [2,3,10] projects to the camera center at z=6.
+        translation = np.array([-10., -3., 8.])
+        f = self.frame([[2, 3, 10]], rotation, translation)
+        align = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1.]])
+        np.testing.assert_allclose(s.locate_in_frame(f, 'middle-center', align, np.array([1, 1, 1.])), [-2, 1, 9])
+
+    def test_nearest_ray_fallback_and_missing_depth(self):
+        f = self.frame([[0, 0, 9]])
+        np.testing.assert_allclose(s.locate_in_frame(f, 'top-left', np.eye(3), np.zeros(3)), [-3, -3, 9])
+        for points in [[], [[0, 0, -3]], [[float('nan'), 0, 2]]]:
+            self.assertIsNone(s.locate_in_frame(self.frame(points), 'middle-center', np.eye(3), np.zeros(3)))
+
+    def test_alignment_rejects_reflections_and_nonfinite_values(self):
+        for rotation, center in [(np.diag([1, 1, -1]), [0, 0, 0]), (np.eye(3) * 2, [0, 0, 0]),
+                                 (np.eye(3), [0, float('nan'), 0])]:
+            with self.assertRaises(s.SuggestionError):
+                s.validate_alignment(rotation, center)
+
+
+class AggregationTests(unittest.TestCase):
+    def test_relevance_must_be_likely_in_the_same_best_frame(self):
+        catalog = s.load_questions()
+        observations = {q['checklistItemId']: [
+            {'frame': 'a.jpg', 'probability': .8, 'relevanceProbability': .1, 'position': None},
+            {'frame': 'b.jpg', 'probability': .4, 'relevanceProbability': .9, 'position': [0, 0, 1]},
+        ] for q in catalog}
+        items = s.aggregate_items(catalog, observations, .6, lambda name: 'thumbnail:' + name)
+        self.assertEqual(items[0]['maxProbability'], .8)
+        self.assertAlmostEqual(items[0]['meanProbability'], .6)
+        self.assertEqual(items[0]['framesAboveThreshold'], 1)
+        self.assertFalse(items[0]['suggested'])
+        self.assertIsNone(items[0]['thumbnail'])
+        self.assertIsNone(items[0]['position'])
+        for rows in observations.values():
+            rows[0]['probability'] = .6
+            rows[0]['relevanceProbability'] = .5
+        items = s.aggregate_items(catalog, observations, .6, lambda name: 'thumbnail:' + name)
+        self.assertTrue(items[0]['suggested'])
+        self.assertEqual(items[0]['bestFrame'], 'a.jpg')
+        self.assertEqual(items[0]['thumbnail'], 'thumbnail:a.jpg')
+
+
+class PipelineTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_scan(self.root)
+
+    def run_dry(self):
+        return s.run_scan(self.root, keyframes=2, dry_run=True, progress=lambda line: None)
+
+    def mock_client(self, response_function):
+        """Exercise encoded requests/response parsing without opening sockets."""
+        client = s.DecisionClient(timeout=2, retries=0)
+        seen = []
+        def open_response(request, timeout):
+            self.assertEqual(timeout, 2)
+            self.assertEqual(request.full_url, 'http://127.0.0.1:8090/v1/systemone')
+            self.assertEqual(request.get_header('Content-type'), 'application/json')
+            body = json.loads(request.data)
+            seen.append(body)
+            return BytesIO(json.dumps(response_function(body)).encode())
+        client.opener.open = open_response
+        return client, seen
+
+    def test_dry_run_uses_real_colmap_and_has_explicit_fake_provenance(self):
+        with patch.object(s.DecisionClient, 'decide', side_effect=AssertionError('HTTP forbidden in dry run')):
+            result = self.run_dry()
+        self.assertEqual(result['format'], 'fixlist-scan-suggestions')
+        self.assertTrue(result['timing']['dryRun'])
+        self.assertIn('DRY-RUN', result['model']['name'])
+        self.assertEqual(result['scan']['framesAnalyzed'], 2)
+        self.assertEqual(result['scan']['splatCount'], 10)
+        self.assertEqual(len(result['items']), 8)
+        self.assertEqual(json.loads((self.root / 'suggestions.json').read_text()), result)
+        self.assertEqual(result['timing']['attempts'], 0)
+        suggested = [item for item in result['items'] if item['suggested']]
+        self.assertTrue(suggested)
+        for item in suggested:
+            with Image.open(BytesIO(base64.b64decode(item['thumbnail'].split(',')[1]))) as image:
+                self.assertEqual(image.format, 'JPEG')
+                self.assertLessEqual(max(image.size), 320)
+        self.assertNotIn('torch', sys.modules)
+
+    def test_schema_rejects_invalid_types_bounds_links_and_inconsistent_aggregates(self):
+        result = self.run_dry()
+        mutations = [
+            lambda r: r.update(extra=True),
+            lambda r: r.update(version=True),
+            lambda r: r.update(createdAt='yesterday'),
+            lambda r: r['scan'].update(framesAnalyzed=3),
+            lambda r: r['scan'].update(splatCount=True),
+            lambda r: r['items'][0].update(maxProbability=float('nan')),
+            lambda r: r['items'][0].update(meanProbability=.999),
+            lambda r: r['items'][0].update(suggested=1),
+            lambda r: r['items'][0].update(concernId='unknown'),
+            lambda r: r['items'][0].update(position=[0, float('inf'), 2]),
+            lambda r: r['items'][0].update(position=[1, 2]),
+            lambda r: r['items'][0].update(thumbnail='data:image/jpeg;base64,eA=='),
+            lambda r: r['items'][0]['perFrame'][0].update(probability=2),
+            lambda r: r['items'][0]['perFrame'][0].update(probability=True),
+            lambda r: r['items'][0]['perFrame'][0].update(frame='../secret.jpg'),
+            lambda r: r['timing'].update(dryRun=True),
+        ]
+        for mutation in mutations:
+            bad = copy.deepcopy(result)
+            mutation(bad)
+            with self.subTest(mutation=mutation), self.assertRaises(s.SuggestionError):
+                s.validate_output(bad)
+
+    def test_unreachable_server_error_includes_exact_serve_command_and_does_not_write(self):
+        client = s.DecisionClient(timeout=.1, retries=0)
+        with patch.object(client.opener, 'open', side_effect=URLError('connection refused')):
+            with self.assertRaises(s.SuggestionError) as error:
+                client.decide(s.build_review_request(s.load_questions(), 'x', 'never'))
+        self.assertIn(s.SERVE_COMMAND, str(error.exception))
+        self.assertFalse((self.root / 'suggestions.json').exists())
+
+    def serve(self, response_function):
+        seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                seen.append((self.path, body))
+                status, response = response_function(body, len(seen))
+                encoded = json.dumps(response).encode()
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def log_message(self, *args):
+                pass
+
+        try:
+            server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        except PermissionError as error:
+            self.skipTest(f'Environment denies loopback socket binding: {error}. Run on the local host.')
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        def shutdown():
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+        self.addCleanup(shutdown)
+        return f'http://127.0.0.1:{server.server_port}', seen
+
+    def test_fake_http_end_to_end_and_real_geometry(self):
+        url, seen = self.serve(lambda body, count: (200, fixture_response(body)))
+        result = s.run_scan(self.root, url=url, keyframes=2, think_mode='never', timeout=2,
+                            retries=0, progress=lambda line: None)
+        self.assertEqual(len(seen), 18)  # two initial calls and sixteen localizations
+        self.assertTrue(all(path == '/v1/systemone' for path, _ in seen))
+        self.assertTrue(all(len(body['images']) == 1 for _, body in seen))
+        self.assertEqual(result['model']['name'], 'fake-http-model')
+        self.assertFalse(result['timing']['dryRun'])
+        self.assertEqual(result['timing']['requests'], 18)
+        for item in result['items']:
+            self.assertTrue(item['suggested'])
+            self.assertEqual(item['position'], [-1, -2, 3])
+            self.assertEqual(item['framesAboveThreshold'], 2)
+        s.validate_output(result)
+
+    def test_mocked_http_bytes_end_to_end_and_real_geometry(self):
+        client, seen = self.mock_client(fixture_response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            result = s.run_scan(self.root, keyframes=2, progress=lambda line: None)
+        self.assertEqual(len(seen), 18)
+        self.assertEqual(result['timing']['attempts'], 18)
+        self.assertTrue(all(item['position'] == [-1, -2, 3] and item['suggested'] for item in result['items']))
+        s.validate_output(result)
+
+    def test_none_probability_prevents_placement_in_end_to_end_run(self):
+        url, _ = self.serve(lambda body, count: (200, fixture_response(body, none=.2)))
+        result = s.run_scan(self.root, url=url, keyframes=1, timeout=2, retries=0, progress=lambda line: None)
+        self.assertTrue(all(item['position'] is None for item in result['items']))
+
+    def test_mocked_none_probability_prevents_placement(self):
+        client, _ = self.mock_client(lambda request: fixture_response(request, none=.2))
+        with patch.object(s, 'DecisionClient', return_value=client):
+            result = s.run_scan(self.root, keyframes=1, progress=lambda line: None)
+        self.assertTrue(all(item['position'] is None and item['suggested'] for item in result['items']))
+
+    def test_location_and_suggestion_thresholds_are_independent(self):
+        client, seen = self.mock_client(lambda request: fixture_response(request, probability=.55))
+        with patch.object(s, 'DecisionClient', return_value=client):
+            result = s.run_scan(self.root, keyframes=1, threshold=.6, location_threshold=.5, progress=lambda line: None)
+        self.assertEqual(len(seen), 9)
+        self.assertTrue(all(not item['suggested'] and item['position'] is not None for item in result['items']))
+        client, seen = self.mock_client(lambda request: fixture_response(request, probability=.65))
+        with patch.object(s, 'DecisionClient', return_value=client):
+            result = s.run_scan(self.root, keyframes=1, threshold=.6, location_threshold=.7, progress=lambda line: None)
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(all(item['suggested'] and item['position'] is None for item in result['items']))
+
+    def test_irrelevant_frames_do_not_make_suggestions(self):
+        client, _ = self.mock_client(lambda request: fixture_response(request, relevance=.1))
+        with patch.object(s, 'DecisionClient', return_value=client):
+            result = s.run_scan(self.root, keyframes=1, progress=lambda line: None)
+        self.assertTrue(all(not item['suggested'] and item['thumbnail'] is None for item in result['items']))
+
+    def test_dimension_mismatch_fails_without_writing(self):
+        Image.new('RGB', (100, 90)).save(self.root / 'work/dataset/images/000002.jpg')
+        with self.assertRaisesRegex(s.SuggestionError, 'dimension mismatch'):
+            self.run_dry()
+        self.assertFalse((self.root / 'suggestions.json').exists())
+
+    def test_output_symlink_is_refused(self):
+        target = self.root / 'owner-file'
+        target.write_text('keep')
+        (self.root / 'suggestions.json').symlink_to(target)
+        with self.assertRaisesRegex(s.SuggestionError, 'symlink'):
+            self.run_dry()
+        self.assertEqual(target.read_text(), 'keep')
+
+    def test_atomic_write_failure_preserves_existing_output(self):
+        self.run_dry()
+        original = (self.root / 'suggestions.json').read_bytes()
+        with patch.object(s.os, 'replace', side_effect=OSError('disk unavailable')):
+            with self.assertRaises(OSError):
+                self.run_dry()
+        self.assertEqual((self.root / 'suggestions.json').read_bytes(), original)
+        self.assertEqual(list(self.root.glob('.suggestions-*.tmp')), [])
+
+    def test_model_change_aborts_without_writing(self):
+        client, seen = self.mock_client(fixture_response)
+        original_open = client.opener.open
+        def changed_open(request, timeout):
+            response = json.loads(original_open(request, timeout).read())
+            if len(seen) > 1:
+                response['model'] = 'different-model'
+            return BytesIO(json.dumps(response).encode())
+        client.opener.open = changed_open
+        with patch.object(s, 'DecisionClient', return_value=client):
+            with self.assertRaisesRegex(s.SuggestionError, 'model changed'):
+                s.run_scan(self.root, keyframes=1, progress=lambda line: None)
+        self.assertFalse((self.root / 'suggestions.json').exists())
+
+    def test_retry_transient_error_but_not_422(self):
+        req = s.build_review_request(s.load_questions(), 'x', 'never')
+        for code, attempts in [(429, 2), (502, 2), (422, 1), (401, 1)]:
+            client = s.DecisionClient(timeout=2, retries=1)
+            failure = HTTPError(client.url, code, 'test error', {}, None)
+            with patch.object(client.opener, 'open', side_effect=[failure, BytesIO(json.dumps(fixture_response(req)).encode())]) as opened:
+                with patch.object(s.time, 'sleep'):
+                    if attempts == 1:
+                        with self.assertRaises(s.SuggestionError):
+                            client.decide(req)
+                    else:
+                        client.decide(req)
+            self.assertEqual(opened.call_count, attempts)
+            self.assertEqual(client.attempts, attempts)
+
+    def test_per_attempt_timeout_and_network_retry(self):
+        client = s.DecisionClient(timeout=.125, retries=2)
+        with patch.object(client.opener, 'open', side_effect=TimeoutError('timeout')) as opened:
+            with patch.object(s.time, 'sleep'):
+                with self.assertRaises(s.SuggestionError):
+                    client.decide(s.build_review_request(s.load_questions(), 'x', 'never'))
+        self.assertEqual(opened.call_count, 3)
+        self.assertTrue(all(call.kwargs['timeout'] == .125 for call in opened.call_args_list))
+
+    def test_redirect_is_rejected_without_following_it(self):
+        with self.assertRaises(s.SuggestionError):
+            s.NoRedirects().redirect_request(None, None, 307, 'redirect', {}, 'http://example.com')
+
+    def test_failed_response_preserves_existing_output(self):
+        self.run_dry()
+        original = (self.root / 'suggestions.json').read_bytes()
+        client, _ = self.mock_client(lambda request: {'answers': {}, 'model': 'broken'})
+        with patch.object(s, 'DecisionClient', return_value=client):
+            with self.assertRaises(s.SuggestionError):
+                s.run_scan(self.root, keyframes=1, progress=lambda line: None)
+        self.assertEqual((self.root / 'suggestions.json').read_bytes(), original)
+
+    def test_dry_run_cannot_replace_real_model_result(self):
+        client, _ = self.mock_client(fixture_response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            s.run_scan(self.root, keyframes=1, progress=lambda line: None)
+        original = (self.root / 'suggestions.json').read_bytes()
+        with self.assertRaises(s.SuggestionError):
+            self.run_dry()
+        self.assertEqual((self.root / 'suggestions.json').read_bytes(), original)
+
+    def test_cli_rejects_traversal_and_invalid_options_without_reading_a_scan(self):
+        for args in [['../outside', '--dry-run'], ['scan', '--keyframes', '0'],
+                     ['scan', '--threshold', 'nan'], ['scan', '--timeout', '0']]:
+            result = subprocess.run([sys.executable, str(Path(s.__file__)), *args], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertNotIn('Traceback', result.stderr)
+
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+class CameraViewpointTests(unittest.TestCase):
+    def test_viewpoint_is_aligned_camera_centre(self):
+        import numpy as np
+        from types import SimpleNamespace
+        import suggest as module
+        frame = SimpleNamespace(rotation=np.eye(3), translation=np.array([0., 0., -2.]))
+        rotation = np.array([[1., 0, 0], [0, 0, -1.], [0, 1., 0]])
+        self.assertEqual(module.camera_viewpoint(frame, rotation, np.array([0., 0., 1.])), [0.0, -1.0, 0.0])
+        frame.translation = np.array([np.nan, 0., 0.])
+        self.assertIsNone(module.camera_viewpoint(frame, rotation, np.zeros(3)))

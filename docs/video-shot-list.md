@@ -13,6 +13,16 @@ The synthetic software journey is implemented and rehearsed; this is the recordi
 
 The screens above now exist. See `validation-facts-catalog-2026-10-17.md` for current checks and `validation-2026-10-17.md` for earlier core evidence. Keep the final footage focused on a single repeatable journey; use one or two of the eight sample concerns; 3D, native capture, authentication and outreach remain outside this recording scope.
 
+## 3D scan and AI suggestion segment (optional, about 40 seconds)
+
+Use this in place of part of the 0:15–1:00 window when showing the scan. Load it with `http://127.0.0.1:4173/?localScan=viennese-v2#scan-heading` (dev/preview server only).
+
+| Screen / action | Evidence needed before filming | Honest narration boundary |
+| --- | --- | --- |
+| Short clip of the walkthrough video, then the 3D scan orbiting | Footage source and license on screen or in credits: UE4Arch "Viennese apartment", Wikimedia Commons, CC BY-SA 4.0 (a photoreal render, not a real home). Pipeline ran locally on the Mac. | "We turned a walk-through video into a 3D model on this laptop." Do not call it a measurement or a scan of a real house; units are arbitrary. |
+| Model suggestions list, then **Show in 3D** | StartLux-Decision v1.1 9B (MLX, CC BY-NC 4.0 weights) credited; probabilities come from the recorded `suggestions.json`. | "A local AI model estimates which checklist items might need a look, and shows the frame it looked at." It is a suggestion, not hazard detection, and it can be wrong. |
+| Dismiss the hanging-lamp "cord" suggestion; pin the rug yourself | Show that dismissing and pinning are explicit family actions. | "The family decides." Never imply the model confirmed anything; the pin turns yellow only after explicit confirmation. |
+
 ## Recording gate
 
 - Preserve the implemented journey and meaningful rules/storage tests; rerun typecheck, build and tests after relevant changes.

@@ -38,7 +38,13 @@ React, TypeScript, Vite, Vitest and plain CSS use exact versions in [package.jso
 
 ## 3D room scan
 
-Record a slow walk-around video of a room, then run the local pipeline in [`scan/`](scan/README.md) on a Mac: ffmpeg picks sharp frames, pycolmap estimates camera poses, and Brush trains a Gaussian splat on the GPU. The result (`scene.splat` + `scene.json`) lands in gitignored `private-captures/scans/<name>/`; import both files in the app. Scans stay on this computer and in this browser's IndexedDB and are never uploaded. Units are arbitrary, so the scan is a visual reference, not a measurement. Details: [scan pipeline](scan/README.md), [viewer](docs/scan-viewer-2026-10-17.md).
+Record a slow walk-around video of a room, then run the local pipeline in [`scan/`](scan/README.md) on a Mac: ffmpeg picks sharp frames, pycolmap estimates camera poses, and Brush trains a Gaussian splat on the GPU. The result (`scene.splat` + `scene.json`) lands in gitignored `private-captures/scans/<name>/`; import both files in the app. Scans stay on this computer and in this browser's IndexedDB and are never uploaded. Units are arbitrary, so the scan is a visual reference, not a measurement. Plain white walls: the pipeline tunes SIFT for low texture and falls back to a learned matcher (ALIKED + LightGlue); keep furniture, door frames and floor edges in view while filming. ARKit/nerfstudio `transforms.json` captures can also be imported, skipping pose estimation (not yet tested with a real iPhone capture).
+
+**AI suggestions (optional).** With the local StartLux-Decision model served (see [scan/SUGGESTIONS.md](scan/SUGGESTIONS.md)), `scan/venv-python scan/suggest.py <name>` asks the checklist questions about ~32 frames and writes `suggestions.json` with calibrated probabilities, an evidence thumbnail and a 3D position. In the app, flagged items show an "AI suggests reviewing · NN%" chip and a dashed AI marker; you can view the frame's viewpoint in 3D, add it as a pin, or dismiss it. Suggestions never answer or confirm anything.
+
+**Demo shortcuts (dev/preview server only).** Scans in `private-captures/scans/` appear as "Load local demo scan" buttons, and `http://127.0.0.1:4173/?localScan=<name>#scan-heading` opens one directly, which is how the iOS Simulator test runs (`xcrun simctl openurl booted '<url>'`). Production builds contain no local scans.
+
+Details: [scan pipeline](scan/README.md), [viewer](docs/scan-viewer-2026-10-17.md).
 
 Only the selected fictional profile ID is saved, alongside answers, confirmations and request history. The key remains `fixlist:demo:v1` with a version-2 payload. Exact old version-1 data migrates in memory: history is preserved, new questions start unknown, and old manually selected screening statuses are discarded with an explanation. Loading never silently rewrites saved data.
 

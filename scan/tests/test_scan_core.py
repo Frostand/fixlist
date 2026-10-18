@@ -15,10 +15,34 @@ from scan_core import (
     ScanError, bake_transform, build_metadata, check_registration, decode_splat, estimate_scene_alignment,
     encode_splat, laplacian_variance, matrix_to_quaternion, quaternion_matrix,
     read_gaussian_ply, rotation_between, select_sharpest, validate_metadata,
+    frame_budget, matching_pairs, should_fallback_to_learned, should_try_exhaustive,
 )
 
 
 class FrameTests(unittest.TestCase):
+    def test_adaptive_budget_preserves_room_preset_and_caps_walkthroughs(self):
+        self.assertEqual(frame_budget(),150)
+        self.assertEqual(frame_budget(45),150)
+        self.assertEqual(frame_budget(100),250)
+        self.assertEqual(frame_budget(1000),300)
+        self.assertEqual(frame_budget(100,90),90)
+        for value in [0,-1,float('nan'),float('inf')]:
+            with self.assertRaises(ScanError): frame_budget(value)
+        with self.assertRaises(ScanError): frame_budget(explicit=29)
+
+    def test_temporal_pairs_and_sparse_loop_closure_are_unique_and_bounded(self):
+        self.assertEqual(matching_pairs(0),[])
+        self.assertEqual(matching_pairs(1),[])
+        pairs=matching_pairs(300)
+        self.assertEqual(pairs,sorted(set(pairs)))
+        self.assertTrue(all(0<=i<j<300 for i,j in pairs))
+        self.assertIn((0,12),pairs)
+        self.assertIn((0,299),pairs)
+        self.assertNotIn((1,298),pairs)
+        self.assertLess(len(pairs),300*15)
+        # Fixed local window and capped keyframes avoid quadratic pair growth.
+        self.assertLess(len(matching_pairs(3000)),3000*13)
+
     def test_best_per_window_is_chronological_and_bounded(self):
         self.assertEqual(select_sharpest([1, 9, 2, 8, 7, 3], 3), [1, 3, 4])
         self.assertEqual(select_sharpest([5, 5, 5], 9), [0, 1, 2])
@@ -148,6 +172,20 @@ class SplatTests(unittest.TestCase):
 
 
 class GateAndMetadataTests(unittest.TestCase):
+    def test_exhaustive_recovery_is_bounded_and_preserves_short_room_coverage(self):
+        self.assertTrue(should_try_exhaustive(106,148))
+        self.assertTrue(should_try_exhaustive(29,30))
+        self.assertFalse(should_try_exhaustive(146,148))
+        self.assertFalse(should_try_exhaustive(0,151))
+        self.assertFalse(should_try_exhaustive(0,0))
+
+    def test_auto_fallback_uses_both_registration_thresholds(self):
+        self.assertFalse(should_fallback_to_learned('auto',30,50))
+        self.assertTrue(should_fallback_to_learned('auto',29,30))
+        self.assertTrue(should_fallback_to_learned('auto',59,100))
+        self.assertFalse(should_fallback_to_learned('sift',0,100))
+        self.assertFalse(should_fallback_to_learned('aliked',0,100))
+
     def metadata(self):
         return build_metadata(12, [[-1,-2,-3],[1,2,3]], [0,1,2], [0,0,0], 50, 30, 7000, '2026-10-17T12:00:00Z')
 

@@ -4,15 +4,18 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { SparkRenderer, SplatFileType, SplatMesh } from '@sparkjsdev/spark';
 import { MAX_SPLATS, point3, scanExtension, type Point3, type ScanAsset, type ScanPin } from '../lib/scan-model';
 import { createPickIndex, pickAlongRay, type PickIndex } from '../lib/scan-pick';
+import { createScanTapTracker, scanPixelRatio } from '../lib/scan-device';
+import { suggestionId, type ScanSuggestion } from '../lib/scan-suggestions';
 import type { ScanConcern } from './ScanPanel';
 
 interface Props {
   asset: ScanAsset; flipUpright: boolean; pins: readonly ScanPin[]; concerns: readonly ScanConcern[];
-  placing: boolean; focus: { pin: ScanPin; sequence: number } | null;
+  suggestions: readonly ScanSuggestion[]; expectedSuggestionCount: number | null;
+  placing: boolean; focus: { position: Point3; viewpoint?: Point3 | null; sequence: number } | null;
   onPlace: (position: Point3) => void; onReady: (count: number) => void; onError: (message: string) => void;
 }
 type CameraMove = 'left' | 'right' | 'up' | 'down' | 'in' | 'out';
-interface Runtime { reset(): void; orient(flip: boolean): void; focus(pin: ScanPin): void; move(direction: CameraMove): void; hit(x: number, y: number): void; schedule(): void }
+interface Runtime { reset(): void; orient(flip: boolean): void; focus(position: Point3, viewpoint?: Point3 | null): void; move(direction: CameraMove): void; hit(x: number, y: number): void; schedule(): void }
 const fileTypes = { splat: SplatFileType.SPLAT, ply: SplatFileType.PLY, spz: SplatFileType.SPZ, ksplat: SplatFileType.KSPLAT };
 
 /** This is the only app module importing Three/Spark; it is loaded by explicit user action. */
@@ -41,7 +44,7 @@ export default function ScanViewer(props: Props) {
     const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
     const projected = new THREE.Vector3();
     let extent = 1, sourceBounds: THREE.Box3 | undefined, pickIndex: PickIndex | undefined;
-    let pointerStart: { x: number; y: number; time: number } | null = null;
+    const taps = createScanTapTracker();
     setLoaded(false);
     setHitMessage('');
 
@@ -74,10 +77,14 @@ export default function ScanViewer(props: Props) {
       if (cancelled || failed || !renderer || !mesh) return;
       try {
         renderer.render(scene, camera);
-        for (const pin of latest.current.pins) {
-          const node = markerNodes.current.get(pin.id);
+        const markers = [
+          ...latest.current.pins.map((pin) => ({ id: `pin:${pin.id}`, position: pin.position })),
+          ...latest.current.suggestions.flatMap((item) => item.position ? [{ id: `ai:${suggestionId(item)}`, position: item.position }] : []),
+        ];
+        for (const marker of markers) {
+          const node = markerNodes.current.get(marker.id);
           if (!node) continue;
-          projected.fromArray(pin.position);
+          projected.fromArray(marker.position);
           mesh.localToWorld(projected);
           projected.project(camera);
           node.hidden = projected.z < -1 || projected.z > 1 || Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1;
@@ -135,10 +142,13 @@ export default function ScanViewer(props: Props) {
       controls.update();
       schedule();
     }
-    function focus(pin: ScanPin) {
+    function focus(position: Point3, viewpoint?: Point3 | null) {
       if (!mesh || !controls) return;
-      const target = mesh.localToWorld(new THREE.Vector3(...pin.position));
-      const offset = camera.position.clone().sub(controls.target).normalize().multiplyScalar(Math.max(extent * 0.45, controls.minDistance * 2));
+      const target = mesh.localToWorld(new THREE.Vector3(...position));
+      // A suggestion's viewpoint is where the photo was taken, so the view matches what the model saw.
+      const from = viewpoint ? mesh.localToWorld(new THREE.Vector3(...viewpoint)) : null;
+      const offset = from && from.distanceTo(target) > controls.minDistance ? from.sub(target)
+        : camera.position.clone().sub(controls.target).normalize().multiplyScalar(Math.max(extent * 0.45, controls.minDistance * 2));
       controls.target.copy(target);
       camera.position.copy(target).add(offset);
       controls.update();
@@ -177,22 +187,19 @@ export default function ScanViewer(props: Props) {
       else if (event.key === 'Home') { event.preventDefault(); reset(); }
     }
     function down(event: PointerEvent) {
-      if (event.button === 0 && event.isPrimary) pointerStart = { x: event.clientX, y: event.clientY, time: event.timeStamp };
-      else pointerStart = null;
+      taps.down(event);
     }
     function up(event: PointerEvent) {
-      const start = pointerStart;
-      pointerStart = null;
-      if (!start || !event.isPrimary || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6 || event.timeStamp - start.time > 600) return;
+      if (!taps.up(event)) return;
       const bounds = canvas.getBoundingClientRect();
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) return;
       hit((event.clientX - bounds.left) / bounds.width * 2 - 1, -(event.clientY - bounds.top) / bounds.height * 2 + 1);
     }
     function drag(event: PointerEvent) {
-      if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 6) pointerStart = null;
+      taps.move(event);
     }
-    function cancelPointer() { pointerStart = null; }
-    function contextLost(event: Event) { event.preventDefault(); fail('WebGL2 lost its graphics context. Import a smaller scan or reload to retry. Unsaved changes remain in memory.'); }
+    function cancelPointer(event: PointerEvent) { taps.cancel(event.pointerId); }
+    function contextLost(event: Event) { event.preventDefault(); fail('WebGL2 lost its graphics context. Close and reopen the room viewer, or try a smaller scan. Scan edits remain in memory; browser storage status below the importer reports whether they were saved.'); }
     canvas.addEventListener('keydown', keydown);
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointerup', up);
@@ -205,7 +212,7 @@ export default function ScanViewer(props: Props) {
         const context = canvas.getContext('webgl2', { antialias: false, alpha: false });
         if (!context) { fail('3D viewing requires WebGL2, which is unavailable in this browser. Try a browser with WebGL2 enabled. You can still use the checklist and existing pin list.'); return; }
         renderer = new THREE.WebGLRenderer({ canvas, context, antialias: false, alpha: false });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setPixelRatio(scanPixelRatio(window.devicePixelRatio, element.clientWidth, window.matchMedia('(pointer: coarse)').matches));
         const bytes = await props.asset.blob.arrayBuffer();
         if (cancelled || failed) return;
         const extension = scanExtension(props.asset.name);
@@ -220,6 +227,7 @@ export default function ScanViewer(props: Props) {
         if (cancelled || failed || !mesh) return;
         if (mesh.numSplats < 1 || mesh.numSplats > MAX_SPLATS) throw new Error(`Scan must contain 1–${MAX_SPLATS.toLocaleString()} splats.`);
         if (props.asset.metadata && props.asset.metadata.splatCount !== mesh.numSplats) throw new Error('Decoded splat count does not match scene.json.');
+        if (props.expectedSuggestionCount !== null && props.expectedSuggestionCount !== mesh.numSplats) throw new Error('Decoded splat count does not match suggestions.json.');
         sourceBounds = mesh.getBoundingBox();
         if (!point3(sourceBounds.min.toArray()) || !point3(sourceBounds.max.toArray()) || sourceBounds.isEmpty()) throw new Error('Scan bounds are empty, non-finite or outside the supported coordinate range.');
         extent = Math.max(sourceBounds.getSize(new THREE.Vector3()).length(), 0.001);
@@ -233,6 +241,7 @@ export default function ScanViewer(props: Props) {
         function resize() {
           if (!renderer) return;
           const width = Math.max(element?.clientWidth ?? 1, 1), height = Math.max(element?.clientHeight ?? 1, 1);
+          renderer.setPixelRatio(scanPixelRatio(window.devicePixelRatio, width, window.matchMedia('(pointer: coarse)').matches));
           renderer.setSize(width, height, false);
           camera.aspect = width / height;
           camera.updateProjectionMatrix();
@@ -265,15 +274,17 @@ export default function ScanViewer(props: Props) {
   }, [props.asset]);
 
   useEffect(() => { runtime.current?.orient(props.flipUpright); }, [props.flipUpright]);
-  useEffect(() => { if (props.focus) runtime.current?.focus(props.focus.pin); }, [props.focus]);
-  useEffect(() => { runtime.current?.schedule(); }, [props.pins, props.concerns]);
+  useEffect(() => { if (props.focus) runtime.current?.focus(props.focus.position, props.focus.viewpoint); }, [props.focus]);
+  useEffect(() => { runtime.current?.schedule(); }, [props.pins, props.concerns, props.suggestions]);
 
   return <div className="scan-viewer">
     <div className="scan-scene" data-placing={props.placing}>
       <div className="scan-canvas-host" ref={host} />
       <div className="scan-markers" aria-hidden="true">{props.pins.map((pin, index) => <span key={pin.id} className="scan-marker" hidden
         data-confirmed={props.concerns.find((concern) => concern.id === pin.concernId)?.confirmed === true}
-        ref={(node) => { if (node) markerNodes.current.set(pin.id, node); else markerNodes.current.delete(pin.id); }}>{index + 1}</span>)}</div>
+        ref={(node) => { if (node) markerNodes.current.set(`pin:${pin.id}`, node); else markerNodes.current.delete(`pin:${pin.id}`); }}>{index + 1}</span>)}</div>
+      <div className="scan-markers" aria-hidden="true">{props.suggestions.map((item) => <span key={suggestionId(item)} className="scan-ai-marker" hidden
+        ref={(node) => { const id = `ai:${suggestionId(item)}`; if (node) markerNodes.current.set(id, node); else markerNodes.current.delete(id); }}>AI</span>)}</div>
       {props.placing && loaded ? <span className="scan-crosshair" aria-hidden="true">+</span> : null}
     </div>
     <div className="button-row scan-camera-controls" role="group" aria-label="Room camera controls">

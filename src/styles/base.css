@@ -442,6 +442,12 @@ main { padding: 2.5rem clamp(1rem, 4vw, 3.5rem) 5rem; min-width: 0; }
 }
 .scan-marker { position: absolute; transform: translate(-50%, -100%); }
 .scan-marker[hidden] { display: none; }
+.scan-ai-marker {
+  position: absolute; transform: translate(-50%, -100%); display: grid; place-items: center;
+  width: 2rem; height: 2rem; border: 2px dashed var(--ink); border-radius: 6px;
+  background: var(--sheet); color: var(--ink); font: 700 0.8rem var(--font-mono);
+}
+.scan-ai-marker[hidden] { display: none; }
 .scan-marker[data-confirmed="true"], .scan-pin-list > li[data-confirmed="true"] .scan-pin-number { background: var(--caution); color: var(--ink); }
 .scan-crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; color: var(--ink); font: 700 2rem var(--font-mono); text-shadow: 1px 1px var(--sheet), -1px -1px var(--sheet); }
 .scan-camera-controls { margin-block: 0.75rem; gap: 0.5rem; }
@@ -451,6 +457,17 @@ main { padding: 2.5rem clamp(1rem, 4vw, 3.5rem) 5rem; min-width: 0; }
 .scan-pin-list > li > div { min-width: 0; flex: 1; }
 .scan-pin-list p { margin-block: 0.25rem; }
 .scan-pin-list .button-row { margin-block: 0.5rem 0; }
+.scan-suggestions { margin-block: 1.5rem; padding-block: 1rem; border-block: 1px solid var(--rule-strong); min-width: 0; }
+.scan-suggestion-list { list-style: none; padding: 0; margin-block: 0.75rem; }
+.scan-suggestion { padding: 1rem 0; min-width: 0; border-top: 1px solid var(--rule); scroll-margin-top: 1rem; }
+.scan-suggestion h5 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.scan-suggestion p { margin-block: 0.5rem; }
+.scan-suggestion:target { outline: 2px solid var(--ink); outline-offset: 4px; }
+.scan-suggestion-thumbnail { display: block; width: min(100%, 20rem); height: auto; max-height: 15rem; object-fit: contain; border: 1px solid var(--rule); border-radius: var(--radius); }
+.scan-suggestion .button-row { margin-block: 0.75rem 0; }
+.scan-suggestion-details > summary { display: list-item; min-height: 2.75rem; padding-block: 0.65rem; cursor: pointer; font-weight: 700; overflow-wrap: anywhere; }
+.scan-suggestion-chip { display: inline-flex; align-items: center; min-height: 2.75rem; max-width: 100%; margin-block: 0 0.5rem; padding: 0.45rem 0.65rem; border: 1px dashed var(--ink); border-radius: var(--radius); color: var(--ink); background: var(--sheet); font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
+.scan-local-demos button, .scan-suggestion button { white-space: normal; overflow-wrap: anywhere; }
 @media (max-width: 40rem) {
   .scan-panel { padding: 1rem; }
   .scan-import { padding: 0.65rem; }
