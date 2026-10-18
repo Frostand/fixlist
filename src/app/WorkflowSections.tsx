@@ -1,8 +1,8 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import type { Concern, ConcernEvidence, DemoScenario } from '../domain/types';
 import {
-  canConfirmConcern, computeCoverage, computePlan, getRequestViews, getRequiredChecklistItemIds,
-  type ChecklistAnswer, type DemoCommand, type DemoState,
+  canConfirmConcern, computeCoverage, computePlan, getRequestViews, getRequiredChecklistItemIds, attributionLabel,
+  type ChecklistAnswer, type ResidentCommandInput, type DemoState,
 } from '../domain/workflow';
 import { actionTitle, LocalTime, requestStatusLabels, SourceNote } from './display';
 import { ActionMetadata, CoverageSummary, ProfileFacts, ProgramDetails, RequestWorkContext } from './CatalogViews';
@@ -11,7 +11,7 @@ import { ScanPanel } from './ScanPanel';
 import { suggestionForChecklist, type ScanSuggestionLayer } from '../lib/scan-suggestions';
 import { ScanSuggestionChip } from './ScanSuggestions';
 
-interface WorkflowProps { scenario: DemoScenario; state: DemoState; onCommand: (command: DemoCommand) => void }
+interface WorkflowProps { scenario: DemoScenario; state: DemoState; onCommand: (command: ResidentCommandInput) => void }
 
 const answerOptions: readonly { value: ChecklistAnswer; label: string }[] = [
   { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }, { value: 'unknown', label: 'Unknown' },
@@ -137,7 +137,7 @@ export function PlanSection({ scenario, state, onCommand }: WorkflowProps) {
               <div className="button-row">
                 {state.requests.some((request) => request.referenceActionId === item.referenceActionId)
                   ? <a className="text-link" href="#requests">View retained family record</a>
-                  : <button aria-label={`Create local request: ${item.referenceAction.title}`} onClick={() => onCommand({ type: 'create_request', referenceActionId: item.referenceActionId })}>Create local request draft</button>}
+                  : <button aria-label={`Create local request: ${item.referenceAction.title}`} onClick={() => onCommand({ type: 'create_request', referenceActionId: item.referenceActionId, expectedRevision: 0 })}>Create local request draft</button>}
                 {item.concernIds.map((concernId) => <button className="secondary" key={concernId} aria-label={`Remove confirmation: ${item.referenceAction.title}${item.concernIds.length > 1 ? ` (${concernId})` : ''}`} onClick={() => onCommand({ type: 'unconfirm_concern', concernId })}>Remove confirmation{item.concernIds.length > 1 ? ` (${concernId})` : ''}</button>)}
               </div>
             </article>
@@ -171,55 +171,16 @@ export function AssistanceSection({ scenario, state, onCommand }: WorkflowProps)
   );
 }
 
-const stages = [
-  { key: 'draft', label: 'Draft' },
-  { key: 'family_reported_requested', label: 'Requested' },
-  { key: 'family_reported_in_progress', label: 'In progress' },
-  { key: 'complete', label: 'Reported complete' },
-] as const;
-
-export function RequestsSection({ scenario, state, onCommand }: WorkflowProps) {
+export function RequestsSection({ scenario, state }: WorkflowProps) {
   const views = getRequestViews(scenario, state);
-  return (
-    <section id="requests" className="step" aria-labelledby="requests-heading">
-      <StepHead step={4} id="requests-heading" title="Family log">
-        <p className="lead">This log does not contact, authenticate, vet, or qualify a helper. All identities are fixed fictional labels. Completion stays unconfirmed until a separate family report is explicitly recorded.</p>
-      </StepHead>
-      {views.length === 0 ? <p className="empty-state">No workflow requests. Create a local draft from an active plan action.</p> : views.map(({ request, active, activityLabel, historyNotice }) => {
-        const title = actionTitle(scenario, request.referenceActionId);
-        const complete = request.completion.status === 'family_reported_complete';
-        const reached = (key: (typeof stages)[number]['key']) => key === 'draft' || (key === 'complete' ? complete
-          : key === 'family_reported_requested' ? request.status !== 'draft' : request.status === 'family_reported_in_progress');
-        const current = complete ? 'complete' : request.status;
-        return (
-          <article className={`request-card ${active ? '' : 'inactive-record'}`} key={request.id} aria-labelledby={`request-${request.id}`}>
-            <p className="eyebrow">{activityLabel}</p><h3 id={`request-${request.id}`}>{title}</h3>
-            <ol className="stages" aria-label="Family-reported stages">{stages.map((stage) => (
-              <li key={stage.key} data-reached={reached(stage.key)} aria-current={current === stage.key ? 'step' : undefined}>
-                <span>{stage.label}</span>{reached(stage.key) ? <span className="sr-only"> (recorded)</span> : null}
-              </li>
-            ))}</ol>
-            <dl className="record-grid">
-              <div><dt>Current family record</dt><dd>{complete ? 'Family reported complete (unverified)' : requestStatusLabels[request.status]}</dd></div>
-              {complete ? <div><dt>Pre-completion stage</dt><dd>{requestStatusLabels[request.status]}</dd></div> : null}
-              <div><dt>Helper label</dt><dd>{request.helperLabel}</dd></div><div><dt>Recorded by</dt><dd>{request.recordedBy}</dd></div>
-              <div className="span-all"><dt>Completion</dt><dd>{request.completion.status === 'family_reported_complete' ? <>Family reported complete by {request.completion.reportedBy} at <LocalTime iso={request.completion.reportedAt} />.</> : 'Unconfirmed — no completion report recorded.'}</dd></div>
-            </dl>
-            <p>{request.note}</p><p className="notice">{historyNotice}</p>
-            <RequestWorkContext action={scenario.referenceActions.find((action) => action.id === request.referenceActionId)} />
-            {!active ? <p className="small-text">Inactive records are read-only. Explicitly confirm a backing concern again to reactivate this action; the previous family report is retained.</p> : null}
-            <div className="button-row">
-              {complete ? <button className="secondary" disabled={!active} aria-label={`Reopen local record: ${title}`} onClick={() => onCommand({ type: 'reopen_request', requestId: request.id })}>Reopen local record</button> : (
-                <>
-                  {request.status === 'draft' ? <button disabled={!active} aria-label={`Record requested: ${title}`} onClick={() => onCommand({ type: 'set_request_status', requestId: request.id, status: 'family_reported_requested' })}>Record family-reported requested</button> : request.status === 'family_reported_requested' ? <button disabled={!active} aria-label={`Record in progress: ${title}`} onClick={() => onCommand({ type: 'set_request_status', requestId: request.id, status: 'family_reported_in_progress' })}>Record family-reported in progress</button> : null}
-                  {request.status !== 'draft' ? <button className={request.status === 'family_reported_in_progress' ? undefined : 'secondary'} disabled={!active} aria-label={`Record family-reported completion: ${title}`} onClick={() => onCommand({ type: 'complete_request', requestId: request.id, at: new Date().toISOString() })}>Record family-reported completion</button> : null}
-                </>
-              )}
-            </div>
-            <SourceNote source={request.source} />
-          </article>
-        );
-      })}
-    </section>
-  );
+  return <section id="requests" className="step" aria-labelledby="requests-heading">
+    <StepHead step={4} id="requests-heading" title="Family log"><p className="lead">Local help-request records. Nothing is sent, and no helper or repair is independently verified.</p></StepHead>
+    {views.length === 0 ? <p className="empty-state">No workflow requests. Create a local draft from an active plan action.</p> : views.map(({ request, activityLabel, historyNotice }) => <article className="request-card" key={request.id}>
+      <p className="eyebrow">{activityLabel}</p><h3>{actionTitle(scenario, request.referenceActionId)}</h3>
+      <p>{requestStatusLabels[request.status]}</p><p>Recorded by: {attributionLabel(state, request.createdBy.actorId)}.</p>
+      <p>Independent verification: {request.independentVerification}.</p>
+      {request.legacyHistory ? <p>{request.legacyHistory.label}: {request.legacyHistory.status}; {request.legacyHistory.completion.status}. {request.legacyHistory.note}</p> : null}
+      <p className="notice">{historyNotice}</p><RequestWorkContext action={scenario.referenceActions.find((action) => action.id === request.referenceActionId)} />
+    </article>)}
+  </section>;
 }

@@ -1,7 +1,7 @@
 import type { DemoScenario } from '../domain/types';
-import { computePlan, getRequestViews } from '../domain/workflow';
+import { computePlan, getRequestViews, attributionLabel } from '../domain/workflow';
 import type { PrintSnapshot } from '../lib/print';
-import { actionTitle, requestStatusLabels, SourceNote } from './display';
+import { actionTitle, requestStatusLabels } from './display';
 import { ActionMetadata, CoverageSummary, ProfileFacts, ProgramDetails, RequestWorkContext } from './CatalogViews';
 
 export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; snapshot: PrintSnapshot }) {
@@ -61,11 +61,11 @@ export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; sn
         <h3 id="report-requests-heading">Local family reports and retained history</h3><p>These records do not contact, authenticate, vet, or qualify helpers. A family report is not independent verification, and it does not resolve any current or newly confirmed concern.</p>
         {requests.length === 0 ? <p>No local family request records in this snapshot.</p> : requests.map(({ request, activityLabel, historyNotice }) => (
           <article key={request.id}>
-            <h4>{actionTitle(scenario, request.referenceActionId)}</h4><p><strong>{activityLabel}</strong> · {request.completion.status === 'family_reported_complete' ? 'Family reported complete (unverified)' : requestStatusLabels[request.status]}</p>
-            {request.completion.status === 'family_reported_complete' ? <p>Pre-completion stage: {requestStatusLabels[request.status]}.</p> : null}
-            <p>Helper label: {request.helperLabel}. Recorded by: {request.recordedBy}.</p>
-            <p>{request.completion.status === 'family_reported_complete' ? <>Family reported complete by {request.completion.reportedBy} at <time dateTime={request.completion.reportedAt}>{request.completion.reportedAt}</time>.</> : 'Completion unconfirmed — no family completion report recorded.'}</p>
-            <p>{request.note}</p><p><strong>History boundary:</strong> {historyNotice}</p><SourceNote source={request.source} />
+            <h4>{actionTitle(scenario, request.referenceActionId)}</h4><p><strong>{activityLabel}</strong> · {requestStatusLabels[request.status]}</p>
+            <p>Recorded by: {attributionLabel(snapshot.state, request.createdBy.actorId)}.</p>
+            <p>Independent verification: {request.independentVerification}.</p>
+            {request.legacyHistory ? <p>{request.legacyHistory.label}: {request.legacyHistory.status}; {request.legacyHistory.completion.status}. {request.legacyHistory.note}</p> : null}
+            <p><strong>History boundary:</strong> {historyNotice}</p>
             <RequestWorkContext action={scenario.referenceActions.find((action) => action.id === request.referenceActionId)} />
           </article>
         ))}

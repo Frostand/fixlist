@@ -1,9 +1,8 @@
-import type { DemoScenario, FamilyRequest, ScreeningStatus, SourceRecord } from '../domain/types';
+import type { HelpRequestStatus } from '../domain/roles';
+import type { DemoScenario, ScreeningStatus, SourceRecord } from '../domain/types';
 
-export const requestStatusLabels: Record<FamilyRequest['status'], string> = {
-  draft: 'Local draft',
-  family_reported_requested: 'Family reported: requested',
-  family_reported_in_progress: 'Family reported: in progress',
+export const requestStatusLabels: Record<HelpRequestStatus, string> = {
+  draft: 'Local draft', invited: 'Volunteer invited (local demo)', accepted: 'Volunteer accepted', declined: 'Invitation declined', scheduled: 'Visit time agreed', in_progress: 'In progress', volunteer_reported_done: 'Volunteer reported done (unverified)', resident_confirmed_done: 'Resident confirmed done (not independently verified)', cancelled: 'Cancelled — retained history',
 };
 export const screeningStatusLabels: Record<ScreeningStatus, string> = {
   criteria_matched: 'Fictional criteria matched',

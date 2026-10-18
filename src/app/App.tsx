@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { demoScenario } from '../data/demo-scenario';
-import { applyCommand, computeCoverage, computePlan, getRequestViews, validateCatalog, type DemoCommand } from '../domain/workflow';
-import { getBrowserStorage, loadDemoState, resetDemoState, saveDemoState } from '../lib/demo-storage';
+import { applyCommand, computeCoverage, computePlan, getRequestViews, validateCatalog, type ResidentCommandInput } from '../domain/workflow';
+import { getBrowserStorage, loadDemoState, resetFixListData, saveDemoState } from '../lib/demo-storage';
 import { decodeLocationHash } from '../lib/location';
 import { createPrintSnapshot } from '../lib/print';
 import type { ScanPin } from '../lib/scan-model';
-import { resetScanStorage } from '../lib/scan-storage';
 import { FloorPlan } from './FloorPlan';
 import { PrintReport } from './PrintReport';
 import { AssistanceSection, ChecklistSection, PlanSection, RequestsSection, StepHead } from './WorkflowSections';
@@ -90,8 +89,8 @@ function DemoApp() {
     setFeedback((previous) => ({ id: previous.id + 1, text }));
   }
 
-  function runCommand(command: DemoCommand) {
-    const result = applyCommand(demoScenario, currentState.current, command);
+  function runCommand(command: ResidentCommandInput) {
+    const result = applyCommand(demoScenario, currentState.current, { ...command, actorId: currentState.current.household.residentId, at: command.at ?? new Date().toISOString() });
     if (!result.ok) { setError(result.error); return; }
     // Successive events see the latest command; storage stays outside React updaters/effects.
     currentState.current = result.state;
@@ -99,24 +98,21 @@ function DemoApp() {
     setPersistence(saveDemoState(initial.storage, demoScenario, result.state));
     setError('');
     setReportIsCurrent(false);
-    const messages: Record<DemoCommand['type'], string> = {
+    const messages: Partial<Record<ResidentCommandInput['type'], string>> = {
       answer_checklist: 'Checklist answer recorded. Answers alone do not confirm a concern.',
       confirm_concern: 'Concern explicitly confirmed. The action plan was recomputed.',
       unconfirm_concern: 'Confirmation removed. The action plan was recomputed; request history is retained.',
       select_profile: 'Fictional profile selected. Screening was recomputed; confirmations and family records are unchanged.',
       create_request: 'Local draft recorded. Nothing was sent.',
-      set_request_status: 'Family-reported status recorded locally. Nothing was sent.',
-      complete_request: 'Family-reported completion recorded. This does not verify a repair or resolve a concern.',
-      reopen_request: 'Local family record reopened. Completion is unconfirmed again.',
     };
-    announce(messages[command.type]);
+    announce(messages[command.type] ?? 'Local change recorded.');
   }
 
   async function resetDemo() {
     if (scanResetting) return;
     // Unmount first: a decoder finishing during reset must not enqueue a later save.
     flushSync(() => setScanResetting(true));
-    const result = resetDemoState(initial.storage, demoScenario);
+    const result = await resetFixListData(initial.storage, demoScenario);
     currentState.current = result.state;
     setState(result.state);
     setPersistence(result);
@@ -125,11 +121,10 @@ function DemoApp() {
     currentScanPins.current = [];
     setReport(createPrintSnapshot(result.state, new Date().toISOString()));
     setReportIsCurrent(true);
-    const scanResult = await resetScanStorage();
     setScanResetVersion((version) => version + 1);
     setScanResetting(false);
-    if (!scanResult.ok) setError(scanResult.message);
-    announce(`Fresh synthetic demo restored. ${scanResult.message}`);
+    if (result.status === 'error') setError(result.message);
+    announce(result.message);
   }
 
   function refreshReport() {

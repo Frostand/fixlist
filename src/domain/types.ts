@@ -59,6 +59,7 @@ export type HumanConfirmation =
     }
   | {
       humanConfirmed: true;
+      actorId: string;
       confirmedBy: string;
       confirmedAt: string;
     };
@@ -84,6 +85,9 @@ export interface ReferenceAction {
   id: string;
   title: string;
   description: string;
+  nextStep: string;
+  effort: 'quick_fix' | 'helper_task' | 'professional';
+  nextStepSource: 'Based on CDC 2017 Check for Safety';
   source: SourceRecord;
   guidance: GuidanceReference;
   fundingTags: readonly FundingTag[];
@@ -110,6 +114,15 @@ export interface AssistanceProgram {
   unmodeledRequirements: readonly string[];
 }
 
+export interface LocalHelpResource {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  phone: string;
+  source: Extract<SourceRecord, { status: 'verified' }>;
+}
+
 export type CompletionRecord =
   | {
       status: 'unconfirmed';
@@ -122,7 +135,7 @@ export type CompletionRecord =
       reportedAt: string;
     };
 
-/** A local family log never proves that a helper was contacted or vetted. */
+/** Frozen v1/v2 migration contract only. New state uses HelpRequest in roles.ts. */
 export interface FamilyRequest {
   id: string;
   referenceActionId: string;
@@ -148,5 +161,6 @@ export interface DemoScenario {
   factDefinitions: readonly FactDefinition[];
   profiles: readonly FictionalProfile[];
   programs: readonly AssistanceProgram[];
+  localHelpResources: readonly LocalHelpResource[];
   requests: readonly FamilyRequest[];
 }

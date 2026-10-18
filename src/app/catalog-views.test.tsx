@@ -1,12 +1,15 @@
+import type { DemoScenario } from '../domain/types';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { demoScenario } from '../data/demo-scenario';
-import { applyCommand, createInitialState, computePlan, requestIdForAction, type DemoCommand, type DemoState } from '../domain/workflow';
+import { applyCommand as applyDomainCommand, createInitialState, computePlan, type ResidentCommandInput as DemoCommand, type DemoState } from '../domain/workflow';
 import { ProgramDetails } from './CatalogViews';
 import { PrintReport } from './PrintReport';
 import { AssistanceSection, ChecklistSection, PlanSection, RequestsSection } from './WorkflowSections';
 
 const at = '2026-10-17T12:00:00.000Z';
+function applyCommand(scenario: DemoScenario, state: DemoState, value: DemoCommand) { return applyDomainCommand(scenario, state, { actorId: 'margaret', at, ...value }); }
+
 const noop = () => {};
 
 function command(state: DemoState, value: DemoCommand): DemoState {
@@ -65,21 +68,19 @@ describe('screen and printable catalog content', () => {
 
   it('keeps professional-review context beside an inactive completed family record on screen and print', () => {
     let state = confirmedState();
-    state = command(state, { type: 'create_request', referenceActionId: 'review-handrail' });
-    state = command(state, { type: 'set_request_status', requestId: requestIdForAction('review-handrail'), status: 'family_reported_requested' });
-    state = command(state, { type: 'complete_request', requestId: requestIdForAction('review-handrail'), at });
+    state = command(state, { type: 'create_request', referenceActionId: 'review-handrail', expectedRevision: 0 });
     state = command(state, { type: 'unconfirm_concern', concernId: 'handrail-concern' });
     const screen = renderToStaticMarkup(<RequestsSection scenario={demoScenario} state={state} onCommand={noop} />);
     const printed = renderToStaticMarkup(<PrintReport scenario={demoScenario} snapshot={{ state, generatedAt: at, scanPins: [] }} />);
     for (const html of [screen, printed]) {
       expect(html).toContain('Inactive history');
-      expect(html).toContain('Family reported complete (unverified)');
+      expect(html).toContain('Local draft');
       expect(html).toContain('professional review');
       expect(html).toContain('not authorization to perform repairs');
       expect(html).toContain('fictional helper label does not establish qualifications');
-      expect(html).toContain('Fictional family-known helper');
+      expect(html).toContain('Margaret (resident)');
     }
-    expect(screen).toContain('disabled=""');
+    expect(screen).toContain('Independent verification:');
   });
 
   it('shows relevant confirmed work together with a failed homeowner condition', () => {

@@ -35,3 +35,10 @@ export function computePlan(scenario: DemoScenario, state: DemoState): readonly 
     }];
   });
 }
+
+export const PLAN_GROUPING_EXPLANATION = 'Grouped by who can usually do it — a reading aid, not a risk ranking.';
+export function groupPlanByEffort(plan: readonly PlanItem[]) {
+  return (['quick_fix', 'helper_task', 'professional'] as const).map((effort) => ({
+    effort, explanation: PLAN_GROUPING_EXPLANATION, items: plan.filter((item) => item.referenceAction.effort === effort),
+  }));
+}

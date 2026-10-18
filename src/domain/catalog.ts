@@ -75,11 +75,11 @@ function source(value: unknown, path: string) {
 /** Validate the complete authored catalog before showing its browser journey. */
 export function validateCatalog(value: unknown): CatalogValidationResult {
   try {
-    const scenario = object(value, 'scenario', ['id', 'schemaVersion', 'title', 'synthetic', 'disclosure', 'rooms', 'checklist', 'evidence', 'concerns', 'referenceActions', 'factDefinitions', 'profiles', 'programs', 'requests']);
+    const scenario = object(value, 'scenario', ['id', 'schemaVersion', 'title', 'synthetic', 'disclosure', 'rooms', 'checklist', 'evidence', 'concerns', 'referenceActions', 'factDefinitions', 'profiles', 'programs', 'localHelpResources', 'requests']);
     id(scenario.id, 'scenario.id'); text(scenario.title, 'scenario.title'); text(scenario.disclosure, 'scenario.disclosure');
     if (scenario.schemaVersion !== 2 || scenario.synthetic !== true) return reject('Only the synthetic schema-v2 catalog is supported.');
     const rooms = records(scenario.rooms, 'rooms', ['id', 'name', 'photoUrl']);
-    const actions = records(scenario.referenceActions, 'referenceActions', ['id', 'title', 'description', 'source', 'guidance', 'fundingTags', 'helpRouting', 'cost']);
+    const actions = records(scenario.referenceActions, 'referenceActions', ['id', 'title', 'description', 'nextStep', 'effort', 'nextStepSource', 'source', 'guidance', 'fundingTags', 'helpRouting', 'cost']);
     const checklist = records(scenario.checklist, 'checklist', ['id', 'roomId', 'prompt', 'referenceActionId']);
     const evidence = records(scenario.evidence, 'evidence', ['id', 'roomId', 'checklistItemId', 'observation', 'imageUrl', 'source']);
     const concerns = records(scenario.concerns, 'concerns', ['id', 'evidenceIds', 'referenceActionId', 'confirmation']);
@@ -92,10 +92,13 @@ export function validateCatalog(value: unknown): CatalogValidationResult {
     }
     for (const [actionId, action] of actions) {
       text(action.title, `actions.${actionId}.title`); text(action.description, `actions.${actionId}.description`);
+      text(action.nextStep, `actions.${actionId}.nextStep`);
+      if (!['quick_fix', 'helper_task', 'professional'].includes(action.effort as string) || action.nextStepSource !== 'Based on CDC 2017 Check for Safety') return reject('Unsupported next-step effort or source.');
       source(action.source, `actions.${actionId}.source`);
       strings(action.fundingTags, `actions.${actionId}.fundingTags`, tags);
       const routing = object(action.helpRouting, `actions.${actionId}.helpRouting`, ['kind', 'explanation']);
       if (routing.kind !== 'family_review' && routing.kind !== 'professional_review') return reject(`Unsupported help-routing kind for ${actionId}.`);
+      if ((action.effort === 'professional') !== (routing.kind === 'professional_review')) return reject('Effort and help routing must agree.');
       text(routing.explanation, `actions.${actionId}.helpRouting.explanation`);
       const cost = object(action.cost, `actions.${actionId}.cost`, ['status', 'explanation']);
       if (cost.status !== 'unknown') return reject(`Cost for ${actionId} must remain unknown.`);
@@ -145,6 +148,13 @@ export function validateCatalog(value: unknown): CatalogValidationResult {
         const evaluation = evaluateFactRule(program.rule, scenario.factDefinitions as readonly FactDefinition[], profile.facts);
         if (!evaluation.ok) return reject(`Program ${programId} / profile ${profileId}: ${evaluation.error}`);
       }
+    }
+    const resources = records(scenario.localHelpResources, 'localHelpResources', ['id', 'name', 'description', 'url', 'phone', 'source']);
+    for (const [resourceId, resource] of resources) {
+      text(resource.name, resourceId); text(resource.description, resourceId); text(resource.phone, resourceId);
+      const src = object(resource.source, resourceId + '.source', ['status', 'label', 'citationUrl', 'verifiedAt']);
+      text(src.label, resourceId);
+      if (src.status !== 'verified' || resource.url !== 'https://eldercare.acl.gov/' || src.citationUrl !== resource.url || src.verifiedAt !== '2026-10-18') return reject('Local-help resource must have its verified primary source and date.');
     }
     return { ok: true };
   } catch (error) {

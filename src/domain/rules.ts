@@ -54,8 +54,13 @@ export function canConfirmConcern(scenario: DemoScenario, state: DemoState, conc
 
 export function isConfirmedConcern(scenario: DemoScenario, state: DemoState, concernId: string): boolean {
   const confirmation = state.confirmations[concernId];
-  return confirmation?.humanConfirmed === true
-    && confirmation.confirmedBy === FAMILY_LABEL
+  if (!confirmation?.humanConfirmed) return false;
+  const actor = state.people.find((p) => p.id === confirmation.actorId);
+  const resident = state.people.find((p) => p.id === state.household.residentId);
+  const label = actor?.role === 'resident' && actor.id === state.household.residentId ? `${actor.name} (resident)`
+    : actor?.role === 'family_helper' ? `${actor.name} (family helper) for ${resident?.name ?? 'the resident'}`
+      : confirmation.actorId === 'family-before-roles' ? 'Family record (before roles)' : null;
+  return label !== null && confirmation.confirmedBy === label
     && isIsoTimestamp(confirmation.confirmedAt)
     && canConfirmConcern(scenario, state, concernId);
 }

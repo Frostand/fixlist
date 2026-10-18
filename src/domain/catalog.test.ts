@@ -4,9 +4,11 @@ import { validateCatalog } from './catalog';
 import { computeCoverage } from './coverage';
 import { screenProgram, computeWorkRelevance } from './screening';
 import type { DemoScenario } from './types';
-import { applyCommand, computePlan, createInitialState, getSelectedProfile, requestIdForAction, type DemoCommand, type DemoState } from './workflow';
+import { applyCommand as applyDomainCommand, computePlan, createInitialState, getSelectedProfile, type ResidentCommandInput as DemoCommand, type DemoState } from './workflow';
 
 const at = '2026-10-17T12:00:00.000Z';
+function applyCommand(scenario: DemoScenario, state: DemoState, value: DemoCommand) { return applyDomainCommand(scenario, state, { actorId: 'margaret', at, ...value }); }
+
 
 function command(state: DemoState, value: DemoCommand): DemoState {
   const applied = applyCommand(demoScenario, state, value);
@@ -163,9 +165,7 @@ describe('fact-derived fictional program screening', () => {
 
   it('switches profiles without changing confirmations, answers, plan or inactive completed history', () => {
     let state = confirmActions(['review-handrail']);
-    state = command(state, { type: 'create_request', referenceActionId: 'review-handrail' });
-    state = command(state, { type: 'set_request_status', requestId: requestIdForAction('review-handrail'), status: 'family_reported_requested' });
-    state = command(state, { type: 'complete_request', requestId: requestIdForAction('review-handrail'), at });
+    state = command(state, { type: 'create_request', referenceActionId: 'review-handrail', expectedRevision: 0 });
     state = command(state, { type: 'unconfirm_concern', concernId: 'handrail-concern' });
     const before = structuredClone(state);
     for (const profile of demoScenario.profiles) {
@@ -173,7 +173,7 @@ describe('fact-derived fictional program screening', () => {
       expect(state.confirmations).toEqual(before.confirmations);
       expect(state.checklistAnswers).toEqual(before.checklistAnswers);
       expect(state.requests).toEqual(before.requests);
-      expect(state.requests[0]?.completion.status).toBe('family_reported_complete');
+      expect(state.requests[0]?.status).toBe('draft');
       expect(computePlan(demoScenario, state)).toEqual([]);
     }
     expect(applyCommand(demoScenario, state, { type: 'select_profile', profileId: 'real-person' }).ok).toBe(false);
@@ -204,13 +204,11 @@ describe('work relevance is independent from applicant criteria', () => {
 
   it('withdraws relevance when confirmation is revoked and retains the original family completion rule', () => {
     let state = confirmActions(['review-handrail']);
-    state = command(state, { type: 'create_request', referenceActionId: 'review-handrail' });
-    state = command(state, { type: 'set_request_status', requestId: requestIdForAction('review-handrail'), status: 'family_reported_requested' });
-    state = command(state, { type: 'complete_request', requestId: requestIdForAction('review-handrail'), at });
+    state = command(state, { type: 'create_request', referenceActionId: 'review-handrail', expectedRevision: 0 });
     expect(computeWorkRelevance(support, computePlan(demoScenario, state)).status).toBe('relevant');
     state = command(state, { type: 'unconfirm_concern', concernId: 'handrail-concern' });
     expect(computeWorkRelevance(support, computePlan(demoScenario, state)).status).toBe('no_confirmed_work');
-    expect(state.requests[0]?.completion.status).toBe('family_reported_complete');
+    expect(state.requests[0]?.status).toBe('draft');
   });
 });
 
@@ -280,5 +278,22 @@ describe('catalog validation rejects unsupported authored data', () => {
     freeze(frozen);
     expect(validateCatalog(frozen)).toEqual({ ok: true });
     expect(frozen).toEqual(before);
+  });
+});
+
+describe('authored practical next steps and real resource boundary', () => {
+  it.each([
+    ['review-rug', 'Take up the rug, or hold it down with double-sided rug tape or a non-slip pad.', 'quick_fix'],
+    ['review-cord', 'Move the cord along the wall and tape or clip it down so it does not cross the path. If you need another outlet, ask an electrician.', 'quick_fix'],
+    ['review-stair-clutter', 'Clear everything off the stairs and keep the steps empty.', 'quick_fix'],
+    ['review-handrail', 'Have a qualified professional fix the loose handrail. Handrails on both sides of the stairs help most.', 'professional'],
+    ['review-stair-lighting', 'Ask an electrician to add a light with switches at the top and bottom of the stairs.', 'professional'],
+    ['review-night-lighting', 'Put a lamp within reach of the bed and plug in night-lights along the path to the bathroom.', 'helper_task'],
+    ['review-shower-surface', 'Put a non-slip rubber mat or self-stick strips on the tub or shower floor.', 'helper_task'],
+    ['review-bathroom-support', 'Have a qualified installer put grab bars next to and inside the tub and next to the toilet.', 'professional'],
+  ])('%s keeps the exact authored step and effort', (id, nextStep, effort) => { expect(demoScenario.referenceActions.find((a) => a.id === id)).toMatchObject({ nextStep, effort, nextStepSource: 'Based on CDC 2017 Check for Safety' }); });
+  it('accepts the verified Eldercare source, while fictional programs cannot acquire its verified status', () => {
+    expect(demoScenario.localHelpResources).toEqual([{ id: 'eldercare-locator', name: 'Eldercare Locator', description: 'A public service of the U.S. Administration for Community Living that connects older adults and families to local services, including Area Agencies on Aging.', url: 'https://eldercare.acl.gov/', phone: '1-800-677-1116', source: { status: 'verified', label: 'U.S. Administration for Community Living', citationUrl: 'https://eldercare.acl.gov/', verifiedAt: '2026-10-18' } }]);
+    const bad = structuredClone(demoScenario); bad.programs[0]!.source = { ...bad.localHelpResources[0]!.source }; expect(validateCatalog(bad).ok).toBe(false);
   });
 });

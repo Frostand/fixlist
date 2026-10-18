@@ -1,4 +1,5 @@
 import type { DemoScenario, GuidanceReference, ReferenceAction, SourceRecord } from '../domain/types';
+import { localHelpResources } from './local-help-resources';
 import { factDefinitions, fictionalProfiles } from './fictional-profiles';
 
 const syntheticSource = {
@@ -39,6 +40,7 @@ const samples: readonly SampleConcern[] = [
     prompt: 'Does a rug edge obstruct the walking route?',
     observation: 'Scripted sample observation: a rug edge crosses the walkway.',
     action: {
+      nextStep: 'Take up the rug, or hold it down with double-sided rug tape or a non-slip pad.', effort: 'quick_fix', nextStepSource: 'Based on CDC 2017 Check for Safety',
       id: 'review-rug', title: 'Review the rug placement',
       description: 'Demo reference text: discuss the documented obstruction with the resident before deciding on an action.',
       source: syntheticSource, guidance: guidance('Floors — rugs'), fundingTags: ['general_repair'], helpRouting: familyReview, cost: unknownCost,
@@ -49,6 +51,7 @@ const samples: readonly SampleConcern[] = [
     prompt: 'Does a cord cross the walking route?',
     observation: 'Scripted sample observation: a lamp cord crosses the hallway.',
     action: {
+      nextStep: 'Move the cord along the wall and tape or clip it down so it does not cross the path. If you need another outlet, ask an electrician.', effort: 'quick_fix', nextStepSource: 'Based on CDC 2017 Check for Safety',
       id: 'review-cord', title: 'Review the cord route',
       description: 'Demo reference text: document the cord route and agree on a next step with the resident.',
       source: syntheticSource, guidance: guidance('Floors — cords'), fundingTags: ['general_repair'], helpRouting: familyReview, cost: unknownCost,
@@ -59,6 +62,7 @@ const samples: readonly SampleConcern[] = [
     prompt: 'Do objects obstruct the sample stairs?',
     observation: 'Scripted sample observation: a box occupies part of the stairs.',
     action: {
+      nextStep: 'Clear everything off the stairs and keep the steps empty.', effort: 'quick_fix', nextStepSource: 'Based on CDC 2017 Check for Safety',
       id: 'review-stair-clutter', title: 'Review objects on the stairs',
       description: 'Discuss the documented stair obstruction and an appropriate next step with the resident.',
       source: syntheticSource, guidance: guidance('Stairs and steps — clutter'), fundingTags: ['general_repair'], helpRouting: familyReview, cost: unknownCost,
@@ -69,6 +73,7 @@ const samples: readonly SampleConcern[] = [
     prompt: 'Is the sample stair handrail loose?',
     observation: 'Scripted sample observation: a stair handrail is described as loose.',
     action: {
+      nextStep: 'Have a qualified professional fix the loose handrail. Handrails on both sides of the stairs help most.', effort: 'professional', nextStepSource: 'Based on CDC 2017 Check for Safety',
       id: 'review-handrail', title: 'Seek review of the stair handrail',
       description: 'Document the reported handrail concern and seek an appropriately qualified professional’s review.',
       source: syntheticSource, guidance: guidance('Stairs and steps — handrails'), fundingTags: ['railing'], helpRouting: professionalReview, cost: unknownCost,
@@ -79,6 +84,7 @@ const samples: readonly SampleConcern[] = [
     prompt: 'Is a light or accessible switch missing for the sample stairs?',
     observation: 'Scripted sample observation: the stairs lack a light and a switch at one end.',
     action: {
+      nextStep: 'Ask an electrician to add a light with switches at the top and bottom of the stairs.', effort: 'professional', nextStepSource: 'Based on CDC 2017 Check for Safety',
       id: 'review-stair-lighting', title: 'Seek review of stair lighting',
       description: 'Discuss the documented stair-lighting concern and seek an appropriately qualified electrical professional’s review.',
       source: syntheticSource, guidance: guidance('Stairs and steps — lighting and switches'), fundingTags: ['lighting'], helpRouting: professionalReview, cost: unknownCost,
@@ -89,6 +95,7 @@ const samples: readonly SampleConcern[] = [
     prompt: 'Is the sample route from bed to bathroom dark?',
     observation: 'Scripted sample observation: the bed-to-bathroom route is described as dark at night.',
     action: {
+      nextStep: 'Put a lamp within reach of the bed and plug in night-lights along the path to the bathroom.', effort: 'helper_task', nextStepSource: 'Based on CDC 2017 Check for Safety',
       id: 'review-night-lighting', title: 'Review the night walking route',
       description: 'Discuss visibility along the documented night route and an appropriate next step with the resident.',
       source: syntheticSource, guidance: guidance('Bedrooms — night path'), fundingTags: ['lighting'], helpRouting: familyReview, cost: unknownCost,
@@ -99,6 +106,7 @@ const samples: readonly SampleConcern[] = [
     prompt: 'Is the sample shower surface described as slippery?',
     observation: 'Scripted sample observation: the shower floor is described as slippery.',
     action: {
+      nextStep: 'Put a non-slip rubber mat or self-stick strips on the tub or shower floor.', effort: 'helper_task', nextStepSource: 'Based on CDC 2017 Check for Safety',
       id: 'review-shower-surface', title: 'Review the shower surface',
       description: 'Discuss the documented shower-surface concern and whether appropriate advice is needed for a next step.',
       source: syntheticSource, guidance: guidance('Bathrooms — slippery tub or shower'), fundingTags: ['general_repair'], helpRouting: familyReview, cost: unknownCost,
@@ -109,6 +117,7 @@ const samples: readonly SampleConcern[] = [
     prompt: 'Is support reported as missing where needed near the sample tub or toilet?',
     observation: 'Scripted sample observation: support is reported as missing near the tub and toilet.',
     action: {
+      nextStep: 'Have a qualified installer put grab bars next to and inside the tub and next to the toilet.', effort: 'professional', nextStepSource: 'Based on CDC 2017 Check for Safety',
       id: 'review-bathroom-support', title: 'Seek review of bathroom support',
       description: 'Document the reported support need and seek an appropriately qualified professional’s review before deciding on changes.',
       source: syntheticSource, guidance: guidance('Bathrooms — tub and toilet support'), fundingTags: ['bathroom_support'], helpRouting: professionalReview, cost: unknownCost,
@@ -159,5 +168,6 @@ export const demoScenario: DemoScenario = {
       unmodeledRequirements: ['Landlord permissions, documentation and detailed electrical review are not modeled.', 'No real program availability, application process or award decision is represented.'],
     },
   ],
+  localHelpResources,
   requests: [],
 };
