@@ -40,7 +40,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; font-size: 1.0625rem; }
+body { margin: 0; font-size: 1.0625rem; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 h1, h2, h3, h4 { line-height: 1.2; margin-block: 0 0.5rem; text-wrap: balance; }
 h1, h2 { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.012em; }
 h3 { font-size: 1.2rem; font-weight: 700; }
