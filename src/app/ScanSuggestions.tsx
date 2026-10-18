@@ -1,3 +1,6 @@
+import { authored } from '../i18n/authored';
+import { projectedCatalogText } from '../i18n/catalog';
+import { useT, useLanguage } from '../i18n';
 import { useState } from 'react';
 import type { ScanSuggestion, ScanSuggestionLayer, SuggestionCatalog } from '../lib/scan-suggestions';
 import { isSuggested, suggestionAnchor, suggestionId, suggestionScore, suggestionScoreText } from '../lib/scan-suggestions';
@@ -8,6 +11,7 @@ interface Props {
   onDismiss: (item: ScanSuggestion, dismissed: boolean) => void;
 }
 export function ScanSuggestions({ layer, catalog, viewerReady, canAddPin, onShow, onPin, onDismiss }: Props) {
+  const t = useT(), language = useLanguage();
   const [showDismissed, setShowDismissed] = useState(false);
   const active = layer.data.items.filter((item) => !layer.dismissed.includes(suggestionId(item)));
   const suggested = active.filter(isSuggested).sort((a, b) => (suggestionScore(b) ?? -1) - (suggestionScore(a) ?? -1));
@@ -17,56 +21,57 @@ export function ScanSuggestions({ layer, catalog, viewerReady, canAddPin, onShow
   const dismissed = layer.data.items.filter((item) => layer.dismissed.includes(suggestionId(item)));
 
   const emptyMessage = active.length === 0
-    ? (dismissed.length ? 'All imported items are dismissed. Restore an item below to review it.' : 'This file has no review items linked to the current checklist.')
-    : notVisible.length === active.length ? 'No active suggestions for review: no analyzed frame met the relevance threshold for these photo questions.'
-    : older.length === active.length ? 'No active suggestions for review. This older file does not record why these items were not suggested.'
-    : below.length === active.length ? 'No active items met the suggestion threshold and required frame count.'
-    : 'No active suggestions for review. Items below show whether scores were below threshold or the subject was not visible.';
+    ? (dismissed.length ? t("legacy.scansuggestions.1") : t("legacy.scansuggestions.2"))
+    : notVisible.length === active.length ? t("legacy.scansuggestions.3")
+    : older.length === active.length ? t("legacy.scansuggestions.4")
+    : below.length === active.length ? t("legacy.scansuggestions.5")
+    : t("legacy.scansuggestions.6");
 
   function entry(item: ScanSuggestion, isDismissed = false) {
     const id = suggestionId(item), pinned = layer.pinned.includes(id);
     const photo = catalog.get(item.checklistItemId);
-    const question = photo?.question ?? item.question;
-    const reason = !item.position ? 'No 3D location was provided by the model.' : !viewerReady ? 'Open the viewer and wait for the room to load to show this location.' : '';
+    const question = projectedCatalogText(t, photo?.question ?? item.question);
+    const reason = !item.position ? t("legacy.scansuggestions.7") : !viewerReady ? t("legacy.scansuggestions.8") : '';
     return <li key={id} id={suggestionAnchor(item)} tabIndex={-1} className="scan-suggestion">
-      <h5>{question}</h5>
-      <p className="small-text">{photo?.limitation}</p>
-      <p className="small-text">Related checklist question: {photo?.checklistPrompt}</p>
-      <p><strong>{suggestionScoreText(item, layer.data)}</strong> · {item.framesAboveThreshold} of {layer.data.scan.framesAnalyzed} frames above threshold</p>
-      {!('status' in item) && !item.suggested ? <p>Not suggested (older file; reason not recorded)</p> : null}
-      <p className="small-text">An unverified model estimate; review the area yourself. {pinned ? 'Added as a family-placed pin. This does not confirm the concern.' : ''}</p>
-      {item.thumbnail ? <img className="scan-suggestion-thumbnail" src={item.thumbnail} alt={`Frame the local AI model looked at when suggesting review: ${question}`} loading="lazy" decoding="async" /> : <p className="small-text">No evidence thumbnail was provided.</p>}
+      <h5>{question}{language === 'es' ? ` ${t('check.originalQuestion')}` : null}</h5>
+      <p className="small-text">{authored(t, photo?.limitation ?? '')}</p>
+      <p className="small-text">{t("legacy.scansuggestions.9")}{projectedCatalogText(t, photo?.checklistPrompt ?? '')}</p>
+      <p><strong>{language === 'en' ? suggestionScoreText(item, layer.data) : suggestionScore(item) === null ? t('scan.noScore') : 'calibration' in layer.data && layer.data.calibration ? t('scan.calibrated', { score: suggestionScore(item)?.toFixed(2), count: layer.data.calibration.trainExamples }) : t('scan.score', { score: suggestionScore(item)?.toFixed(2) })}</strong> · {item.framesAboveThreshold}{t("legacy.catalogviews.12")}{layer.data.scan.framesAnalyzed}{t("legacy.scansuggestions.10")}</p>
+      {!('status' in item) && !item.suggested ? <p>{t("legacy.scansuggestions.11")}</p> : null}
+      <p className="small-text">{t("legacy.scansuggestions.12")}{pinned ? t("legacy.scansuggestions.13") : ''}</p>
+      {item.thumbnail ? <img className="scan-suggestion-thumbnail" src={item.thumbnail} alt={t("legacy.scansuggestions.14", { v0: question })} loading="lazy" decoding="async" /> : <p className="small-text">{t("legacy.scansuggestions.15")}</p>}
       {reason ? <p className="small-text" id={`${suggestionAnchor(item)}-reason`}>{reason}</p> : null}
-      {isDismissed ? <button className="secondary" onClick={() => onDismiss(item, false)} aria-label={`Restore suggestion: ${question}`}>Restore suggestion</button>
+      {isDismissed ? <button className="secondary" onClick={() => onDismiss(item, false)} aria-label={t("legacy.scansuggestions.16", { v0: question })}>{t("legacy.scansuggestions.17")}</button>
         : <div className="button-row">
-          <button className="secondary" disabled={Boolean(reason)} aria-describedby={reason ? `${suggestionAnchor(item)}-reason` : undefined} onClick={() => onShow(item)} aria-label={`Show in 3D: ${question}`}>Show in 3D</button>
-          <button className="secondary" disabled={!isSuggested(item) || !item.position || pinned || !canAddPin} onClick={() => onPin(item)} aria-label={`Add as pin: ${question}`}>{pinned ? 'Added as pin' : 'Add as pin'}</button>
-          <button className="secondary" onClick={() => onDismiss(item, true)} aria-label={`Dismiss suggestion: ${question}`}>Dismiss</button>
+          <button className="secondary" disabled={Boolean(reason)} aria-describedby={reason ? `${suggestionAnchor(item)}-reason` : undefined} onClick={() => onShow(item)} aria-label={t("legacy.scansuggestions.18", { v0: question })}>{t("legacy.scansuggestions.19")}</button>
+          <button className="secondary" disabled={!isSuggested(item) || !item.position || pinned || !canAddPin} onClick={() => onPin(item)} aria-label={t("legacy.scansuggestions.20", { v0: question })}>{pinned ? t("legacy.scansuggestions.21") : t("legacy.scansuggestions.22")}</button>
+          <button className="secondary" onClick={() => onDismiss(item, true)} aria-label={t("legacy.scansuggestions.23", { v0: question })}>{t("legacy.scansuggestions.24")}</button>
         </div>}
-      {!canAddPin && !pinned && !isDismissed ? <p className="small-text">The room pin limit has been reached. Remove a pin before adding another.</p> : null}
+      {!canAddPin && !pinned && !isDismissed ? <p className="small-text">{t("legacy.scansuggestions.25")}</p> : null}
     </li>;
   }
   return <section className="scan-suggestions" aria-labelledby="scan-suggestions-heading">
-    <h4 id="scan-suggestions-heading">Model suggestions</h4>
-    <p>Suggested by a local AI model (StartLux-Decision). Areas to review — not findings. They never answer or confirm the checklist.</p>
-    <p className="small-text">Model: {layer.data.model.name} · MLX · License: {layer.data.model.license}</p>
-    <p className="small-text">{layer.data.notice}</p>
-    {layer.droppedItems > 0 ? <p className="notice" role="status">{layer.droppedItems} model suggestion(s) were dropped because their checklist/concern links are unknown or no longer match the catalog.</p> : null}
-    <h5>Suggested for review</h5>
-    {suggested.length ? <ul className="scan-suggestion-list">{suggested.map((item) => entry(item))}</ul> : <p className="small-text">{emptyMessage} This does not certify safety.</p>}
-    {below.length ? <details className="scan-suggestion-details"><summary>Below threshold ({below.length})</summary><ul className="scan-suggestion-list">{below.map((item) => entry(item))}</ul></details> : null}
-    {notVisible.length ? <details className="scan-suggestion-details"><summary>Not visible in analyzed frames ({notVisible.length})</summary><p className="small-text">No analyzed frame met the model’s relevance threshold for showing the subject of this photo question.</p><ul className="scan-suggestion-list">{notVisible.map((item) => entry(item))}</ul></details> : null}
-    {older.length ? <details className="scan-suggestion-details"><summary>Not suggested ({older.length})</summary><ul className="scan-suggestion-list">{older.map((item) => entry(item))}</ul></details> : null}
-    {dismissed.length ? <><button className="secondary" aria-expanded={showDismissed} aria-controls="scan-dismissed-suggestions" onClick={() => setShowDismissed((value) => !value)}>{showDismissed ? 'Hide dismissed' : 'Show dismissed'} ({dismissed.length})</button>
+    <h4 id="scan-suggestions-heading">{t("legacy.scansuggestions.26")}</h4>
+    <p>{t("legacy.scansuggestions.27")}</p>
+    <p className="small-text">{t("legacy.scansuggestions.28")}{layer.data.model.name}{t("legacy.scansuggestions.29")}{layer.data.model.license}</p>
+    <p className="small-text">{t("check.confirmHelp")}</p>
+    {layer.droppedItems > 0 ? <p className="notice" role="status">{layer.droppedItems}{t("legacy.scansuggestions.30")}</p> : null}
+    <h5>{t("legacy.scansuggestions.31")}</h5>
+    {suggested.length ? <ul className="scan-suggestion-list">{suggested.map((item) => entry(item))}</ul> : <p className="small-text">{emptyMessage}{t("legacy.scansuggestions.32")}</p>}
+    {below.length ? <details className="scan-suggestion-details"><summary>{t("legacy.scansuggestions.33")}{below.length})</summary><ul className="scan-suggestion-list">{below.map((item) => entry(item))}</ul></details> : null}
+    {notVisible.length ? <details className="scan-suggestion-details"><summary>{t("legacy.scansuggestions.34")}{notVisible.length})</summary><p className="small-text">{t("legacy.scansuggestions.35")}</p><ul className="scan-suggestion-list">{notVisible.map((item) => entry(item))}</ul></details> : null}
+    {older.length ? <details className="scan-suggestion-details"><summary>{t("legacy.scansuggestions.36")}{older.length})</summary><ul className="scan-suggestion-list">{older.map((item) => entry(item))}</ul></details> : null}
+    {dismissed.length ? <><button className="secondary" aria-expanded={showDismissed} aria-controls="scan-dismissed-suggestions" onClick={() => setShowDismissed((value) => !value)}>{showDismissed ? t("legacy.scansuggestions.37") : t("legacy.scansuggestions.38")} ({dismissed.length})</button>
       {showDismissed ? <ul id="scan-dismissed-suggestions" className="scan-suggestion-list">{dismissed.map((item) => entry(item, true))}</ul> : null}</> : null}
   </section>;
 }
 
 export function ScanSuggestionChip({ item }: { item: ScanSuggestion }) {
+  const t = useT();
   return <a className="scan-suggestion-chip" href={`#${suggestionAnchor(item)}`} onClick={() => {
     const target = document.getElementById(suggestionAnchor(item));
     const details = target?.closest('details');
     if (details) details.open = true;
     target?.focus({ preventScroll: true });
-  }}>AI review suggested · score {suggestionScore(item)?.toFixed(2)}</a>;
+  }}>{t("legacy.scansuggestions.39")}{suggestionScore(item)?.toFixed(2)}</a>;
 }

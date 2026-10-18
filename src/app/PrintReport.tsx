@@ -1,76 +1,82 @@
+import { authored } from '../i18n/authored';
+import { PhotoImage } from './Photos';
+import { SharingSummary } from './RequestScreens';
+import { personLabel } from './view-model';
+import { useT } from '../i18n';
 import type { DemoScenario } from '../domain/types';
-import { computePlan, getRequestViews, attributionLabel } from '../domain/workflow';
+import { computePlan, getRequestViews } from '../domain/workflow';
 import type { PrintSnapshot } from '../lib/print';
 import { actionTitle, requestStatusLabels } from './display';
 import { ActionMetadata, CoverageSummary, ProfileFacts, ProgramDetails, RequestWorkContext } from './CatalogViews';
 
 export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; snapshot: PrintSnapshot }) {
+  const t = useT();
   const plan = computePlan(scenario, snapshot.state);
   const requests = getRequestViews(scenario, snapshot.state);
   return (
     <article className="print-report" aria-labelledby="report-title">
       <header>
-        <p className="eyebrow">Synthetic scenario · Local record only</p><h2 id="report-title">FixList local demo report</h2><p><strong>{scenario.title}</strong></p>
-        <p>Generated at <time dateTime={snapshot.generatedAt}>{snapshot.generatedAt}</time> (UTC).</p><p>{scenario.disclosure}</p>
-        <p><strong>Evidence limits:</strong> Authored observations are separate from human confirmation. This app does not certify safety, find every hazard, or provide a complete assessment. No external contact, approval, or independent repair verification is established by this report.</p>
+        <p className="eyebrow">{t("legacy.printreport.1")}</p><h2 id="report-title">{t("legacy.printreport.2")}</h2><p><strong>{authored(t, scenario.title)}</strong></p>
+        <p>{t("legacy.printreport.3")}<time dateTime={snapshot.generatedAt}>{snapshot.generatedAt}</time>{t("legacy.printreport.4")}</p><p>{authored(t, scenario.disclosure)}</p>
+        <p><strong>{t("legacy.printreport.5")}</strong>{t("legacy.printreport.6")}</p>
       </header>
-      <section aria-labelledby="report-coverage-heading"><h3 id="report-coverage-heading">Sample checklist coverage</h3><CoverageSummary scenario={scenario} state={snapshot.state} /></section>
+      <section aria-labelledby="report-coverage-heading"><h3 id="report-coverage-heading">{t("legacy.printreport.7")}</h3><CoverageSummary scenario={scenario} state={snapshot.state} /><ul>{scenario.checklist.map((q) => <li key={q.id}><strong>{authored(t, q.prompt)}</strong>: {t(`check.${snapshot.state.checklistAnswers[q.id] ?? 'unknown'}`)}{snapshot.state.checklistAttribution[q.id] ? <p>{t('person.by', { name: personLabel(snapshot.state.people, snapshot.state.checklistAttribution[q.id]!.actorId, t) })}</p> : null}</li>)}</ul></section>
       <section aria-labelledby="report-plan-heading">
-        <h3 id="report-plan-heading">Confirmed-concern action plan</h3><p>Demonstration review order follows the authored action catalog and stable IDs; it is not a validated risk score. Unconfirmed concerns are excluded.</p>
-        {plan.length === 0 ? <p>No confirmed concerns or computed actions in this snapshot.</p> : (
+        <h3 id="report-plan-heading">{t("legacy.printreport.8")}</h3><p>{t("legacy.printreport.9")}</p>
+        {plan.length === 0 ? <p>{t("legacy.printreport.10")}</p> : (
           <ol className="plan-list">{plan.map((item) => (
             <li key={item.referenceActionId} value={item.catalogPosition}>
               <article>
-                <h4>{item.referenceAction.title}</h4><p>{item.referenceAction.description}</p><p>{item.selectionExplanation}</p><p>{item.orderExplanation}</p>
-                <ul>{item.evidence.map((evidence) => <li key={evidence.id}>{evidence.observation} <span className="source-note">Source: {evidence.source.label} ({evidence.source.status}).</span></li>)}</ul>
+                <h4>{authored(t, item.referenceAction.title)}</h4><p>{authored(t, item.referenceAction.description)}</p><p>{authored(t, item.selectionExplanation)}</p><p>{authored(t, item.orderExplanation)}</p>
+                <ul>{item.evidence.map((evidence) => <li key={evidence.id}>{authored(t, evidence.observation)} <span className="source-note">{t("legacy.printreport.11")}{authored(t, evidence.source.label)} ({authored(t, evidence.source.status)}).</span></li>)}</ul>
                 <ul>{item.concernIds.map((id) => {
                   const confirmation = snapshot.state.confirmations[id];
-                  return confirmation?.humanConfirmed ? <li key={id}>Explicitly confirmed by {confirmation.confirmedBy} at <time dateTime={confirmation.confirmedAt}>{confirmation.confirmedAt}</time>.</li> : null;
+                  return confirmation?.humanConfirmed ? <li key={id}>{t("legacy.printreport.12")}{personLabel(snapshot.state.people, confirmation.actorId, t)}{t("legacy.printreport.13")}<time dateTime={confirmation.confirmedAt}>{confirmation.confirmedAt}</time>.</li> : null;
                 })}</ul>
-                <ActionMetadata action={item.referenceAction} roomNames={[...new Set(item.evidence.map((evidence) => scenario.rooms.find((room) => room.id === evidence.roomId)?.name ?? 'Unknown sample room'))]} />
+                <p>{t('plan.next')}: {authored(t, item.referenceAction.nextStep)}</p><a href={item.referenceAction.guidance.url}>{t('plan.source')}</a><ActionMetadata action={item.referenceAction} roomNames={[...new Set(item.evidence.map((evidence) => scenario.rooms.find((room) => room.id === evidence.roomId)?.name ?? t("legacy.printreport.14")))]} />
               </article>
             </li>
           ))}</ol>
         )}
       </section>
-      <section aria-labelledby="report-scan-heading">
-        <h3 id="report-scan-heading">Room scan locations</h3>
-        <p>Pins are family-placed location notes, not detections. A pin does not answer the checklist, confirm a concern, or establish that an area is safe. Images are local visual references, not measurements.</p>
-        {snapshot.scanPins.length === 0 ? <p>No room scan locations in this snapshot.</p> : snapshot.scanPins.map((pin) => {
+      <section><h3>{t('report.photos')}</h3><div className="photo-grid">{snapshot.state.photos.map((photo) => <figure key={photo.id}><PhotoImage photo={photo} /><figcaption>{t('person.by', { name: personLabel(snapshot.state.people, photo.addedBy, t) })}</figcaption></figure>)}</div></section><section aria-labelledby="report-scan-heading">
+        <h3 id="report-scan-heading">{t("legacy.printreport.15")}</h3>
+        <p>{t("legacy.printreport.16")}</p>
+        {snapshot.scanPins.length === 0 ? <p>{t("legacy.printreport.17")}</p> : snapshot.scanPins.map((pin) => {
           const concern = scenario.concerns.find((entry) => entry.id === pin.concernId);
           const name = concern ? actionTitle(scenario, concern.referenceActionId) : pin.concernId;
           return <figure key={pin.id} className="print-scan-location">
-            <figcaption><h4>Room scan location: {name}</h4><p>{pin.origin === 'ai-suggestion' ? 'Family-placed pin added from an AI suggestion (unverified model output).' : 'Pin placed by the family.'}</p></figcaption>
-            {pin.image ? <img src={pin.image} alt={`Room scan location reference for ${name}`} width="320" /> : <p>No image saved</p>}
+            <figcaption><h4>{t("legacy.printreport.18")}{authored(t, name)}</h4><p>{pin.origin === 'ai-suggestion' ? t("legacy.printreport.19") : t("legacy.printreport.20")}</p></figcaption>
+            {pin.image ? <img src={pin.image} alt={t("legacy.printreport.21", { v0: name })} width="320" /> : <p>{t("report.noImage")}</p>}
           </figure>;
         })}
       </section>
       <section aria-labelledby="report-assistance-heading">
-        <h3 id="report-assistance-heading">Fictional assistance screening</h3>
+        <h3 id="report-assistance-heading">{t("legacy.printreport.22")}</h3>
         <ProfileFacts scenario={scenario} state={snapshot.state} />
         {scenario.programs.map((program) => {
           return (
             <article key={program.id} className="program-report">
-              <h4>{program.name}</h4><p>Fictional example: this program does not exist. {program.description}</p>
+              <h4>{authored(t, program.name)}</h4><p>{t("legacy.printreport.23")}{authored(t, program.description)}</p>
               <ProgramDetails program={program} scenario={scenario} state={snapshot.state} plan={plan} />
             </article>
           );
         })}
       </section>
       <section aria-labelledby="report-requests-heading">
-        <h3 id="report-requests-heading">Local family reports and retained history</h3><p>These records do not contact, authenticate, vet, or qualify helpers. A family report is not independent verification, and it does not resolve any current or newly confirmed concern.</p>
-        {requests.length === 0 ? <p>No local family request records in this snapshot.</p> : requests.map(({ request, activityLabel, historyNotice }) => (
+        <h3 id="report-requests-heading">{t("legacy.printreport.24")}</h3><p>{t("legacy.printreport.25")}</p>
+        {requests.length === 0 ? <p>{t("legacy.printreport.26")}</p> : requests.map(({ request, activityLabel, historyNotice }) => (
           <article key={request.id}>
-            <h4>{actionTitle(scenario, request.referenceActionId)}</h4><p><strong>{activityLabel}</strong> · {requestStatusLabels[request.status]}</p>
-            <p>Recorded by: {attributionLabel(snapshot.state, request.createdBy.actorId)}.</p>
-            <p>Independent verification: {request.independentVerification}.</p>
-            {request.legacyHistory ? <p>{request.legacyHistory.label}: {request.legacyHistory.status}; {request.legacyHistory.completion.status}. {request.legacyHistory.note}</p> : null}
-            <p><strong>History boundary:</strong> {historyNotice}</p>
-            <RequestWorkContext action={scenario.referenceActions.find((action) => action.id === request.referenceActionId)} />
+            <h4>{authored(t, actionTitle(scenario, request.referenceActionId))}</h4><p><strong>{authored(t, activityLabel)}</strong> · {authored(t, requestStatusLabels[request.status])}</p>
+            <p>{t("legacy.printreport.27")}{personLabel(snapshot.state.people, request.createdBy.actorId, t)}.</p>
+            <p>{t("legacy.printreport.28")}{authored(t, request.independentVerification)}.</p>
+            {request.legacyHistory ? <p>{authored(t, request.legacyHistory.label)}: {t(`legacyStatus.${request.legacyHistory.status}`)}; {t(`legacyStatus.${request.legacyHistory.completion.status}`)}. {authored(t, request.legacyHistory.note)}</p> : null}
+            <p><strong>{t("legacy.printreport.29")}</strong> {authored(t, historyNotice)}</p>
+            {request.proposedTime ? <div><h4>{t('request.proposed')}</h4><p>{request.proposedTime.text}</p><p>{t('person.written', { name: personLabel(snapshot.state.people, request.proposedTime.actorId, t) })}</p></div> : null}{request.agreedTime ? <p>{t('request.agreed')} · {t('person.by', { name: personLabel(snapshot.state.people, request.agreedTime.actorId, t) })}</p> : null}{request.reportedDone ? <p>{t('status.volunteer_reported_done')} · {t('person.by', { name: personLabel(snapshot.state.people, request.reportedDone.actorId, t) })}</p> : null}{request.confirmedDone ? <p>{t('status.resident_confirmed_done')} · {t('person.by', { name: personLabel(snapshot.state.people, request.confirmedDone.actorId, t) })}</p> : null}<SharingSummary request={request} />{request.updates.map((u, i) => <blockquote key={i}><p>{u.text}</p><footer>{t('person.written', { name: personLabel(snapshot.state.people, u.actorId, t) })}</footer></blockquote>)}<RequestWorkContext action={scenario.referenceActions.find((action) => action.id === request.referenceActionId)} />
           </article>
         ))}
       </section>
-      <footer><p>Built with React, TypeScript, and Vite with AI implementation assistance. This generated report is a synthetic demonstration, not a home assessment or an independently verified outcome.</p></footer>
+      <footer><p>{t("legacy.printreport.30")}</p></footer>
     </article>
   );
 }

@@ -7,6 +7,7 @@ import '@fontsource/zilla-slab/latin-600.css';
 import '@fontsource/zilla-slab/latin-700.css';
 import { App } from './app/App';
 import './styles/base.css';
+import './styles/phone.css';
 
 const rootElement = document.getElementById('root');
 

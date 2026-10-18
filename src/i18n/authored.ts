@@ -1,0 +1,40 @@
+import { en, type MessageKey } from './en';
+import { es } from './es';
+import type { Translator } from './index';
+const translatedValues = new Set<string>(Object.values(es));
+const authoredKeys = new Map<string, MessageKey>(Object.entries(en).map(([key, value]) => [value, key as MessageKey]));
+/** Only call for authored catalog/domain copy, never names, notes, updates or visit/area text. */
+export function authored(t: Translator, input: string | number): string {
+  const text = String(input);
+  const key = authoredKeys.get(text);
+  if (key) return t(key);
+  if (t('check.yes') === en['check.yes']) return text;
+  if (text === 'true' || text === 'false') return t(text === 'true' ? 'check.yes' : 'check.no');
+  const group = /^(All |At least one of )(\d+) conditions (?:are|is) required\. (.*?)(?: Every child result is retained\.)?$/.exec(text);
+  if (group) return t(group[1] === 'All ' ? 'screen.all' : 'screen.any', { count: group[2] }) + authored(t, group[3]!);
+  const unknown = /^(.*?) is unknown; expected (.*?)\.$/.exec(text);
+  if (unknown) return t('screen.unknown', { fact: authored(t, unknown[1]!), expected: authored(t, unknown[2]!) });
+  const leaf = /^(.*?) is (.*?); expected (.*?)\. This condition is (met|not met)\.$/.exec(text);
+  if (leaf) return t('screen.actual', { fact: authored(t, leaf[1]!), actual: authored(t, leaf[2]!), expected: authored(t, leaf[3]!), status: t(leaf[4] === 'met' ? 'screen.met' : 'screen.notMet') });
+  const expected = /^(equal to |at least |at most )(.*)$/.exec(text);
+  if (expected) return t(expected[1] === 'equal to ' ? 'screen.equal' : expected[1] === 'at least ' ? 'screen.least' : 'screen.most') + authored(t, expected[2]!);
+  const unit = /^(\d+) (years|USD\/year)$/.exec(text);
+  if (unit) return `${unit[1]} ${t(unit[2] === 'years' ? 'screen.years' : 'screen.usd')}`;
+  const page = /^Page 2: (.+)$/.exec(text);
+  if (page) return t('source.page', { section: authored(t, page[1]!) });
+  const order = /catalog \(position (\d+)\)/.exec(text);
+  if (order) return t('plan.order', { position: order[1] });
+  const selection = /^Selected from (\d+) explicitly.*?; (\d+) authored/.exec(text);
+  if (selection) return t('plan.selection', { count: selection[1], evidence: selection[2] });
+  if (text.startsWith('Screening is unavailable because')) return t('screen.invalid', { error: t('screen.invalidDetails') });
+  return text;
+}
+
+/** Scan library text is authored output, not a resident note. Unknown failures have a translated recovery path. */
+export function scanMessage(t: Translator, message: string): string {
+  if (t('check.yes') === en['check.yes'] || translatedValues.has(message)) return message;
+  if (message.startsWith('Saved scan was not opened:')) return t('scan.storage.rejected');
+  if (message.includes('dropped')) return t('scan.storage.dropped');
+  const localized = authored(t, message);
+  return localized !== message || !message ? localized : t('scan.storage.failed');
+}

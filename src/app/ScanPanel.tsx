@@ -1,3 +1,6 @@
+import { scanMessage } from '../i18n/authored';
+import { catalogText } from '../i18n/catalog';
+import { useT, Copy } from '../i18n';
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { DemoScenario } from '../domain/types';
 import type { DemoState } from '../domain/workflow';
@@ -20,18 +23,19 @@ class ViewerBoundary extends Component<{ children: ReactNode; onFail: () => void
   static getDerivedStateFromError() { return { failed: true }; }
   componentDidCatch() { this.props.onFail(); }
   render() {
-    return this.state.failed ? <p role="alert" className="error-message">The 3D viewer could not start. Reload the page to retry loading the viewer. The checklist and plan are still available.</p> : this.props.children;
+    return this.state.failed ? <p role="alert" className="error-message"><Copy id="legacy.scanpanel.2" /></p> : this.props.children;
   }
 }
 
 /** This shell imports no renderer. Opening a saved scan is also an explicit action. */
 export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsChange, onPinsChange }: Props) {
+  const t = useT();
   const [document, setDocument] = useState<ScanDocumentV2 | null>(null);
   const current = useRef<ScanDocumentV2 | null>(null);
   const [open, setOpen] = useState(false);
   const [viewerVersion, setViewerVersion] = useState(0);
   const [busy, setBusy] = useState(restoreSaved);
-  const [storage, setStorage] = useState<ScanStorageResult>({ ok: true, message: restoreSaved ? 'Checking this browser for a saved scan…' : 'No room scan in this view. Import one or try the generated sample.' });
+  const [storage, setStorage] = useState<ScanStorageResult>({ ok: true, message: restoreSaved ? t("legacy.scanpanel.3") : t("legacy.scanpanel.4") });
   const [loadNotice, setLoadNotice] = useState('');
   const [error, setError] = useState('');
   const [viewerMessage, setViewerMessage] = useState('');
@@ -47,7 +51,7 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
     const evidence = scenario.evidence.find((entry) => entry.id === concern.evidenceIds[0]);
     const action = scenario.referenceActions.find((entry) => entry.id === concern.referenceActionId);
     const room = scenario.rooms.find((entry) => entry.id === evidence?.roomId);
-    return { id: concern.id, label: `${room?.name ?? 'Sample room'}: ${action?.title ?? concern.id}`, roomId: room?.id ?? '', confirmed: state.confirmations[concern.id]?.humanConfirmed === true };
+    return { id: concern.id, label: `${room ? catalogText(t, 'room', room.id) : t("legacy.catalogviews.23")}: ${action ? catalogText(t, 'action', action.id, 'title') : concern.id}`, roomId: room?.id ?? '', confirmed: state.confirmations[concern.id]?.humanConfirmed === true };
   });
 
   useEffect(() => {
@@ -89,7 +93,7 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
 
   function persist(next: ScanDocumentV2) {
     const sequence = ++saveSequence.current;
-    setStorage({ ok: true, message: 'Saving scan changes in this browser…' });
+    setStorage({ ok: true, message: t("legacy.scanpanel.6") });
     void saveScan(getScanStore(), next, concernIds, suggestionCatalog).then((result) => {
       if (alive.current && sequence === saveSequence.current) setStorage(result);
     });
@@ -111,8 +115,8 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
     setPlacing('');
     setError('');
     setLoadNotice('');
-    setViewerMessage('Loading room geometry…');
-    setStorage({ ok: true, message: 'Room is in memory. It will be saved only after it loads successfully.' });
+    setViewerMessage(t("legacy.scanpanel.7"));
+    setStorage({ ok: true, message: t("legacy.scanpanel.8") });
     setOpen(true);
   }
   async function importFiles(files: readonly File[]) {
@@ -144,18 +148,18 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
       const { generateSampleRoom } = await import('../lib/scan-sample');
       if (alive.current && sequence === importSequence.current) useAsset(generateSampleRoom());
     } catch {
-      if (alive.current && sequence === importSequence.current) { setError('The generated room could not be created. Reload to retry.'); setBusy(false); }
+      if (alive.current && sequence === importSequence.current) { setError(t("legacy.scanpanel.9")); setBusy(false); }
     }
   }
   function place(position: Point3, image: string | null) {
     const latest = current.current;
     if (!latest || !placing || !concernIds.has(placing)) return;
-    if (latest.pins.length >= MAX_SCAN_PINS) { setError(`This room already has ${MAX_SCAN_PINS} pins. Remove a pin before adding another.`); return; }
-    const pin: ScanPin = { id: crypto.randomUUID(), concernId: placing, position, createdAt: new Date().toISOString(), origin: 'family', image };
+    if (latest.pins.length >= MAX_SCAN_PINS) { setError(t("legacy.scanpanel.10", { v0: MAX_SCAN_PINS })); return; }
+    const pin: ScanPin = { id: `pin-${crypto.randomUUID()}`, concernId: placing, position, createdAt: new Date().toISOString(), origin: 'family', image };
     change({ ...latest, pins: [...latest.pins, pin] });
     setPlacing('');
     setError('');
-    setViewerMessage(`Pin ${latest.pins.length + 1} placed. The concern is not confirmed by placing a pin.`);
+    setViewerMessage(t("legacy.scanpanel.11", { v0: latest.pins.length + 1 }));
   }
   function showSuggestion(item: ScanSuggestion) {
     const position = item.position;
@@ -163,53 +167,53 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
   }
   function pinSuggestion(item: ScanSuggestion) {
     if (!current.current) return;
-    const result = pinScanSuggestion(current.current, suggestionId(item), crypto.randomUUID(), new Date().toISOString());
+    const result = pinScanSuggestion(current.current, suggestionId(item), `pin-${crypto.randomUUID()}`, new Date().toISOString());
     if (!result.ok) { setError(result.error); return; }
     change(result.value); setError('');
-    setViewerMessage('Suggestion added as a family-placed pin. The checklist and confirmation are unchanged.');
+    setViewerMessage(t("legacy.scanpanel.12"));
   }
 
   return (
     <section className="scan-panel screen-only" aria-labelledby="scan-heading">
-      <p className="eyebrow">Optional room reference</p>
-      <h3 id="scan-heading">3D room scan (optional)</h3>
-      <p>The scan stays in this browser and is never uploaded. Pins are placed by you; they are not hazard detection. A pin is not a confirmation.</p>
-      <p className="small-text">Scan a room you are comfortable showing, with mail, screens and faces out of frame. Import one scan and optionally its scene.json and suggestions.json together, or drop them here. Importing or generating another room replaces this room, its pins and model suggestions.</p>
+      <p className="eyebrow">{t("legacy.scanpanel.13")}</p>
+      <h3 id="scan-heading">{t("legacy.scanpanel.14")}</h3>
+      <p>{t("legacy.scanpanel.15")}</p>
+      <p className="small-text">{t("legacy.scanpanel.16")}</p>
       <div className="scan-import" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void importFiles(Array.from(event.dataTransfer.files)); }}>
-        <label htmlFor="scan-file">Import a local scan (up to 300 MiB)</label>
+        <label htmlFor="scan-file">{t("legacy.scanpanel.17")}</label>
         <input id="scan-file" type="file" multiple accept={relaxAccept ? undefined : '.splat,.ply,.spz,.ksplat,.json'} disabled={busy}
           onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void importFiles(files); }} />
-        <p className="small-text">Supported: .splat, .ply, .spz, .ksplat. Optional metadata must be named scene.json; optional model output must be named suggestions.json.</p>
+        <p className="small-text">{t("legacy.scanpanel.18")}</p>
       </div>
-      {localScans.length ? <div className="scan-local-demos"><h4>Load a local demo scan</h4><p className="small-text">Available on this developer server only. Loading replaces the current room and its pins.</p><div className="button-row">{localScans.map((entry) => <button className="secondary" key={entry.name} disabled={busy} onClick={() => void loadLocal(entry)}>Load local demo scan: {entry.name} ({(entry.sizes['scene.splat'] / (1024 * 1024)).toFixed(1)} MiB)</button>)}</div></div> : null}
+      {localScans.length ? <div className="scan-local-demos"><h4>{t("legacy.scanpanel.19")}</h4><p className="small-text">{t("legacy.scanpanel.20")}</p><div className="button-row">{localScans.map((entry) => <button className="secondary" key={entry.name} disabled={busy} onClick={() => void loadLocal(entry)}>{t("legacy.scanpanel.21")}{entry.name} ({(entry.sizes['scene.splat'] / (1024 * 1024)).toFixed(1)}{t("legacy.scanpanel.22")}</button>)}</div></div> : null}
       <div className="button-row">
-        <button className="secondary" disabled={busy} onClick={() => void sample()}>Try a generated sample room</button>
-        {document && !open ? <button disabled={busy} onClick={() => { setOpen(true); setBusy(true); }}>Open saved room viewer</button> : null}
-        {document && open ? <button className="secondary" onClick={() => { ready.current = false; setOpen(false); setBusy(false); setPlacing(''); }}>Close room viewer</button> : null}
+        <button className="secondary" disabled={busy} onClick={() => void sample()}>{t("legacy.scanpanel.23")}</button>
+        {document && !open ? <button disabled={busy} onClick={() => { setOpen(true); setBusy(true); }}>{t("legacy.scanpanel.24")}</button> : null}
+        {document && open ? <button className="secondary" onClick={() => { ready.current = false; setOpen(false); setBusy(false); setPlacing(''); }}>{t("legacy.scanpanel.25")}</button> : null}
       </div>
-      {loadNotice ? <p className="notice" role="status">{loadNotice}</p> : null}
-      <p role="status" aria-live="polite" className="small-text scan-storage" data-healthy={storage.ok}>{storage.message}</p>
-      {error ? <p role="alert" className="error-message">{error}</p> : null}
+      {loadNotice ? <p className="notice" role="status">{scanMessage(t, loadNotice)}</p> : null}
+      <p role="status" aria-live="polite" className="small-text scan-storage" data-healthy={storage.ok}>{scanMessage(t, storage.message)}</p>
+      {error ? <p role="alert" className="error-message">{scanMessage(t, error)}</p> : null}
       {document ? <>
-        <p className="scan-caption"><strong>{document.asset.kind === 'generated' ? 'Generated sample room — not scanned' : 'Imported room — supplied by you, not assessed by FixList'}</strong><br /><span className="small-text">{document.asset.name} · {(document.asset.blob.size / (1024 * 1024)).toFixed(1)} MiB{document.asset.metadata ? ' · Pipeline metadata: y-up, arbitrary units' : ' · No pipeline metadata; view framed from splat bounds'}</span></p>
-        <label className="scan-flip"><input type="checkbox" checked={document.flipUpright} onChange={(event) => change({ ...document, flipUpright: event.target.checked })} />Flip upright (for upside-down app exports)</label>
+        <p className="scan-caption"><strong>{document.asset.kind === 'generated' ? t("legacy.scanpanel.26") : t("legacy.scanpanel.27")}</strong><br /><span className="small-text">{document.asset.name} · {(document.asset.blob.size / (1024 * 1024)).toFixed(1)}{t("legacy.scanpanel.28")}{document.asset.metadata ? t("legacy.scanpanel.29") : t("legacy.scanpanel.30")}</span></p>
+        <label className="scan-flip"><input type="checkbox" checked={document.flipUpright} onChange={(event) => change({ ...document, flipUpright: event.target.checked })} />{t("legacy.scanpanel.31")}</label>
         {open ? <>
           <div className="field">
-            <label htmlFor="scan-concern">Place a pin for:</label>
+            <label htmlFor="scan-concern">{t("legacy.scanpanel.32")}</label>
             <select id="scan-concern" value={placing} disabled={busy || document.pins.length >= MAX_SCAN_PINS} onChange={(event) => setPlacing(event.target.value)}>
-              <option value="">Choose a concern to place a pin</option>
+              <option value="">{t("legacy.scanpanel.33")}</option>
               {concerns.map((concern) => <option key={concern.id} value={concern.id}>{concern.label}</option>)}
             </select>
           </div>
-          <p id="scan-controls-help" className="small-text">Drag to orbit; scroll or pinch to zoom. Focus the scene and use arrow keys to orbit, +/− to zoom, Home to reset. Choose a concern, then tap or click a surface or use “Place pin at center of view.” Pins link to the fictional checklist only.</p>
-          <ViewerBoundary key={viewerVersion} onFail={() => { setBusy(false); ready.current = false; }}><Suspense fallback={<p role="status">Loading the 3D viewer…</p>}>
+          <p id="scan-controls-help" className="small-text">{t("legacy.scanpanel.34")}</p>
+          <ViewerBoundary key={viewerVersion} onFail={() => { setBusy(false); ready.current = false; }}><Suspense fallback={<p role="status">{t("legacy.scanpanel.35")}</p>}>
             <ScanViewer asset={document.asset} flipUpright={document.flipUpright} pins={document.pins} suggestions={visibleSuggestionMarkers(document.suggestions)} expectedSuggestionCount={document.suggestions?.data.scan.splatCount ?? null} concerns={concerns} placing={Boolean(placing)} focus={focus} onPlace={place}
               onReady={(count) => {
                 ready.current = true;
                 canSave.current = true;
                 setBusy(false);
                 setError('');
-                setViewerMessage(`${count.toLocaleString()} splats loaded. ${document.asset.kind === 'generated' ? 'This room is generated, not scanned.' : 'This scan has not been assessed by FixList.'}`);
+                setViewerMessage(t('scan.loaded', { count: count.toLocaleString(), notice: document.asset.kind === 'generated' ? t("legacy.scanpanel.36") : t("legacy.scanpanel.37") }));
                 if (needsSave.current && current.current) { persist(current.current); needsSave.current = false; }
               }}
               onError={(message) => { ready.current = false; setBusy(false); setError(message); setViewerMessage(''); }} />
@@ -218,17 +222,17 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
         </> : null}
         {document.suggestions ? <ScanSuggestions layer={document.suggestions} catalog={suggestionCatalog} viewerReady={open && !busy && ready.current} canAddPin={document.pins.length < MAX_SCAN_PINS}
           onShow={showSuggestion} onPin={pinSuggestion} onDismiss={(item, dismissed) => { if (current.current) change(dismissScanSuggestion(current.current, suggestionId(item), dismissed)); }} /> : null}
-        <h4>Room pins ({document.pins.length}/{MAX_SCAN_PINS})</h4>
-        <p className="small-text">Yellow means the linked concern is explicitly confirmed right now. Ink means it is unconfirmed. Pins never change the checklist, plan, help screening or family log.</p>
-        {document.pins.length === 0 ? <p className="small-text">No pins placed. Open the room and choose a concern to add one.</p> : <ol className="scan-pin-list">{document.pins.map((pin, index) => {
+        <h4>{t("legacy.scanpanel.38")}{document.pins.length}/{MAX_SCAN_PINS})</h4>
+        <p className="small-text">{t("legacy.scanpanel.39")}</p>
+        {document.pins.length === 0 ? <p className="small-text">{t("legacy.scanpanel.40")}</p> : <ol className="scan-pin-list">{document.pins.map((pin, index) => {
           const concern = concerns.find((entry) => entry.id === pin.concernId);
           return <li key={pin.id} data-confirmed={concern?.confirmed === true}>
             <span className="scan-pin-number" aria-hidden="true">{index + 1}</span>
-            <div><strong>{concern?.label}</strong><p className="small-text">{concern?.confirmed ? 'Concern explicitly confirmed' : 'Concern unconfirmed'} · {pin.origin === 'ai-suggestion' ? 'Family-placed location added from an AI suggestion' : 'Family-placed location'}</p>
+            <div><strong>{concern?.label}</strong><p className="small-text">{concern?.confirmed ? t("legacy.scanpanel.41") : t("legacy.scanpanel.42")} · {pin.origin === 'ai-suggestion' ? t("legacy.scanpanel.43") : t("legacy.scanpanel.44")}</p>
               <div className="button-row">
-                <button className="secondary compact" disabled={!open || busy || !ready.current} onClick={() => setFocus((previous) => ({ position: pin.position, sequence: (previous?.sequence ?? 0) + 1 }))} aria-label={`Show in 3D: pin ${index + 1}: ${concern?.label}`}>Show in 3D: pin {index + 1}</button>
-                <a className="text-link" href={`#room-${concern?.roomId}`}>Go to room checklist</a>
-                <button className="secondary compact" aria-label={`Remove pin ${index + 1}: ${concern?.label}`} onClick={() => change({ ...document, pins: document.pins.filter((entry) => entry.id !== pin.id) })}>Remove pin</button>
+                <button className="secondary compact" disabled={!open || busy || !ready.current} onClick={() => setFocus((previous) => ({ position: pin.position, sequence: (previous?.sequence ?? 0) + 1 }))} aria-label={t("legacy.scanpanel.45", { v0: index + 1, v1: concern?.label })}>{t("legacy.scanpanel.46")}{index + 1}</button>
+                <a className="text-link" href={`#/r/question/${scenario.checklist.find((q) => q.roomId === concern?.roomId)?.id ?? scenario.checklist[0]!.id}`}>{t("legacy.scanpanel.47")}</a>
+                <button className="secondary compact" aria-label={t("legacy.scanpanel.48", { v0: index + 1, v1: concern?.label })} onClick={() => change({ ...document, pins: document.pins.filter((entry) => entry.id !== pin.id) })}>{t("legacy.scanpanel.49")}</button>
               </div>
             </div>
           </li>;

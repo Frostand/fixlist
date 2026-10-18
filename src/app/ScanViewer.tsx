@@ -1,3 +1,4 @@
+import { useT } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -21,6 +22,7 @@ const fileTypes = { splat: SplatFileType.SPLAT, ply: SplatFileType.PLY, spz: Spl
 
 /** This is the only app module importing Three/Spark; it is loaded by explicit user action. */
 export default function ScanViewer(props: Props) {
+  const t = useT();
   const host = useRef<HTMLDivElement>(null), markerNodes = useRef(new Map<string, HTMLSpanElement>());
   const latest = useRef(props), runtime = useRef<Runtime | null>(null);
   const [loaded, setLoaded] = useState(false), [hitMessage, setHitMessage] = useState('');
@@ -35,9 +37,9 @@ export default function ScanViewer(props: Props) {
     const canvas = document.createElement('canvas');
     canvas.tabIndex = 0;
     canvas.setAttribute('role', 'img');
-    canvas.setAttribute('aria-label', 'Interactive room reference. Arrow keys orbit, plus and minus zoom, Home resets.');
+    canvas.setAttribute('aria-label', t("legacy.scanviewer.1"));
     canvas.setAttribute('aria-describedby', 'scan-controls-help');
-    canvas.textContent = 'Interactive 3D room. The pin list and room checklist remain available below.';
+    canvas.textContent = t("legacy.scanviewer.2");
     element.append(canvas);
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#eef1ec');
@@ -121,7 +123,7 @@ export default function ScanViewer(props: Props) {
                 const node = markerNodes.current.get(marker.id);
                 if (node) node.hidden = occluded;
               } catch {
-                setHitMessage('Marker visibility could not be checked. Locations remain available through Show in 3D in the lists below.');
+                setHitMessage(t("legacy.scanviewer.3"));
                 return;
               }
               if (next < candidates.length) occlusionTimer = setTimeout(checkNext, 0);
@@ -130,7 +132,7 @@ export default function ScanViewer(props: Props) {
           }, 150);
         }
       } catch {
-        fail('The room could not be rendered on this device. Try a smaller scan or a browser with WebGL2 support. The checklist is still available.');
+        fail(t("legacy.scanviewer.4"));
       }
     }
     function schedule() { if (!cancelled && !failed && !frame) frame = requestAnimationFrame(draw); }
@@ -195,7 +197,7 @@ export default function ScanViewer(props: Props) {
     }
     function ensurePickIndex(): PickIndex {
       if (!pickIndex) {
-        if (!mesh) throw new Error('Room is not ready.');
+        if (!mesh) throw new Error(t("legacy.scanviewer.5"));
         pickIndex = createPickIndex(mesh.numSplats, (add) => mesh!.forEachSplat((_, center, scales, __, opacity) => add(center.x, center.y, center.z, Math.max(scales.x, scales.y, scales.z) * 2, opacity)));
       }
       return pickIndex;
@@ -211,23 +213,23 @@ export default function ScanViewer(props: Props) {
         const height = Math.max(canvas.clientHeight, 1);
         const angularTolerance = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / height * 6;
         const depth = pickAlongRay(ensurePickIndex(), origin.toArray(), direction.toArray(), angularTolerance, extent * 0.02, camera.near);
-        if (depth === null) { setHitMessage('No visible splat surface at that point. Aim at the floor, wall or an object and try again.'); return; }
+        if (depth === null) { setHitMessage(t("legacy.scanviewer.6")); return; }
         const local = origin.add(direction.multiplyScalar(depth));
         const position = point3(local.toArray());
-        if (!position) { setHitMessage('That location is outside the supported coordinate range. Try another point.'); return; }
+        if (!position) { setHitMessage(t("legacy.scanviewer.7")); return; }
         setHitMessage('');
         // Render and copy in this same task; preserveDrawingBuffer is unnecessary.
         renderer?.render(scene, camera);
         latest.current.onPlace(position, captureScanImage(canvas));
       } catch {
-        setHitMessage('A pin could not be placed on this scan. Try another surface or re-import a supported Gaussian-splat file.');
+        setHitMessage(t("legacy.scanviewer.8"));
       }
     }
     function keydown(event: KeyboardEvent) {
       const moves: Record<string, CameraMove> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', '+': 'in', '=': 'in', '-': 'out', _: 'out' };
       const direction = moves[event.key];
       if (direction) { event.preventDefault(); move(direction); }
-      else if (event.key === 'Home') { event.preventDefault(); reset(); }
+      else if (event.key === t("nav.home")) { event.preventDefault(); reset(); }
     }
     function down(event: PointerEvent) {
       taps.down(event);
@@ -242,7 +244,7 @@ export default function ScanViewer(props: Props) {
       taps.move(event);
     }
     function cancelPointer(event: PointerEvent) { taps.cancel(event.pointerId); }
-    function contextLost(event: Event) { event.preventDefault(); fail('WebGL2 lost its graphics context. Close and reopen the room viewer, or try a smaller scan. Scan edits remain in memory; browser storage status below the importer reports whether they were saved.'); }
+    function contextLost(event: Event) { event.preventDefault(); fail(t("legacy.scanviewer.9")); }
     canvas.addEventListener('keydown', keydown);
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointerup', up);
@@ -253,13 +255,13 @@ export default function ScanViewer(props: Props) {
     void (async () => {
       try {
         const context = canvas.getContext('webgl2', { antialias: false, alpha: false });
-        if (!context) { fail('3D viewing requires WebGL2, which is unavailable in this browser. Try a browser with WebGL2 enabled. You can still use the checklist and existing pin list.'); return; }
+        if (!context) { fail(t("legacy.scanviewer.10")); return; }
         renderer = new THREE.WebGLRenderer({ canvas, context, antialias: false, alpha: false });
         renderer.setPixelRatio(scanPixelRatio(window.devicePixelRatio, element.clientWidth, window.matchMedia('(pointer: coarse)').matches));
         const bytes = await props.asset.blob.arrayBuffer();
         if (cancelled || failed) return;
         const extension = scanExtension(props.asset.name);
-        if (!extension) throw new Error('Unsupported filename extension.');
+        if (!extension) throw new Error(t("legacy.scanviewer.11"));
         mesh = new SplatMesh({ fileBytes: bytes, fileName: props.asset.name, fileType: fileTypes[extension], raycastable: false, lod: false });
         initializing = true;
         try { await mesh.initialized; }
@@ -268,11 +270,11 @@ export default function ScanViewer(props: Props) {
           if (cancelled || failed) { mesh.dispose(); mesh = undefined; }
         }
         if (cancelled || failed || !mesh) return;
-        if (mesh.numSplats < 1 || mesh.numSplats > MAX_SPLATS) throw new Error(`Scan must contain 1–${MAX_SPLATS.toLocaleString()} splats.`);
-        if (props.asset.metadata && props.asset.metadata.splatCount !== mesh.numSplats) throw new Error('Decoded splat count does not match scene.json.');
-        if (props.expectedSuggestionCount !== null && props.expectedSuggestionCount !== mesh.numSplats) throw new Error('Decoded splat count does not match suggestions.json.');
+        if (mesh.numSplats < 1 || mesh.numSplats > MAX_SPLATS) throw new Error(t("legacy.scanviewer.12", { v0: MAX_SPLATS.toLocaleString() }));
+        if (props.asset.metadata && props.asset.metadata.splatCount !== mesh.numSplats) throw new Error(t("legacy.scanviewer.13"));
+        if (props.expectedSuggestionCount !== null && props.expectedSuggestionCount !== mesh.numSplats) throw new Error(t("legacy.scanviewer.14"));
         sourceBounds = mesh.getBoundingBox();
-        if (!point3(sourceBounds.min.toArray()) || !point3(sourceBounds.max.toArray()) || sourceBounds.isEmpty()) throw new Error('Scan bounds are empty, non-finite or outside the supported coordinate range.');
+        if (!point3(sourceBounds.min.toArray()) || !point3(sourceBounds.max.toArray()) || sourceBounds.isEmpty()) throw new Error(t("legacy.scanviewer.15"));
         extent = Math.max(sourceBounds.getSize(new THREE.Vector3()).length(), 0.001);
         spark = new SparkRenderer({ renderer, onDirty: schedule });
         scene.add(spark, mesh);
@@ -299,8 +301,8 @@ export default function ScanViewer(props: Props) {
         latest.current.onReady(mesh.numSplats);
         schedule();
       } catch (error) {
-        const detail = error instanceof Error ? error.message.slice(0, 240) : 'Unknown decoding error.';
-        fail(`The scan could not be opened: ${detail} Select a supported Gaussian-splat export and try again. A regular point-cloud PLY may not contain Gaussian-splat data.`);
+        const detail = error instanceof Error ? error.message.slice(0, 240) : t("legacy.scanviewer.16");
+        fail(t("legacy.scanviewer.17", { v0: detail }));
       }
     })();
     return () => {
@@ -327,19 +329,19 @@ export default function ScanViewer(props: Props) {
         data-confirmed={props.concerns.find((concern) => concern.id === pin.concernId)?.confirmed === true}
         ref={(node) => { if (node) markerNodes.current.set(`pin:${pin.id}`, node); else markerNodes.current.delete(`pin:${pin.id}`); }}>{index + 1}</span>)}</div>
       <div className="scan-markers" aria-hidden="true">{props.suggestions.map((item) => <span key={suggestionId(item)} className="scan-ai-marker" hidden
-        ref={(node) => { const id = `ai:${suggestionId(item)}`; if (node) markerNodes.current.set(id, node); else markerNodes.current.delete(id); }}>AI</span>)}</div>
+        ref={(node) => { const id = `ai:${suggestionId(item)}`; if (node) markerNodes.current.set(id, node); else markerNodes.current.delete(id); }}>{t("legacy.scanviewer.18")}</span>)}</div>
       {props.placing && loaded ? <span className="scan-crosshair" aria-hidden="true">+</span> : null}
     </div>
-    <p className="small-text">Markers behind a nearer scan surface are hidden. Use Show in 3D in either list to reach a hidden location.</p>
-    <div className="button-row scan-camera-controls" role="group" aria-label="Room camera controls">
+    <p className="small-text">{t("legacy.scanviewer.19")}</p>
+    <div className="button-row scan-camera-controls" role="group" aria-label={t("legacy.scanviewer.20")}>
       {(['left', 'right', 'up', 'down', 'in', 'out'] as const).map((direction) => <button key={direction} className="secondary compact" disabled={!loaded}
-        aria-label={direction === 'in' || direction === 'out' ? `Zoom ${direction}` : `Orbit ${direction}`} onClick={() => runtime.current?.move(direction)}>
+        aria-label={direction === 'in' || direction === 'out' ? t("legacy.scanviewer.21", { v0: t(`scan.${direction}`) }) : t("legacy.scanviewer.22", { v0: t(`scan.${direction}`) })} onClick={() => runtime.current?.move(direction)}>
         {{ left: '←', right: '→', up: '↑', down: '↓', in: '+', out: '−' }[direction]}
       </button>)}
-      <button className="secondary compact" disabled={!loaded} onClick={() => runtime.current?.reset()}>Reset view</button>
-      <button disabled={!loaded || !props.placing} onClick={() => runtime.current?.hit(0, 0)}>Place pin at center of view</button>
+      <button className="secondary compact" disabled={!loaded} onClick={() => runtime.current?.reset()}>{t("legacy.scanviewer.23")}</button>
+      <button disabled={!loaded || !props.placing} onClick={() => runtime.current?.hit(0, 0)}>{t("legacy.scanviewer.24")}</button>
     </div>
-    {!loaded ? <p className="small-text">The room has not finished loading. Camera controls become available when it is ready.</p> : null}
+    {!loaded ? <p className="small-text">{t("legacy.scanviewer.25")}</p> : null}
     {hitMessage ? <p role="status" className="notice">{hitMessage}</p> : null}
   </div>;
 }

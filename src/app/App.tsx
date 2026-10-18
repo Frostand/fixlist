@@ -1,225 +1,136 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
-import { demoScenario } from '../data/demo-scenario';
-import { applyCommand, computeCoverage, computePlan, getRequestViews, validateCatalog, type ResidentCommandInput } from '../domain/workflow';
-import { getBrowserStorage, loadDemoState, resetFixListData, saveDemoState } from '../lib/demo-storage';
-import { decodeLocationHash } from '../lib/location';
+import { demoScenario as scenario } from '../data/demo-scenario';
+import { elderNextStep, volunteerNextStep, visibleRequestsFor, visibleHouseholdFor, hasScope, validateCatalog, type Language, type VolunteerRequestView } from '../domain/workflow';
+import { getBrowserStorage, loadDemoState, resetFixListData } from '../lib/demo-storage';
 import { createPrintSnapshot } from '../lib/print';
 import type { ScanPin } from '../lib/scan-model';
-import { FloorPlan } from './FloorPlan';
+import { loadScan, getScanStore } from '../lib/scan-storage';
+import { createSuggestionCatalog, type ScanSuggestionLayer } from '../lib/scan-suggestions';
+import { I18nProvider, useT, type MessageKey } from '../i18n';
+import { createUiDispatch } from './ui-controller';
+import { domainErrorKey, guideProgress } from './view-model';
+import { homeRoute, parseRoute, type Route } from './routes';
+import { PhoneShell, StartShell, type Navigate } from './PhoneShell';
+import { GuideScreen, LanguagePicker, PeopleScreen } from './PeopleScreens';
+import { ChecklistQuestion, ResidentHome, ResidentPlan, RoomList } from './ResidentScreens';
+import { InvitationReview, ResidentRequest, RequestList, SharingScreen, VolunteerChooser } from './RequestScreens';
+import { VolunteerHome, VolunteerTask, VolunteerTasks } from './VolunteerScreens';
+import { AccessScreen, HelpScreen, MoreScreen, ResourcesScreen, VolunteerProfile } from './SettingsScreens';
+import { ScanPanel } from './ScanPanel';
 import { PrintReport } from './PrintReport';
-import { AssistanceSection, ChecklistSection, PlanSection, RequestsSection, StepHead } from './WorkflowSections';
 
-const sectionIds = ['checklist', 'plan', 'assistance', 'requests', 'print-preview'] as const;
-const healthyStorage = ['saved', 'loaded', 'migrated', 'reset', 'empty'];
-
-export function App() {
-  const validation = validateCatalog(demoScenario);
-  return validation.ok ? <DemoApp /> : <main className="unavailable"><h1>FixList demo unavailable</h1><p role="alert">The authored catalog is invalid: {validation.error}</p></main>;
-}
-
-function Logo() {
-  return (
-    <svg className="logo" viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M4 14.5 16 4l12 10.5V28H4Z" className="logo-house" />
-      <path d="M10 16h12M10 21h8" className="logo-lines" />
-      <rect x="20" y="19" width="4.5" height="4.5" rx="1" className="logo-flag" />
-    </svg>
-  );
-}
-
-/** Highlights the last step whose top has passed the reading line; purely navigational, never saved. */
-function useActiveSection(): string {
-  const [active, setActive] = useState<string>(sectionIds[0]);
-  useEffect(() => {
-    let frame = 0;
-    function update() {
-      frame = 0;
-      const line = window.innerHeight * 0.35;
-      let current: string = sectionIds[0];
-      for (const id of sectionIds) {
-        const element = document.getElementById(id);
-        if (element && element.getBoundingClientRect().top <= line) current = id;
-      }
-      setActive(current);
-    }
-    function schedule() { if (!frame) frame = requestAnimationFrame(update); }
-    update();
-    window.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('scroll', schedule);
-      window.removeEventListener('resize', schedule);
-    };
-  }, []);
-  return active;
-}
-
+export function App() { return validateCatalog(scenario).ok ? <DemoApp /> : <I18nProvider language="en"><Unavailable /></I18nProvider>; }
+function Unavailable() { const t = useT(); return <main><h1>{t('app.name')}</h1><p role="alert">{t('error.catalog')}</p></main>; }
 function DemoApp() {
-  const [initial] = useState(() => {
-    const storage = getBrowserStorage();
-    return { storage, ...loadDemoState(storage, demoScenario) };
-  });
-  const [state, setState] = useState(initial.state);
-  const currentState = useRef(initial.state);
-  const [persistence, setPersistence] = useState({ status: initial.status as string, message: initial.message });
-  const [feedback, setFeedback] = useState({ id: 0, text: 'Start with a sample checklist answer, then explicitly confirm a concern.' });
-  const [error, setError] = useState('');
-  const [scanResetVersion, setScanResetVersion] = useState(0);
-  const [scanResetting, setScanResetting] = useState(false);
-  const [report, setReport] = useState(() => createPrintSnapshot(initial.state, new Date().toISOString()));
-  const [reportIsCurrent, setReportIsCurrent] = useState(true);
-  const currentScanPins = useRef<readonly ScanPin[]>([]);
-  const onScanPinsChange = useCallback((pins: readonly ScanPin[]) => {
-    if (pins === currentScanPins.current || (pins.length === 0 && currentScanPins.current.length === 0)) return;
-    currentScanPins.current = pins;
-    setReportIsCurrent(false);
+  const [initial] = useState(() => { const storage = getBrowserStorage(); return { storage, ...loadDemoState(storage, scenario) }; });
+  const [state, setState] = useState(initial.state), current = useRef(initial.state);
+  const [route, setRoute] = useState<Route>(() => typeof window === 'undefined' ? { screen: 'start' } : window.location.hash || window.location.search.includes('localScan=') ? parseRoute(window.location.hash, window.location.search) : initial.status === 'loaded' || initial.status === 'migrated' ? homeRoute(initial.state.people.find((p) => p.id === initial.state.activePersonId)!.role) : { screen: 'start' });
+  const person = state.people.find((p) => p.id === state.activePersonId)!;
+  const [launchLanguage, setLaunchLanguage] = useState<Language>(person.language), [languageChosen, setLanguageChosen] = useState(false);
+  const [saved, setSaved] = useState(!['invalid', 'unavailable', 'error'].includes(initial.status)), [error, setError] = useState('');
+  const [feedback, setFeedback] = useState(0), [scanPins, setScanPins] = useState<readonly ScanPin[]>([]), [suggestions, setSuggestions] = useState<ScanSuggestionLayer | null>(null);
+  const [invitees, setInvitees] = useState<Record<string, string>>({}), [resetConfirm, setResetConfirm] = useState(false), [resetting, setResetting] = useState(false), [resetVersion, setResetVersion] = useState(0);
+  const resettingRef = useRef(false);
+  const [dispatch] = useState(() => createUiDispatch({ scenario, getState: () => current.current, storage: initial.storage, clock: () => new Date().toISOString(), onError: setError, publish: (next, persisted) => { current.current = next; setState(next); setSaved(persisted); setError(''); setFeedback((n) => n + 1); } }));
+  const navigate: Navigate = useCallback((next: Route) => {
+    setError(''); setResetConfirm(false);
+    // A localScan query is a launch instruction only; it must not trap subsequent tab navigation.
+    const url = new URL(window.location.href); url.searchParams.delete('localScan'); url.hash = `/${'role' in next ? `${next.role}/` : ''}${next.screen}${'id' in next ? `/${next.id}` : ''}`;
+    window.history.pushState(null, '', url); setRoute(next);
   }, []);
-  const activeSection = useActiveSection();
-  // Content renders after the browser's own hash jump, so honour deep links (e.g. #scan-heading) once mounted.
   useEffect(() => {
-    const id = decodeLocationHash(window.location.hash);
-    if (!id) return;
-    const frame = requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView());
-    return () => cancelAnimationFrame(frame);
+    const update = () => { setRoute(parseRoute(window.location.hash)); setError(''); };
+    window.addEventListener('hashchange', update); window.addEventListener('popstate', update);
+    return () => { window.removeEventListener('hashchange', update); window.removeEventListener('popstate', update); };
   }, []);
-
-  function announce(text: string) {
-    setFeedback((previous) => ({ id: previous.id + 1, text }));
-  }
-
-  function runCommand(command: ResidentCommandInput) {
-    const result = applyCommand(demoScenario, currentState.current, { ...command, actorId: currentState.current.household.residentId, at: command.at ?? new Date().toISOString() });
-    if (!result.ok) { setError(result.error); return; }
-    // Successive events see the latest command; storage stays outside React updaters/effects.
-    currentState.current = result.state;
-    setState(result.state);
-    setPersistence(saveDemoState(initial.storage, demoScenario, result.state));
-    setError('');
-    setReportIsCurrent(false);
-    const messages: Partial<Record<ResidentCommandInput['type'], string>> = {
-      answer_checklist: 'Checklist answer recorded. Answers alone do not confirm a concern.',
-      confirm_concern: 'Concern explicitly confirmed. The action plan was recomputed.',
-      unconfirm_concern: 'Confirmation removed. The action plan was recomputed; request history is retained.',
-      select_profile: 'Fictional profile selected. Screening was recomputed; confirmations and family records are unchanged.',
-      create_request: 'Local draft recorded. Nothing was sent.',
-    };
-    announce(messages[command.type] ?? 'Local change recorded.');
-  }
-
-  async function resetDemo() {
-    if (scanResetting) return;
-    // Unmount first: a decoder finishing during reset must not enqueue a later save.
-    flushSync(() => setScanResetting(true));
-    const result = await resetFixListData(initial.storage, demoScenario);
-    currentState.current = result.state;
-    setState(result.state);
-    setPersistence(result);
-    setError('');
-    announce('Fresh synthetic demo restored: all profile facts and sample answers are unknown, with no confirmations or workflow requests.');
-    currentScanPins.current = [];
-    setReport(createPrintSnapshot(result.state, new Date().toISOString()));
-    setReportIsCurrent(true);
-    setScanResetVersion((version) => version + 1);
-    setScanResetting(false);
-    if (result.status === 'error') setError(result.message);
-    announce(result.message);
-  }
-
-  function refreshReport() {
-    setReport(createPrintSnapshot(currentState.current, new Date().toISOString(), currentScanPins.current));
-    setReportIsCurrent(true);
-  }
-
+  useEffect(() => { const frame = requestAnimationFrame(() => { document.getElementById('screen-heading')?.focus({ preventScroll: true }); window.scrollTo(0, 0); }); return () => cancelAnimationFrame(frame); }, [route]);
+  const language = route.screen === 'start' || route.screen === 'people' ? launchLanguage : person.language;
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
+  const household = visibleHouseholdFor(scenario, state, person.id), requests = visibleRequestsFor(scenario, state, person.id);
+  const volunteerRequests = requests.filter((v): v is VolunteerRequestView => v.kind === 'volunteer');
+  const householdRequests = requests.filter((v) => v.kind === 'household');
   useEffect(() => {
-    function beforePrint() {
-      flushSync(() => {
-        setReport(createPrintSnapshot(currentState.current, new Date().toISOString(), currentScanPins.current));
-        setReportIsCurrent(true);
-      });
-    }
-    window.addEventListener('beforeprint', beforePrint);
-    return () => window.removeEventListener('beforeprint', beforePrint);
-  }, []);
-
-  async function printCurrentReport() {
-    flushSync(refreshReport);
+    let alive = true;
+    void loadScan(getScanStore(), new Set(scenario.concerns.map((c) => c.id)), createSuggestionCatalog(scenario)).then((result) => { if (alive && !resettingRef.current) { setScanPins(result.document?.pins ?? []); setSuggestions(result.document && 'suggestions' in result.document ? result.document.suggestions : null); } });
+    return () => { alive = false; };
+  }, [resetVersion]);
+  const onPinsChange = useCallback((pins: readonly ScanPin[]) => { if (!resettingRef.current) setScanPins(pins); }, []);
+  const onSuggestionsChange = useCallback((value: ScanSuggestionLayer | null) => { if (!resettingRef.current) setSuggestions(value); }, []);
+  function choosePerson(personId: string, preserveLanguage = false) {
+    if (!dispatch({ type: 'select_person', personId }).ok) return;
+    if (languageChosen && !preserveLanguage) dispatch({ type: 'set_language', language: launchLanguage });
+    setLanguageChosen(false);
+    const selected = current.current.people.find((p) => p.id === personId)!;
+    setLaunchLanguage(selected.language);
+    navigate(guideProgress(selected).completed ? homeRoute(selected.role) : { screen: 'guide' });
+  }
+  async function reset() {
+    resettingRef.current = true; flushSync(() => { setResetting(true); setResetConfirm(false); });
+    const result = await resetFixListData(initial.storage, scenario);
+    current.current = result.state; setState(result.state); setSaved(result.status === 'reset'); setScanPins([]); setSuggestions(null); setInvitees({}); setResetVersion((v) => v + 1); setResetting(false); resettingRef.current = false;
+    navigate({ screen: 'start' }); setLaunchLanguage('en');
+    if (result.status !== 'reset') setError('reset-failed');
+  }
+  let body: ReactNode;
+  const titleKey: MessageKey = route.screen === 'question' ? 'nav.check' : route.screen === 'task' ? 'nav.request' : route.screen === 'requests' ? 'home.requests' : `nav.${route.screen}` as MessageKey;
+  const common = { scenario, state, person, dispatch, navigate };
+  const props = household ? { ...common, household } : null;
+  const request = 'id' in route ? householdRequests.find((v) => v.request.id === route.id) : null;
+  const selectedVolunteer = request ? state.people.find((p) => p.id === invitees[request.request.id] && p.role === 'volunteer') : null;
+  const ownRoleRoute = !('role' in route) || route.role === (person.role === 'volunteer' ? 'v' : 'r');
+  const isResident = person.id === state.household.residentId;
+  if (resetting) body = <Message message="more.resetBusy" />;
+  else if (route.screen === 'start') body = <StartLanguage onSelect={(value) => { setLaunchLanguage(value); setLanguageChosen(true); navigate({ screen: 'people' }); }} />;
+  else if (route.screen === 'people') body = <PeopleScreen people={state.people} language={launchLanguage} dispatch={dispatch} onChoose={choosePerson} />;
+  else if (route.screen === 'guide') body = <GuideScreen person={person} residentName={state.people.find((p) => p.id === state.household.residentId)!.name} dispatch={dispatch} navigate={navigate} />;
+  else if (!ownRoleRoute) body = <Denied />;
+  else if (person.role === 'volunteer') {
+    if (route.screen === 'home') body = <VolunteerHome requests={volunteerRequests} next={volunteerNextStep(scenario, state, person.id)} navigate={navigate} />;
+    else if (route.screen === 'tasks') body = <VolunteerTasks requests={volunteerRequests} navigate={navigate} />;
+    else if (route.screen === 'profile') body = <VolunteerProfile person={person} dispatch={dispatch} navigate={navigate} />;
+    else if (route.screen === 'task') { const view = volunteerRequests.find((v) => v.id === route.id); body = view ? <VolunteerTask key={view.id} request={view} people={state.people.map(({ id, name }) => ({ id, name }))} scanImage={view.scanLocation ? scanPins.find((p) => p.id === view.scanLocation)?.image ?? null : null} dispatch={dispatch} /> : <Message message="request.empty" />; }
+  } else if (route.screen === 'home') body = props ? <ResidentHome {...props} requests={requests} next={elderNextStep(scenario, state, person.id)} /> : <Denied />;
+  else if (route.screen === 'check') body = props?.household.checklistAnswers ? <RoomList {...props} /> : <Denied />;
+  else if (route.screen === 'question') body = props?.household.checklistAnswers ? <ChecklistQuestion key={`${person.id}-${route.id}`} {...props} questionId={route.id} saved={saved} suggestions={suggestions} photoStillRecorded={(id) => current.current.photos.some((photo) => photo.id === id)} onPhotoError={(key) => setError(key)} /> : <Denied />;
+  else if (route.screen === 'plan') body = props?.household.plan ? <ResidentPlan {...props} /> : <Denied />;
+  else if (route.screen === 'requests') body = household?.requests ? <RequestList requests={householdRequests} navigate={navigate} /> : <Denied />;
+  else if (route.screen === 'request') body = request ? <ResidentRequest key={request.request.id} {...common} view={request} /> : <Message message="request.empty" />;
+  else if (route.screen === 'sharing') body = isResident && request ? <SharingScreen key={`${request.request.id}-${request.request.revision}`} request={request.request} scenario={scenario} pins={scanPins} dispatch={dispatch} navigate={navigate} /> : <Denied />;
+  else if (route.screen === 'invite') body = isResident && request ? <VolunteerChooser people={state.people} requestId={request.request.id} onChoose={(id, requestId) => { setInvitees({ ...invitees, [requestId]: id }); navigate({ role: 'r', screen: 'review', id: requestId }); }} /> : <Denied />;
+  else if (route.screen === 'review') body = isResident && request && selectedVolunteer ? <InvitationReview request={request.request} volunteer={selectedVolunteer} scenario={scenario} state={state} pins={scanPins} dispatch={dispatch} navigate={navigate} /> : <BackToInvitations navigate={navigate} requestId={request?.request.id} />;
+  else if (route.screen === 'scan') body = household?.canViewScan && !resetting ? <ScanPanel key={resetVersion} scenario={scenario} state={state} onSuggestionsChange={onSuggestionsChange} onPinsChange={onPinsChange} /> : <Denied />;
+  else if (route.screen === 'resources') body = <ResourcesScreen {...common} />;
+  else if (route.screen === 'access') body = isResident ? <AccessScreen state={state} dispatch={dispatch} /> : <Denied />;
+  else if (route.screen === 'more') body = <MoreScreen person={person} resident={isResident} canViewScan={!!household?.canViewScan} navigate={navigate} dispatch={dispatch} onReset={() => setResetConfirm(true)} />;
+  else if (route.screen === 'help') body = <HelpScreen person={person} navigate={navigate} dispatch={dispatch} />;
+  else if (route.screen === 'about') body = <About />;
+  else if (route.screen === 'language') body = <LanguagePicker onSelect={(value) => { dispatch({ type: 'set_language', language: value }); setLaunchLanguage(value); }} />;
+  else if (route.screen === 'report') body = isResident ? <ReportScreen state={state} pins={scanPins} onError={() => setError('error.print')} /> : <Denied />;
+  const screenBody = <><ErrorMessage error={error} /><SaveFeedback saved={saved} feedback={feedback} />{body}{resetConfirm ? <ResetConfirmation onReset={() => void reset()} onCancel={() => setResetConfirm(false)} /> : null}</>;
+  return <I18nProvider language={language}>{route.screen === 'start' || route.screen === 'people' ? screenBody : <TranslatedShell person={person} route={route} titleKey={titleKey} navigate={navigate} hasChecklist={hasScope(state, person.id, 'checklist')} hasPlan={!!household?.plan} {...(person.role === 'family_helper' ? { actingFor: 'Margaret' } : {})}>{screenBody}</TranslatedShell>}</I18nProvider>;
+}
+function TranslatedShell({ titleKey, ...props }: Omit<Parameters<typeof PhoneShell>[0], 'title'> & { titleKey: MessageKey }) { const t = useT(); return <PhoneShell {...props} title={t(titleKey)} />; }
+function StartLanguage({ onSelect }: { onSelect(language: Language): void }) { const t = useT(); return <StartShell title={t('nav.start')}><p>{t('app.tagline')}</p><LanguagePicker onSelect={onSelect} /></StartShell>; }
+function Message({ message }: { message: MessageKey }) { const t = useT(); return <p className="notice">{t(message)}</p>; }
+function Denied() { return <Message message="person.noGrant" />; }
+function About() { const t = useT(); return <div className="stack"><p>{t('more.aboutBody')}</p><p>{t('app.disclosure')}</p><p>{t('app.local')}</p></div>; }
+function ErrorMessage({ error }: { error: string }) { const t = useT(); if (!error) return null; const result = error === 'reset-failed' ? { key: 'error.reset' as const } : error.startsWith('error.') || error.startsWith('check.') ? { key: error as MessageKey } : domainErrorKey(error); return <p className="error-message" role="alert">{t(result.key, result.values)}</p>; }
+function SaveFeedback({ saved, feedback }: { saved: boolean; feedback: number }) { const t = useT(); return <p className={saved ? 'sr-only screen-only' : 'notice screen-only'} role="status" aria-live="polite" key={feedback}>{t(saved ? 'check.saved' : 'check.unsaved')}</p>; }
+function ResetConfirmation({ onReset, onCancel }: { onReset(): void; onCancel(): void }) { const t = useT(); return <section className="card reset-confirm" aria-label={t('more.reset')}><h2>{t('more.reset')}</h2><p>{t('more.resetBody')}</p><div className="stack"><button className="danger" onClick={onReset}>{t('more.resetConfirm')}</button><button className="secondary" onClick={onCancel}>{t('more.keep')}</button></div></section>; }
+function BackToInvitations({ navigate, requestId }: { navigate: Navigate; requestId?: string | undefined }) { const t = useT(); return <button onClick={() => navigate(requestId ? { role: 'r', screen: 'invite', id: requestId } : { role: 'r', screen: 'requests' })}>{t('nav.invite')}</button>; }
+function ReportScreen({ state, pins, onError }: { state: ReturnType<typeof loadDemoState>['state']; pins: readonly ScanPin[]; onError(): void }) {
+  const t = useT();
+  const [snapshot, setSnapshot] = useState(() => createPrintSnapshot(state, new Date().toISOString(), pins));
+  const nativePrintUnavailable = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios';
+  async function print() {
+    flushSync(() => setSnapshot(createPrintSnapshot(state, new Date().toISOString(), pins)));
     try {
-      // Freshly inserted data-URI images may still be decoding when native printing starts.
-      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>('.print-report img'), (image) => image.decode()));
-      window.print();
-    } catch { setError('The report images or browser printing could not be prepared. The inspectable report remains below; no PDF was created by this app.'); }
+      const deadline = Date.now() + 8000;
+      while (document.querySelector('.print-report [data-photo-pending=true]')) { if (Date.now() > deadline) throw new Error('photo-timeout'); await new Promise((resolve) => setTimeout(resolve, 50)); }
+      if (document.querySelector('.print-report [data-photo-failed=true]')) throw new Error('photo-missing');
+      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>('.print-report img'), (img) => img.decode())); window.print(); } catch { onError(); }
   }
-
-  const coverage = computeCoverage(demoScenario, state);
-  const plan = computePlan(demoScenario, state);
-  const requests = getRequestViews(demoScenario, state);
-  const activeRequests = requests.filter((view) => view.active).length;
-  const steps = [
-    { id: 'checklist', label: 'Walk-through', meta: `${coverage.answered} of ${coverage.total} answered` },
-    { id: 'plan', label: 'Action plan', meta: plan.length ? `${plan.length} action${plan.length === 1 ? '' : 's'}` : 'Nothing confirmed yet' },
-    { id: 'assistance', label: 'Help programs', meta: `${demoScenario.programs.length} fictional programs` },
-    { id: 'requests', label: 'Family log', meta: requests.length ? `${activeRequests} active · ${requests.length - activeRequests} history` : 'No records' },
-    { id: 'print-preview', label: 'Printable report', meta: reportIsCurrent ? 'Preview is current' : 'Changed since preview' },
-  ];
-  const storageHealthy = healthyStorage.includes(persistence.status);
-
-  return (
-    <>
-      <a className="skip-link screen-only" href="#main-content">Skip to the walk-through</a>
-      <div className="shell">
-        <aside className="rail screen-only" aria-label="Demo overview">
-          <div className="brand"><Logo /><div><p className="brand-name">FixList</p><p className="brand-tag">The family repair list</p></div></div>
-          <FloorPlan scenario={demoScenario} state={state} />
-          <nav aria-label="Demo steps">
-            <ol className="step-nav">{steps.map((step, index) => (
-              <li key={step.id}>
-                <a href={`#${step.id}`} aria-current={activeSection === step.id ? 'location' : undefined}>
-                  <span className="step-number" aria-hidden="true">{index + 1}</span>
-                  <span className="step-text"><span className="step-label">{step.label}</span><span className="step-meta">{step.meta}</span></span>
-                </a>
-              </li>
-            ))}</ol>
-          </nav>
-          <div className="rail-footer">
-            <p role="status" aria-live="polite" aria-atomic="true" className="storage-line" data-healthy={storageHealthy}><strong>Browser storage:</strong> {persistence.message}</p>
-            <button className="secondary compact" disabled={scanResetting} onClick={() => void resetDemo()}>Reset synthetic demo</button>
-            <p className="small-text">Reset clears only FixList’s demo data in this browser. No accounts, no external messages.</p>
-          </div>
-        </aside>
-        <main id="main-content" tabIndex={-1}>
-          <div className="app-screen">
-            <header className="page-head">
-              <p className="eyebrow">Local browser demo · Synthetic data only</p>
-              <h1>{demoScenario.title}</h1>
-              <p className="intro">Walk through five rooms, confirm what the family wants to fix, and leave with a plan everyone can read — with every unknown left visible.</p>
-              <p className="notice">{demoScenario.disclosure} FixList does not certify a home as safe, find every hazard, or provide a complete assessment.</p>
-            </header>
-            {error ? <p role="alert" className="error-message">{error}</p> : null}
-            <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">{feedback.text}</p>
-            <ChecklistSection scenario={demoScenario} state={state} onCommand={runCommand} scanResetVersion={scanResetVersion} scanResetting={scanResetting} onScanPinsChange={onScanPinsChange} />
-            <PlanSection scenario={demoScenario} state={state} onCommand={runCommand} />
-            <AssistanceSection scenario={demoScenario} state={state} onCommand={runCommand} />
-            <RequestsSection scenario={demoScenario} state={state} onCommand={runCommand} />
-          </div>
-          <section id="print-preview" className="step print-preview-shell" aria-labelledby="print-heading">
-            <div className="screen-only">
-              <StepHead step={5} id="print-heading" title="Printable report">
-                <p className="lead">A frozen snapshot for the family and the resident. Refresh it to inspect the current state; printing always captures the current state with a fresh generation time.</p>
-              </StepHead>
-              <div className="report-toolbar">
-                <p role="status" aria-live="polite" className="report-state" data-current={reportIsCurrent}>{reportIsCurrent ? 'Report preview reflects the current demo state.' : 'The demo has changed since this snapshot. Refresh the report or print to capture the current state.'}</p>
-                <div className="button-row"><button className="secondary" onClick={refreshReport}>Refresh report preview</button><button onClick={printCurrentReport}>Print current report</button></div>
-              </div>
-              <p className="small-text">Uses native browser printing. Opening printing does not confirm that a PDF was saved or that its layout was verified.</p>
-            </div>
-            <div className="paper"><PrintReport scenario={demoScenario} snapshot={report} /></div>
-          </section>
-          <footer className="app-screen site-footer"><p>FixList local demo · React, TypeScript and Vite, built with AI assistance · All homes, people and programs are fictional.</p></footer>
-        </main>
-      </div>
-      {feedback.id > 0 ? <div className="toast screen-only" aria-hidden="true" key={feedback.id}>{feedback.text}</div> : null}
-    </>
-  );
+  return <><div className="screen-only stack"><button disabled={nativePrintUnavailable} onClick={() => void print()}>{t('report.print')}</button><p className="muted">{t(nativePrintUnavailable ? 'report.nativeUnavailable' : 'report.note')}</p></div><div className="paper"><PrintReport scenario={scenario} snapshot={snapshot} /></div></>;
 }
