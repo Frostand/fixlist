@@ -61,3 +61,17 @@ Stopped that dev server afterwards and verified no listener remained on port 517
 - Private boundary: `vite.config.ts`, `src/lib/local-scans-server.test.ts`, `scripts/ios-demo-scan.mjs` (comment only).
 - Calibration: `scan/suggest.py`, `scan/evaluate_model.py`, `scan/suggestion_schema.py`, `scan/tests/test_suggest.py`, `scan/tests/test_evaluate_model.py`.
 - Documentation: `docs/architecture.md`, `scan/SUGGESTIONS.md`, this report.
+
+## Review gate outcome (2026-10-18)
+
+GPT-6 Astra reviewed everything after `ab48023` in five read-only rounds. Each round re-ran typecheck, tests and build.
+
+| Round | Reviewed | Confirmed findings | Fixed in |
+| --- | --- | --- | --- |
+| 1 | `ab48023..39930a2` | History limit could block revocation (P1); bundled iOS scans served by Vite (P1); calibration applied across models (P2) | `a81247b` |
+| 2 | `a81247b` | Symlink aliases bypassed path guards (P1); scan named `ios` unloadable (P2) | `70c410f` |
+| 3 | `70c410f` | HTML-fallback symlink bypass (P1); raw `#` target in preview (P2) | `3281c51` (allowlist) |
+| 4 | `3281c51` | Preview served a build-copied public symlink (P1); allowlist blanked the dev app (P1) | `1b05ec5` |
+| 5 | `1b05ec5` | None. **Accepted.** The real dev app fetched 87 resources, all 200; the copied-asset build now fails | — |
+
+TOCTOU races, and attackers who can already write into `src/` or `node_modules/`, were judged out of scope for this loopback-only developer server. The iOS app does not use the Vite server.
