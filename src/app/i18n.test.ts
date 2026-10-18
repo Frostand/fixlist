@@ -25,7 +25,7 @@ describe('typed, source-bounded translations', () => {
   it('translates computed rule explanations without changing thresholds or requirements', () => {
     expect(authored(t, 'All 4 conditions are required. At least one condition is unknown. Every child result is retained.')).toBe('Se requieren las 4 condiciones. Al menos una condición es desconocida.');
     expect(authored(t, 'Fictional age is 65 years; expected at least 65 years. This condition is met.')).toContain('65 años');
-    expect(scanMessage(t, 'No saved room scan in this browser.')).toBe('No hay un escaneo de habitación guardado en este navegador.');
+    expect(scanMessage(t, 'No saved room scan in this browser.')).toBe('No hay ningún escaneo de habitación guardado en este dispositivo.');
     expect(scanMessage(t, t('legacy.scanpanel.6'))).toBe(t('legacy.scanpanel.6'));
     expect(scanMessage(t, 'Unknown import failure')).toBe(t('scan.storage.failed'));
   });

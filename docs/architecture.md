@@ -8,7 +8,11 @@ Demonstrate a repeatable chain: fictional room observation → checklist answer 
 
 The previous core domain, storage, browser and print journey has recorded acceptance evidence; the roles domain/storage increment is implemented and awaits parent review. Phone-first resident/helper/volunteer screens are implemented; see `roles-ui-implementation-report.md` for execution evidence and remaining native-print limits. The validation report separates deterministic coverage, actual desktop/native print inspection, the bounded iOS Safari check and remaining product questions. Eight concerns across five text-only fictional rooms exercise the architecture. Seven fixed fictional profiles and two invented programs demonstrate matching, failure and missing facts. No images, new design system, native capture, or server are required.
 
+Update 2026-10-18: The current local demo also includes on-device photos and an optional Gaussian-splat room scan/viewer with v2 AI areas-to-review suggestions. These remain user-controlled references; they do not detect hazards, confirm concerns, or assess safety. See the [roles journey spec](roles-journey-spec.md), [scan viewer report](scan-viewer-2026-10-17.md), [suggestion UI report](scan-suggestions-ui-2026-10-17.md), [v2 suggestions contract](suggestions-v2-contract.md), and [AI disclosures](ai-disclosures.md).
+
 Following Andrew's request to retain useful parts of the larger proposal, this local-demo scope remains in place. The [plan integration review](plan-integration-review.md) selects its useful additions: fact-based screening over fictional profiles, a small structured concern/action catalog, funding-work relevance distinct from applicant criteria, and later one-county resource verification. The first two increments are now implemented: fact screening and the expanded catalog, including work relevance. The one-county resource pilot remains gated. See [current acceptance evidence](validation-facts-catalog-2026-10-17.md). Keep all rules in the existing TypeScript domain and data layers.
+
+Update 2026-10-18: The real ACL Eldercare Locator is now included alongside the two fictional programs; the broader county-specific directory pilot remains gated. See the [roles journey spec](roles-journey-spec.md) for the current demo resource scope.
 
 ## Structure and dependencies
 
@@ -34,6 +38,8 @@ Following Andrew's request to retain useful parts of the larger proposal, this l
 | `recordings/` | Ignored local screenshot/video/PDF evidence; only its README is tracked. |
 
 Use the exact installed dependency versions in `package.json` and `package-lock.json`, Node **24.18.0** and npm **11**. This increment changes no dependencies. React/TypeScript/Vite, local fonts and the separately lazy-loaded three.js/Spark scan viewer remain the existing stack; Capacitor packaging is separate work. Persistence uses localStorage plus dedicated IndexedDB photo/scan stores, with no backend, server database, analytics or remote API.
+
+Update 2026-10-18: Capacitor 8.5.3 now packages the Vite app as an iOS demo; `npm run ios:demo` builds, syncs and bundles one private scan in the ignored iOS app assets. See [README run instructions](../README.md) and the [roles journey spec](roles-journey-spec.md).
 
 The initial JavaScript budget remains **250 KiB gzip**. Report Vite's measured output separately from this budget; it does not establish latency. Add dependencies only for a demonstrated need.
 
@@ -107,6 +113,8 @@ The UI dispatcher uses the active person as actor and request revisions from the
 ## Print and browser acceptance
 
 Use native `window.print()` with dedicated `@media print` output. Include confirmed action evidence/order, fictional sources, sample coverage, selected profile/facts, complete rule explanations, independent work relevance, unknown costs/routing/references, local family attribution/history limits, and generation time. The existing iOS Capacitor shell did not open a print sheet for `window.print()` in the UI task; the native demo now explains that printing is unavailable, while browser printing remains enabled. A native printing/export bridge requires a separate authorized native increment. An on-screen report does not prove native pagination or a valid saved PDF. Record native preview and PDF checks separately. See [MDN printing](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Media_queries/Printing).
+
+Update 2026-10-18: The iOS demo now opens the native print sheet through the Swift plugin in `ios/App/App/SceneDelegate.swift`. Print pagination and a saved PDF still need separate inspection; see the [video shot list](video-shot-list.md).
 
 Runtime checks must exercise real controls, undo/reconfirmation, screening transitions, completion/reopening/inactive history, reload/reset, storage errors, narrow layout, keyboard use, console errors and print. iOS Safari simulation is additional compatibility evidence, not a native app or physical-device outcome test.
 

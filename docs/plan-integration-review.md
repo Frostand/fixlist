@@ -8,6 +8,8 @@ Keep the family-coordination problem: help an adult child or grandchild document
 
 The proposed value is continuity between these steps. Scanning a room is neither required for that value nor a demonstrated source of advantage. Keep the working React/TypeScript app and pure rules layer; assess usefulness against the same-information worksheet in `product-validation.md` before adding infrastructure.
 
+Update 2026-10-18: The current demo now packages as a Capacitor iOS app and includes the resident/family-helper/volunteer demo journeys, English plus machine-translated unreviewed Spanish, on-device photos, and the real Eldercare Locator alongside the fictional program examples. The role and account boundaries are in the [roles journey spec](roles-journey-spec.md) and [2.0 accounts plan](v2-accounts-plan.md).
+
 ## Keep, adapt, or defer
 
 | Larger-plan element | Decision for the current plan | Implementation boundary |
@@ -28,6 +30,8 @@ The proposed value is continuity between these steps. Scanning a room is neither
 | Swift capture, splats, vision, GPU queue | Defer | Not required for the next engine/catalog work. A future isolated experiment needs real capture hardware/data and measured acceptance criteria. |
 | FastAPI, auth, volunteer matching, public jobs | Defer | These add identity, authorization, consent and operational requirements beyond a local record. Current typed commands are not a production API. |
 | Homelab hosting, tunnel, backups, public video | Defer until separately authorized | Do not promise 30-day expiry, deletion, access controls or backups that have not been implemented and verified. |
+
+Update 2026-10-18: Photo evidence and pins, the optional local Gaussian-splat scan pipeline/viewer, and v2 AI areas-to-review suggestions have since been implemented. They remain local and optional; suggestions are not hazard detection or safety findings, and no dimensions or accuracy are claimed. See the [scan viewer report](scan-viewer-2026-10-17.md), [suggestion UI report](scan-suggestions-ui-2026-10-17.md), [v2 contract](suggestions-v2-contract.md), and [AI disclosures](ai-disclosures.md). The real Eldercare Locator is present; a broader county program pilot and usefulness comparison remain gated.
 
 ## Corrections before reusing the pitch or specifications
 
@@ -78,3 +82,5 @@ Carry the new evidence, unknowns and coverage state into native print; rerun mea
 ## Review outcome
 
 Keep the product's problem, audience, data-driven rules, funding-relevance idea, conservative task routing and evidence-rich handoff. The fact-based screening engine and small reference-attributed catalog are implemented and checked. Next, choose the county for a sourced resource pilot and run the planned usefulness comparison. Preserve the working implementation and keep capture, reconstruction, vision, volunteer marketplace and production infrastructure outside the current build.
+
+Update 2026-10-18: The local scan/reconstruction/viewer and AI suggestion features named above are now part of the demo; automated hazard detection, real eligibility decisions, volunteer marketplace functions and production infrastructure remain out of scope. One real Eldercare Locator resource is integrated, while the larger county directory pilot and usefulness comparison remain future gates. See the [scan viewer report](scan-viewer-2026-10-17.md), [suggestion contract](suggestions-v2-contract.md), and [AI disclosures](ai-disclosures.md).

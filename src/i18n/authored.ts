@@ -3,6 +3,14 @@ import { es } from './es';
 import type { Translator } from './index';
 const translatedValues = new Set<string>(Object.values(es));
 const authoredKeys = new Map<string, MessageKey>(Object.entries(en).map(([key, value]) => [value, key as MessageKey]));
+const scanStorageFallbackKeys = new Map<string, MessageKey>([
+  ['No saved room scan in this browser.', 'scan.storage.empty'],
+  ['Saved scan and pins loaded from this browser. Open the viewer to see them.', 'scan.storage.loaded'],
+  ['Scan, upright setting, pins and model suggestion choices saved in this browser only.', 'scan.storage.saved'],
+  ['Scan changes are in memory only: browser storage could not save them. Reload may restore an older scan or lose these changes.', 'scan.storage.unsaved'],
+  ['Saved scan and pins cleared from this browser.', 'scan.storage.cleared'],
+  ['The scan was cleared from this view, but browser storage could not be cleared. Reload may restore the previous scan and pins.', 'scan.storage.clearFailed'],
+]);
 /** Only call for authored catalog/domain copy, never names, notes, updates or visit/area text. */
 export function authored(t: Translator, input: string | number): string {
   const text = String(input);
@@ -32,6 +40,8 @@ export function authored(t: Translator, input: string | number): string {
 
 /** Scan library text is authored output, not a resident note. Unknown failures have a translated recovery path. */
 export function scanMessage(t: Translator, message: string): string {
+  const fallbackKey = scanStorageFallbackKeys.get(message);
+  if (fallbackKey) return t(fallbackKey);
   if (t('check.yes') === en['check.yes'] || translatedValues.has(message)) return message;
   if (message.startsWith('Saved scan was not opened:')) return t('scan.storage.rejected');
   if (message.includes('dropped')) return t('scan.storage.dropped');
