@@ -12,7 +12,7 @@ import { focusTarget, focusVisible, skipToContent } from './focus';
 import { guideProgress } from './view-model';
 import { createUiDispatch } from './ui-controller';
 
-const noop = () => {}, dispatch = () => ({ ok: true as const });
+const noop = () => {}, dispatch = async () => ({ ok: true as const });
 describe('routing UI regressions', () => {
   it.each(['sam', 'alex'])('shows only general help for %s without reading any screening or household fact state', (id) => {
     const state = createInitialState(scenario), person = state.people.find((p) => p.id === id)!;
@@ -32,17 +32,17 @@ describe('routing UI regressions', () => {
     expect(html).toContain('start-shell'); expect(html).toContain('id="screen-heading"'); expect(html).toContain(en['nav.skip']);
     expect(html).not.toContain('tab-bar'); expect(html).not.toContain('person-chip');
   });
-  it('skips without falsely completing the guide and resumes the saved step', () => {
+  it('skips without falsely completing the guide and resumes the saved step', async () => {
     let state = createInitialState(scenario); const navigate = vi.fn(), onExit = vi.fn();
     const items = new Map<string, string>(), storage = { getItem: (k: string) => items.get(k) ?? null, setItem: (k: string, v: string) => { items.set(k, v); }, removeItem: (k: string) => { items.delete(k); } };
     const send = createUiDispatch({ scenario, getState: () => state, storage, clock: () => '2026-10-18T15:00:00.000Z', publish: (next) => { state = next; }, onError: noop });
-    send({ type: 'set_onboarding', guideId: 'resident-guide', stepIndex: 2, completed: false });
-    skipGuide(state.people[0]!, send, onExit); expect(onExit).toHaveBeenCalledWith(true); expect(guideProgress(state.people[0]!)).toEqual({ stepIndex: 2, completed: false });
-    const before = state; openGuide(state.people[0]!, send, navigate); expect(state).toBe(before); expect(navigate).toHaveBeenCalledWith({ screen: 'guide' });
+    await send({ type: 'set_onboarding', guideId: 'resident-guide', stepIndex: 2, completed: false });
+    await skipGuide(state.people[0]!, send, onExit); expect(onExit).toHaveBeenCalledWith(true); expect(guideProgress(state.people[0]!)).toEqual({ stepIndex: 2, completed: false });
+    const before = state; await openGuide(state.people[0]!, send, navigate); expect(state).toBe(before); expect(navigate).toHaveBeenCalledWith({ screen: 'guide' });
     const html = renderToStaticMarkup(<MoreScreen person={state.people[0]!} resident canViewScan navigate={navigate} dispatch={send} onReset={noop} />);
     expect(html).toContain(en['routing.resumeGuide']);
-    send({ type: 'set_onboarding', guideId: 'resident-guide', stepIndex: 3, completed: true });
-    openGuide(state.people[0]!, send, navigate); expect(guideProgress(state.people[0]!)).toEqual({ stepIndex: 0, completed: false });
+    await send({ type: 'set_onboarding', guideId: 'resident-guide', stepIndex: 3, completed: true });
+    await openGuide(state.people[0]!, send, navigate); expect(guideProgress(state.people[0]!)).toEqual({ stepIndex: 0, completed: false });
   });
   it('supports a catalog question without a concern and distinguishes question navigation from screen Back', () => {
     const catalog = { ...scenario, concerns: scenario.concerns.filter((c) => c.id !== 'rug-concern') }, state = createInitialState(catalog);

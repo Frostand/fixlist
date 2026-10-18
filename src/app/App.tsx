@@ -22,7 +22,7 @@ import { VolunteerHome, VolunteerTask, VolunteerTasks } from './VolunteerScreens
 import { AccessScreen, HelpScreen, MoreScreen, RecoveryNotice, ResetConfirmation, ResourcesScreen, VolunteerProfile } from './SettingsScreens';
 import { ScanPanel } from './ScanPanel';
 import { PrintReport } from './PrintReport';
-import { clearNavigationState, createInvitationDraft, emptyNavigationState, loadNavigationState, saveNavigationState, selectedInvitationVolunteer, type NavigationState } from './navigation-state';
+import { createInvitationDraft, emptyNavigationState, loadNavigationState, updateNavigationState, selectedInvitationVolunteer, type NavigationState } from './navigation-state';
 
 export function App() { return validateCatalog(scenario).ok ? <DemoApp /> : <I18nProvider language="en"><Unavailable /></I18nProvider>; }
 function Unavailable() { const t = useT(); return <main><h1>{t('app.name')}</h1><p role="alert">{t('error.catalog')}</p></main>; }
@@ -36,8 +36,14 @@ function DemoApp() {
   const returnRef = useRef(returnTo); returnRef.current = returnTo;
   const [navigation, setNavigation] = useState<NavigationState>({ ...initial.navigation, pendingDestination: launch.pending });
   const navigationRef = useRef(navigation); navigationRef.current = navigation;
-  function rememberNavigation(next: NavigationState) { navigationRef.current = next; setNavigation(next); if (!saveNavigationState(initial.storage, next)) setError('routing.draftUnsaved'); }
-  useEffect(() => { if (launch.pending) saveNavigationState(initial.storage, { ...initial.navigation, pendingDestination: launch.pending }); }, [initial, launch]);
+  async function rememberNavigation(update: (saved: NavigationState) => NavigationState) {
+    const current = dispatch.capture?.();
+    const next = await updateNavigationState(initial.storage, (saved) => !resettingRef.current && (current?.() ?? true) ? update(saved) : null);
+    if (!next) { if (!resettingRef.current && (current?.() ?? true)) setError('routing.draftUnsaved'); return false; }
+    if (resettingRef.current || !(current?.() ?? true)) return false;
+    navigationRef.current = next; setNavigation(next); return true;
+  }
+  useEffect(() => { if (launch.pending) void rememberNavigation((saved) => ({ ...saved, pendingDestination: launch.pending })); }, [initial, launch]);
   const person = state.people.find((p) => p.id === state.activePersonId)!;
   const [launchLanguage, setLaunchLanguage] = useState<Language>(person.language), [languageChosen, setLanguageChosen] = useState(false);
   const [saved, setSaved] = useState(!['invalid', 'unavailable', 'error'].includes(initial.status)), [error, setError] = useState<string | OperationFailure>('');
@@ -53,7 +59,7 @@ function DemoApp() {
     routeRef.current = next; returnRef.current = nextReturn; setReturnTo(nextReturn); setRoute(next);
   }, []);
   useEffect(() => {
-    const update = () => { const next = parseRoute(window.location.hash, '', routeRef.current); if (next === routeRef.current) return; if (selectionRequired.current && next.screen !== 'start' && next.screen !== 'people') { if ('role' in next) rememberNavigation({ ...navigationRef.current, pendingDestination: next }); return; } routeRef.current = next; setRoute(next); const hash = window.history.state?.fixlistReturnTo; const context = typeof hash === 'string' ? parseRoute(hash) : null; setReturnTo(context && 'role' in context ? context : null); setError(''); };
+    const update = () => { const next = parseRoute(window.location.hash, '', routeRef.current); if (next === routeRef.current) return; if (selectionRequired.current && next.screen !== 'start' && next.screen !== 'people') { if ('role' in next) void rememberNavigation((saved) => ({ ...saved, pendingDestination: next })); return; } routeRef.current = next; setRoute(next); const hash = window.history.state?.fixlistReturnTo; const context = typeof hash === 'string' ? parseRoute(hash) : null; setReturnTo(context && 'role' in context ? context : null); setError(''); };
     window.addEventListener('hashchange', update); window.addEventListener('popstate', update);
     return () => { window.removeEventListener('hashchange', update); window.removeEventListener('popstate', update); };
   }, []);
@@ -70,34 +76,35 @@ function DemoApp() {
   }, [resetVersion]);
   const onPinsChange = useCallback((pins: readonly ScanPin[]) => { if (!resettingRef.current) setScanPins(shareableScanPins(pins)); }, []);
   const onSuggestionsChange = useCallback((value: ScanSuggestionLayer | null) => { if (!resettingRef.current) setSuggestions(value); }, []);
-  function choosePerson(personId: string, preserveLanguage = false) {
-    if (!dispatch({ type: 'select_person', personId }).ok) return;
-    if (languageChosen && !preserveLanguage) dispatch({ type: 'set_language', language: launchLanguage });
+  async function choosePerson(personId: string, preserveLanguage = false) {
+    if (!(await dispatch({ type: 'select_person', personId })).ok) return;
+    if (languageChosen && !preserveLanguage && !(await dispatch({ type: 'set_language', language: launchLanguage })).ok) return;
     setLanguageChosen(false);
     selectionRequired.current = false;
     const selected = current.current.people.find((p) => p.id === personId)!;
     setLaunchLanguage(selected.language);
     const next = personDestination(selected.role, guideProgress(selected).completed, navigationRef.current.dismissedGuides.includes(selected.id), navigationRef.current.pendingDestination);
-    if (next.screen !== 'guide') rememberNavigation({ ...navigationRef.current, pendingDestination: null });
+    if (next.screen !== 'guide' && !await rememberNavigation((saved) => ({ ...saved, pendingDestination: null }))) return;
     navigate(next);
   }
-  function leaveGuide(skipped: boolean) {
+  async function leaveGuide(skipped: boolean) {
     const next = authorizedDestination(person.role, navigationRef.current.pendingDestination);
-    rememberNavigation({ ...navigationRef.current, pendingDestination: null, dismissedGuides: [...navigationRef.current.dismissedGuides.filter((id) => id !== person.id), ...(skipped ? [person.id] : [])] });
+    if (!await rememberNavigation((saved) => ({ ...saved, pendingDestination: null, dismissedGuides: [...saved.dismissedGuides.filter((id) => id !== person.id), ...(skipped ? [person.id] : [])] }))) return;
     navigate(next);
   }
   async function reset() {
+    if (resettingRef.current) return;
     if (current.current.activePersonId !== current.current.household.residentId) { setError({ code: 'permission_denied', message: 'resident-required' }); return; }
     dispatch.invalidate?.(); resettingRef.current = true; flushSync(() => { setResetting(true); setResetConfirm(false); });
     const result = await resetFixListData(initial.storage, scenario);
-    current.current = result.state; setState(result.state); setSaved(result.status === 'reset'); setScanPins([]); setSuggestions(null); setNavigation(emptyNavigationState()); navigationRef.current = emptyNavigationState(); const navigationCleared = clearNavigationState(initial.storage); setResetVersion((v) => v + 1); setResetting(false); resettingRef.current = false;
+    current.current = result.state; setState(result.state); setSaved(result.status === 'reset'); setScanPins([]); setSuggestions(null); setNavigation(emptyNavigationState()); navigationRef.current = emptyNavigationState(); setResetVersion((v) => v + 1); setResetting(false); resettingRef.current = false;
     selectionRequired.current = true; navigate({ screen: 'start' }); setLaunchLanguage('en');
-    if (result.status !== 'reset' || !navigationCleared) setError('reset-failed');
+    if (result.status !== 'reset') setError('reset-failed');
     if (result.status !== 'reset') setRecovery({ status: 'error', state: result.state, message: result.message });
-    else { const loaded = dispatch.refresh?.() ?? loadDemoState(initial.storage, scenario); setRecovery(loaded); }
+    else { const loaded = await (dispatch.refresh?.() ?? loadDemoState(initial.storage, scenario)); setRecovery(loaded); }
   }
-  function refreshSaved() {
-    const loaded = dispatch.refresh?.() ?? loadDemoState(initial.storage, scenario);
+  async function refreshSaved() {
+    const loaded = await (dispatch.refresh?.() ?? loadDemoState(initial.storage, scenario));
     setRecovery(loaded); setError('');
     if (['loaded', 'migrated', 'empty'].includes(loaded.status)) { setResetVersion((v) => v + 1); navigate(homeRoute(loaded.state.people.find((p) => p.id === loaded.state.activePersonId)!.role)); }
   }
@@ -144,7 +151,7 @@ function DemoApp() {
   else if (route.screen === 'requests') body = household?.requests ? <RequestList requests={householdRequests} navigate={navigate} /> : <Denied />;
   else if (route.screen === 'request') body = request ? <ResidentRequest key={request.request.id} {...common} view={request} /> : <Message message="request.empty" />;
   else if (route.screen === 'sharing') body = isResident && request ? <SharingScreen key={`${request.request.id}-${request.request.revision}`} request={request.request} scenario={scenario} pins={scanPins} dispatch={dispatch} navigate={navigate} /> : <Denied />;
-  else if (route.screen === 'invite') body = isResident && request ? <VolunteerChooser people={state.people} requestId={request.request.id} onChoose={(id, requestId) => { const draft = createInvitationDraft(current.current, requestId, id); if (!draft) return; navigate({ role: 'r', screen: 'review', id: requestId }); rememberNavigation({ ...navigationRef.current, invitations: [...navigationRef.current.invitations.filter((d) => d.requestId !== requestId), draft] }); }} /> : <Denied />;
+  else if (route.screen === 'invite') body = isResident && request ? <VolunteerChooser people={state.people} requestId={request.request.id} onChoose={async (id, requestId) => { const draft = createInvitationDraft(current.current, requestId, id); if (!draft) return; if (await rememberNavigation((saved) => ({ ...saved, invitations: [...saved.invitations.filter((d) => d.requestId !== requestId), draft] }))) navigate({ role: 'r', screen: 'review', id: requestId }); }} /> : <Denied />;
   else if (route.screen === 'review') body = isResident && request && selectedVolunteer ? <InvitationReview request={request.request} volunteer={selectedVolunteer} scenario={scenario} state={state} pins={scanPins} dispatch={dispatch} navigate={navigate} /> : <BackToInvitations navigate={navigate} requestId={request?.request.id} />;
   else if (route.screen === 'scan') body = household?.canViewScan && !resetting ? <ScanPanel key={resetVersion} scenario={scenario} state={state} onSuggestionsChange={onSuggestionsChange} onPinsChange={onPinsChange} /> : <Denied />;
   else if (route.screen === 'resources') body = <ResourcesScreen {...common} />;
@@ -152,7 +159,7 @@ function DemoApp() {
   else if (route.screen === 'more') body = <MoreScreen person={person} resident={isResident} canViewScan={!!household?.canViewScan} navigate={navigate} dispatch={dispatch} onReset={() => setResetConfirm(true)} />;
   else if (route.screen === 'help') body = <HelpScreen person={person} navigate={navigate} dispatch={dispatch} />;
   else if (route.screen === 'about') body = <About />;
-  else if (route.screen === 'language') body = <LanguagePicker onSelect={(value) => { dispatch({ type: 'set_language', language: value }); setLaunchLanguage(value); }} />;
+  else if (route.screen === 'language') body = <LanguagePicker onSelect={async (value) => { if ((await dispatch({ type: 'set_language', language: value })).ok) setLaunchLanguage(value); }} />;
   else if (route.screen === 'report') body = isResident ? <ReportScreen state={state} pins={scanPins} onError={() => setError('error.print')} /> : <Denied />;
   const screenBody = <><ErrorMessage error={error} />{typeof error === 'object' && error.code === 'stale_revision' ? <RefreshSaved onRefresh={refreshSaved} /> : null}{['invalid', 'error', 'unavailable', 'migrated'].includes(recovery.status) ? <RecoveryNotice status={recovery.status as 'invalid' | 'error' | 'unavailable' | 'migrated'} message={recovery.message} canManage={isResident} onExport={exportSaved} onReset={() => setResetConfirm(true)} onRefresh={refreshSaved} /> : null}<SaveFeedback saved={saved} feedback={feedback} />{body}{resetConfirm ? <ResetConfirmation onReset={() => void reset()} onCancel={() => setResetConfirm(false)} /> : null}</>;
   return <I18nProvider language={language}>{!usesTabShell(route) ? screenBody : <TranslatedShell person={person} route={route} returnTo={returnTo} titleKey={titleKey} navigate={navigate} hasChecklist={hasScope(state, person.id, 'checklist')} hasPlan={!!household?.plan} {...(person.role === 'family_helper' ? { actingFor: 'Margaret' } : {})}>{screenBody}</TranslatedShell>}</I18nProvider>;

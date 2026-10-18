@@ -3,17 +3,18 @@ import type { DemoScenario } from '../domain/types';
 import { OperationError, operationFailure, type FailureCode, type OperationFailure } from '../domain/failures';
 import { DEMO_STORAGE_KEY, loadDemoState, saveDemoState, validateState, type DemoStorage, type LoadResult } from '../lib/demo-storage';
 import { reencodePhoto, type PhotoStore } from '../lib/photo-storage';
+import { withDemoStorageLock } from '../lib/storage-lock';
 export type UiCommand = DemoCommand extends infer C ? C extends DemoCommand ? Omit<C, 'actorId' | 'at'> : never : never;
 export type DispatchResult = { ok: true } | { ok: false; error: string; code: FailureCode };
-export type Dispatch = ((command: UiCommand, requireSaved?: boolean) => DispatchResult) & {
+export type Dispatch = ((command: UiCommand, requireSaved?: boolean) => Promise<DispatchResult>) & {
   invalidate?(reason?: FailureCode): void;
-  refresh?(): LoadResult;
+  refresh?(): Promise<LoadResult>;
   capture?(): () => boolean;
   photoRecovery?(id: string): () => boolean;
 };
 /** The snapshot is the optimistic revision token. Failed saves never publish a new state. */
 export function createUiDispatch(options: { scenario: DemoScenario; getState(): DemoState; storage: DemoStorage | null; publish(state: DemoState, saved: boolean, announce?: boolean): void; clock(): string; onError(error: string): void; onFailure?(failure: OperationFailure): void }): Dispatch {
-  let token: string | null = null, epoch = 0, resetEpoch = 0, blocked = false;
+  let token: string | null = null, epoch = 0, resetEpoch = 0, blocked = false, pending = false;
   let blockedCode: FailureCode = 'recovery_required';
   function inspect(): LoadResult {
     try { token = options.storage?.getItem(DEMO_STORAGE_KEY) ?? null; }
@@ -29,19 +30,29 @@ export function createUiDispatch(options: { scenario: DemoScenario; getState(): 
     blocked = true; blockedCode = 'stale_revision';
   }
   const fail = (failure: OperationFailure): DispatchResult => { options.onError(failure.message); options.onFailure?.(failure); return { ok: false, error: failure.message, code: failure.code }; };
-  const dispatch: Dispatch = (command) => {
+  const dispatch: Dispatch = async (command) => {
+    // Ignore repeated activation without clearing inputs, navigating or announcing success.
+    if (pending) return { ok: false, code: 'cancelled', error: 'A change is already being saved.' };
     if (blocked) return fail({ code: blockedCode, message: blockedCode === 'stale_revision' ? 'Another view changed this data. Refresh saved data before trying again.' : blockedCode === 'cancelled' ? 'This operation was cancelled by reset.' : blockedCode === 'storage_unavailable' ? 'Storage is unavailable. No change was saved.' : 'Saved data needs recovery. Export it or deliberately reset before replacing it.' });
     const before = options.getState();
     const result = applyCommand(options.scenario, before, { ...command, actorId: before.activePersonId, at: options.clock() });
     if (!result.ok) return fail({ code: result.code, message: result.error });
-    const saved = saveDemoState(options.storage, options.scenario, result.state, token);
-    if (saved.status !== 'saved') return fail({ code: saved.code, message: saved.message });
-    token = saved.token;
-    options.publish(result.state, true);
-    return { ok: true };
+    const operationEpoch = epoch; pending = true;
+    try {
+      const saved = await saveDemoState(options.storage, options.scenario, result.state, token, () => epoch === operationEpoch && !blocked);
+      if (epoch !== operationEpoch) return fail({ code: blocked ? blockedCode : 'cancelled', message: 'This view changed while saving. Refresh saved data before trying again.' });
+      if (saved.status !== 'saved') return fail({ code: saved.code, message: saved.message });
+      token = saved.token;
+      options.publish(result.state, true);
+      return { ok: true };
+    } finally { pending = false; }
   };
   dispatch.invalidate = (reason = 'cancelled') => { epoch++; if (reason === 'cancelled') resetEpoch++; blocked = true; blockedCode = reason; };
-  dispatch.refresh = () => { epoch++; const loaded = inspect(); if (!blocked) options.publish(loaded.state, true, false); return loaded; };
+  dispatch.refresh = async () => {
+    const operationEpoch = ++epoch; blocked = true; blockedCode = 'cancelled';
+    try { return await withDemoStorageLock(() => { if (epoch !== operationEpoch) return loadDemoState(options.storage, options.scenario); const loaded = inspect(); if (!blocked) options.publish(loaded.state, true, false); return loaded; }); }
+    catch { blocked = true; blockedCode = 'storage_unavailable'; fail({ code: blockedCode, message: 'Saved data could not be locked for refresh.' }); return { status: 'error', state: options.getState(), message: 'Saved data could not be refreshed.' }; }
+  };
   dispatch.capture = () => {
     const operationEpoch = epoch, operationToken = token;
     return () => {
@@ -75,7 +86,7 @@ export async function addPhoto(options: { input: Blob; id: string; checklistItem
   await privateStore(() => options.store.write(options.id, encoded.blob));
   try {
     assertCurrent(current);
-    const result = options.dispatch({ type: 'add_photo', photoId: options.id, checklistItemId: options.checklistItemId, width: encoded.width, height: encoded.height }, true);
+    const result = await options.dispatch({ type: 'add_photo', photoId: options.id, checklistItemId: options.checklistItemId, width: encoded.width, height: encoded.height }, true);
     if (!result.ok) throw new OperationError(result.code, result.error);
   } catch (error) { await privateStore(() => options.store.remove(options.id)); throw error; }
 }
@@ -88,7 +99,7 @@ export async function removePhoto(options: { id: string; store: PhotoStore; disp
   await privateStore(() => options.store.remove(options.id));
   try {
     assertCurrent(current);
-    const result = options.dispatch({ type: 'remove_photo', photoId: options.id }, true);
+    const result = await options.dispatch({ type: 'remove_photo', photoId: options.id }, true);
     if (!result.ok) throw new OperationError(result.code, result.error);
   } catch (error) { if (backup && (recover?.() ?? current()) && (options.metadataExists?.() ?? true)) await privateStore(() => options.store.write(options.id, backup)); throw error; }
 }

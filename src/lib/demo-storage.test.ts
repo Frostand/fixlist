@@ -63,10 +63,10 @@ function rejectLegacy(change: (value: Record<string, unknown>) => void): void {
 }
 
 describe('frozen schema-v1 rejection boundaries', () => {
-  it('rejects a v1 payload at the direct v2 validator/save boundary', () => {
+  it('rejects a v1 payload at the direct v2 validator/save boundary', async () => {
     const storage = new MemoryStorage();
     expect(validateState(legacyState(), demoScenario).ok).toBe(false);
-    expect(saveDemoState(storage, demoScenario, legacyState() as unknown as DemoState).status).toBe('invalid');
+    expect((await saveDemoState(storage, demoScenario, legacyState() as unknown as DemoState)).status).toBe('invalid');
     expect(storage.writes).toEqual([]);
   });
 
@@ -182,25 +182,25 @@ describe('storage read, write, and reset failure boundaries', () => {
     expect(result.message).toContain('64 KiB');
   });
 
-  it('rejects an oversized otherwise valid reconstructed state before saving', () => {
+  it('rejects an oversized otherwise valid reconstructed state before saving', async () => {
     const scenario: DemoScenario = {
       ...demoScenario,
       checklist: Array.from({ length: 4_000 }, (_, index) => ({ ...demoScenario.checklist[0]!, id: `known-checklist-${index}` })),
     };
     const storage = new MemoryStorage();
-    const result = saveDemoState(storage, scenario, createInitialState(scenario));
+    const result = await saveDemoState(storage, scenario, createInitialState(scenario));
     expect(result.status).toBe('invalid');
     expect(result.message).toContain('64 KiB');
     expect(storage.writes).toEqual([]);
   });
 
-  it.each([null, undefined])('supports unavailable storage (%s) with a truthful memory fallback', (storage) => {
+  it.each([null, undefined])('supports unavailable storage (%s) with a truthful memory fallback', async (storage) => {
     const loaded = loadDemoState(storage, demoScenario);
     expect(loaded.status).toBe('unavailable');
     expect(loaded.state).toEqual(createInitialState(demoScenario));
     expect(loaded.message).toContain('memory only');
-    expect(saveDemoState(storage, demoScenario, requestState()).status).toBe('unavailable');
-    const reset = resetDemoState(storage, demoScenario);
+    expect((await saveDemoState(storage, demoScenario, requestState())).status).toBe('unavailable');
+    const reset = await resetDemoState(storage, demoScenario);
     expect(reset.status).toBe('unavailable');
     expect(reset.state).toEqual(createInitialState(demoScenario));
     expect(reset.message).toContain('reloading may restore older saved data');
@@ -220,34 +220,34 @@ describe('storage read, write, and reset failure boundaries', () => {
     expect(storage.removes).toEqual([]);
   });
 
-  it('catches quota/denied writes and preserves the previous saved state', () => {
+  it('catches quota/denied writes and preserves the previous saved state', async () => {
     const storage = new MemoryStorage();
     const original = JSON.stringify(createInitialState(demoScenario));
     storage.items.set(DEMO_STORAGE_KEY, original);
     storage.failWrite = true;
     const state = requestState();
-    const result = saveDemoState(storage, demoScenario, state);
+    const result = await saveDemoState(storage, demoScenario, state);
     expect(result.status).toBe('error');
     expect(result.message).toContain('reloading may restore older saved data');
     expect(storage.items.get(DEMO_STORAGE_KEY)).toBe(original);
     expect(state).toEqual(requestState());
   });
 
-  it('validates runtime state before writing and leaves old data untouched on rejection', () => {
+  it('validates runtime state before writing and leaves old data untouched on rejection', async () => {
     const storage = new MemoryStorage();
     storage.items.set(DEMO_STORAGE_KEY, 'old value');
-    const result = saveDemoState(storage, demoScenario, { ...requestState(), scenarioId: 'other' });
+    const result = await saveDemoState(storage, demoScenario, { ...requestState(), scenarioId: 'other' });
     expect(result.status).toBe('invalid');
     expect(storage.writes).toEqual([]);
     expect(storage.items.get(DEMO_STORAGE_KEY)).toBe('old value');
   });
 
-  it('reset removes only its own key and returns fresh memory without confirmations or requests', () => {
+  it('reset removes only its own key and returns fresh memory without confirmations or requests', async () => {
     const storage = new MemoryStorage();
     storage.items.set(DEMO_STORAGE_KEY, JSON.stringify(requestState()));
     storage.items.set('another-app', 'keep me');
-    const first = resetDemoState(storage, demoScenario);
-    const second = resetDemoState(storage, demoScenario);
+    const first = await resetDemoState(storage, demoScenario);
+    const second = await resetDemoState(storage, demoScenario);
     expect(first.status).toBe('reset');
     expect(first.state).toEqual(createInitialState(demoScenario));
     expect(first.state.requests).toEqual([]);
@@ -256,18 +256,18 @@ describe('storage read, write, and reset failure boundaries', () => {
     expect(first.state.confirmations['rug-concern']).not.toBe(second.state.confirmations['rug-concern']);
     expect(storage.items.has(DEMO_STORAGE_KEY)).toBe(false);
     expect(storage.items.get('another-app')).toBe('keep me');
-    expect(storage.removes).toEqual([DEMO_STORAGE_KEY, DEMO_STORAGE_KEY]);
+    expect(storage.removes).toEqual([DEMO_STORAGE_KEY, 'fixlist:navigation:v1', DEMO_STORAGE_KEY, 'fixlist:navigation:v1']);
     expect(storage.writes).toEqual([]);
     expect(storage.reads).toEqual([]);
   });
 
-  it('resets memory even when removal is denied, preserves unrelated data, and warns about reload', () => {
+  it('resets memory even when removal is denied, preserves unrelated data, and warns about reload', async () => {
     const storage = new MemoryStorage();
     const original = JSON.stringify(requestState());
     storage.items.set(DEMO_STORAGE_KEY, original);
     storage.items.set('another-app', 'keep me');
     storage.failRemove = true;
-    const result = resetDemoState(storage, demoScenario);
+    const result = await resetDemoState(storage, demoScenario);
     expect(result.status).toBe('error');
     expect(result.state).toEqual(createInitialState(demoScenario));
     expect(result.message).toContain('Reloading may restore older saved data');

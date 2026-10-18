@@ -21,19 +21,19 @@ function fillHistory(state: DemoState, length = 120): DemoState {
   }
   return state;
 }
-function roundTrip(state: DemoState) {
+async function roundTrip(state: DemoState) {
   let saved: string | null = null;
   const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; }, removeItem: () => { saved = null; } };
-  expect(saveDemoState(storage, demoScenario, state).status).toBe('saved');
+  expect((await saveDemoState(storage, demoScenario, state)).status).toBe('saved');
   const loaded = loadDemoState(storage, demoScenario);
   expect(loaded.status).toBe('loaded');
   expect(loaded.state).toEqual(state);
 }
 
 describe('bounded request history preserves privacy and exit transitions', () => {
-  it.each(['revoke_shared_field', 'cancel_invitation', 'cancel_request', 'withdraw'] as const)('%s succeeds at 120 events, removes access and round-trips', (type) => {
+  it.each(['revoke_shared_field', 'cancel_invitation', 'cancel_request', 'withdraw'] as const)('%s succeeds at 120 events, removes access and round-trips', async (type) => {
     const state = fillHistory(sharedState());
-    roundTrip(state);
+    await roundTrip(state);
     expect(visibleRequestsFor(demoScenario, state, 'alex')[0]).toHaveProperty('roomName');
     const command = type === 'revoke_shared_field'
       ? { type, ...target(state), field: 'roomName' as const }
@@ -42,34 +42,34 @@ describe('bounded request history preserves privacy and exit transitions', () =>
     expect(next.requests[0]!.history).toHaveLength(121);
     if (type === 'revoke_shared_field') expect(visibleRequestsFor(demoScenario, next, 'alex')[0]).not.toHaveProperty('roomName');
     else expect(visibleRequestsFor(demoScenario, next, 'alex')).toEqual([]);
-    roundTrip(next);
+    await roundTrip(next);
   });
-  it('reserves every field revocation, assignment cancellation and final cancellation without discarding events', () => {
+  it('reserves every field revocation, assignment cancellation and final cancellation without discarding events', async () => {
     let state = fillHistory(sharedState());
     const history = state.requests[0]!.history;
     for (const field of sharingFields) {
       state = run(state, { type: 'revoke_shared_field', ...target(state), field });
       expect(visibleRequestsFor(demoScenario, state, 'alex')[0]).not.toHaveProperty(field);
-      roundTrip(state);
+      await roundTrip(state);
     }
     state = run(state, { type: 'cancel_invitation', ...target(state) });
-    roundTrip(state);
+    await roundTrip(state);
     state = run(state, { type: 'cancel_request', ...target(state) });
     expect(state.requests[0]!.history).toHaveLength(127);
     expect(state.requests[0]!.history.slice(0, 120)).toEqual(history);
     expect(visibleRequestsFor(demoScenario, state, 'alex')).toEqual([]);
-    roundTrip(state);
+    await roundTrip(state);
   });
-  it('also permits privacy-only set_sharing, decline and final completion at the ordinary limit', () => {
+  it('also permits privacy-only set_sharing, decline and final completion at the ordinary limit', async () => {
     let state = fillHistory(sharedState());
     const request = state.requests[0]!;
     state = run(state, { type: 'set_sharing', ...target(state), sharing: { ...request.sharing, roomName: false }, visitTimes: request.visitTimes, areaLabel: request.areaLabel, scanLocation: request.scanLocation });
     expect(visibleRequestsFor(demoScenario, state, 'alex')[0]).not.toHaveProperty('roomName');
-    roundTrip(state);
+    await roundTrip(state);
     state = fillHistory(sharedState('invited'));
     state = run(state, { type: 'decline_invitation', ...target(state), reason: 'Unavailable' }, 'alex');
     expect(visibleRequestsFor(demoScenario, state, 'alex')).toEqual([]);
-    roundTrip(state);
+    await roundTrip(state);
     state = fillHistory(sharedState(), 117);
     state = run(state, { type: 'agree_time', ...target(state) });
     state = run(state, { type: 'post_update', ...target(state), text: 'Finished the task' }, 'alex');
@@ -77,7 +77,7 @@ describe('bounded request history preserves privacy and exit transitions', () =>
     expect(state.requests[0]!.history).toHaveLength(120);
     state = run(state, { type: 'confirm_done', ...target(state) });
     expect(state.requests[0]!.status).toBe('resident_confirmed_done');
-    roundTrip(state);
+    await roundTrip(state);
   });
   it('does not consume history or revisions for identical proposals, sharing, revocations or updates', () => {
     let state = fillHistory(sharedState());

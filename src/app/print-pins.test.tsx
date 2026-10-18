@@ -23,3 +23,8 @@ it('prints each location with concern name, origin, local image or missing image
   expect(html.match(/<img /g)).toHaveLength(2);
   expect(html).toContain('No confirmed concerns or computed actions in this snapshot.');
 });
+it('labels the generated time with its own local time zone, not a stale UTC suffix', () => {
+  const html = renderToStaticMarkup(<PrintReport scenario={demoScenario} snapshot={createPrintSnapshot(createInitialState(demoScenario), '2026-10-18T14:00:00.000Z', [])} />);
+  expect(html).toContain('dateTime="2026-10-18T14:00:00.000Z"');
+  expect(html).not.toContain('(UTC)');
+});

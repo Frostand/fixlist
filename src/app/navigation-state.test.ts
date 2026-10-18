@@ -6,15 +6,15 @@ import { clearNavigationState, createInvitationDraft, emptyNavigationState, load
 
 function memory() { const bytes = new Map<string, string>(); return { bytes, getItem: (k: string) => bytes.get(k) ?? null, setItem: (k: string, v: string) => { bytes.set(k, v); }, removeItem: (k: string) => { bytes.delete(k); } }; }
 describe('separately versioned navigation context', () => {
-  it('recovers a selected volunteer after reload without changing household saved bytes', () => {
+  it('recovers a selected volunteer after reload without changing household saved bytes', async () => {
     const state = atStage(), draft = createInvitationDraft(state, state.requests[0]!.id, 'alex')!, storage = memory();
     storage.setItem('fixlist:demo:v1', 'untouched-household');
-    expect(saveNavigationState(storage, { ...emptyNavigationState(), invitations: [draft], dismissedGuides: ['sam'], pendingDestination: { role: 'r', screen: 'plan' } })).toBe(true);
+    expect(await saveNavigationState(storage, { ...emptyNavigationState(), invitations: [draft], dismissedGuides: ['sam'], pendingDestination: { role: 'r', screen: 'plan' } })).toBe(true);
     const reloaded = loadNavigationState(storage);
     expect(reloaded.invitations).toEqual([draft]); expect(reloaded.dismissedGuides).toEqual(['sam']); expect(reloaded.pendingDestination).toEqual({ role: 'r', screen: 'plan' });
     expect(selectedInvitationVolunteer(scenario, structuredClone(state), reloaded.invitations, draft.requestId)?.id).toBe('alex');
     expect(storage.getItem('fixlist:demo:v1')).toBe('untouched-household');
-    expect(clearNavigationState(storage)).toBe(true); expect(storage.getItem(NAVIGATION_STORAGE_KEY)).toBeNull(); expect(storage.getItem('fixlist:demo:v1')).toBe('untouched-household');
+    expect(await clearNavigationState(storage)).toBe(true); expect(storage.getItem(NAVIGATION_STORAGE_KEY)).toBeNull(); expect(storage.getItem('fixlist:demo:v1')).toBe('untouched-household');
   });
   it('revalidates person, actor, revision, assignment and plan activity on recovery', () => {
     const state = atStage(), request = state.requests[0]!, draft = createInvitationDraft(state, request.id, 'alex')!;
@@ -41,9 +41,9 @@ describe('separately versioned navigation context', () => {
   it.each(['{', '{"version":2}', JSON.stringify({ ...emptyNavigationState(), invitations: [{ requestId: '__proto__' }] }), JSON.stringify({ ...emptyNavigationState(), pendingDestination: '#screen-heading' }), 'x'.repeat(16385)])('discards invalid context safely', (raw) => {
     const storage = memory(); storage.setItem(NAVIGATION_STORAGE_KEY, raw); expect(loadNavigationState(storage)).toEqual(emptyNavigationState());
   });
-  it('handles unavailable storage without throwing or claiming durability', () => {
+  it('handles unavailable storage without throwing or claiming durability', async () => {
     const broken = { getItem: () => { throw Error('blocked'); }, setItem: () => { throw Error('blocked'); }, removeItem: () => { throw Error('blocked'); } };
-    expect(loadNavigationState(broken)).toEqual(emptyNavigationState()); expect(saveNavigationState(broken, emptyNavigationState())).toBe(false); expect(clearNavigationState(broken)).toBe(false);
+    expect(loadNavigationState(broken)).toEqual(emptyNavigationState()); expect(await saveNavigationState(broken, emptyNavigationState())).toBe(false); expect(await clearNavigationState(broken)).toBe(false);
     expect(createInvitationDraft(createInitialState(scenario), 'missing', 'alex')).toBeNull();
   });
 });

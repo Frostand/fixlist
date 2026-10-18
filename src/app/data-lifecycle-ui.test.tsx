@@ -15,7 +15,7 @@ import { es } from '../i18n/es';
 describe('recovery and role-specific next actions', () => {
   it.each(['en', 'es'] as const)('D11 discloses truncated photo-deletion attribution on the photo screen in %s', (language) => {
     const state = { ...createInitialState(scenario), removedPhotoHistoryTruncated: true };
-    const html = renderToStaticMarkup(<I18nProvider language={language}><ChecklistQuestion scenario={scenario} state={state} person={state.people[0]!} household={visibleHouseholdFor(scenario, state, 'margaret')!} dispatch={() => ({ ok: true })} navigate={() => {}} questionId="rug-check" saved suggestions={null} photoStillRecorded={() => false} onPhotoError={() => {}} /></I18nProvider>);
+    const html = renderToStaticMarkup(<I18nProvider language={language}><ChecklistQuestion scenario={scenario} state={state} person={state.people[0]!} household={visibleHouseholdFor(scenario, state, 'margaret')!} dispatch={async () => ({ ok: true })} navigate={() => {}} questionId="rug-check" saved suggestions={null} photoStillRecorded={() => false} onPhotoError={() => {}} /></I18nProvider>);
     expect(html).toContain(language === 'en' ? en['data.photoHistoryTruncated'] : es['data.photoHistoryTruncated']);
   });
   it('D05 surfaces the actual recovery and migration explanations plus deliberate choices', () => {
@@ -32,7 +32,7 @@ describe('recovery and role-specific next actions', () => {
     expect(next).toEqual({ kind: 'answer_checklist', checklistItemId: 'cord-check' });
     const card = nextStepCard(next, state, false);
     expect(card.key).toBe('next.answer_checklist'); expect(card.route).toEqual({ role: 'r', screen: 'question', id: 'cord-check' });
-    const html = renderToStaticMarkup(<ResidentHome scenario={scenario} state={state} person={state.people[1]!} household={visibleHouseholdFor(scenario, state, 'sam')!} requests={[]} next={next} dispatch={() => ({ ok: true })} navigate={() => {}} />);
+    const html = renderToStaticMarkup(<ResidentHome scenario={scenario} state={state} person={state.people[1]!} household={visibleHouseholdFor(scenario, state, 'sam')!} requests={[]} next={next} dispatch={async () => ({ ok: true })} navigate={() => {}} />);
     expect(html).toContain(en[card.key]);
     state = run(state, { type: 'grant_delegation', personId: 'sam', scopes: ['confirm'] });
     expect(helperNextStep(scenario, state, 'sam')).toEqual({ kind: 'helper_evidence' });

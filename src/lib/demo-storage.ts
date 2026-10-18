@@ -7,7 +7,8 @@ import { validateLegacyState } from './legacy-demo-state';
 import { reconstructState } from './state-validation';
 import { resetPhotoStorage } from './photo-storage';
 import { resetScanStorage } from './scan-storage';
-export const DEMO_STORAGE_KEY = 'fixlist:demo:v1';
+import { DEMO_STORAGE_KEY, NAVIGATION_STORAGE_KEY, withDemoStorageLock } from './storage-lock';
+export { DEMO_STORAGE_KEY } from './storage-lock';
 export const MAX_SERIALIZED_BYTES = 64 * 1024;
 export interface DemoStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
 export type ValidationResult = { ok: true; state: DemoState } | { ok: false; error: string; code: 'invalid_state' | 'storage_capacity' };
@@ -90,35 +91,47 @@ export function privacyReserveBytes(state: DemoState): number {
   return state.requests.reduce((n, r) => n + remainingPrivacyEvents(r) * 384 + (r.status === 'in_progress' && r.history.findLast((e) => ['post_update', 'not_done_yet'].includes(e.type))?.type === 'post_update' ? 768 : 0) + ((['cancelled', 'resident_confirmed_done'].includes(r.status) || r.professionalReferral === 'closed') ? 0 : 1024), 0)
     + state.photos.length * 192 + state.delegations.filter((d) => d.scopes.length).length * 128;
 }
-export function saveDemoState(storage: StorageInput, scenario: DemoScenario, state: DemoState, expectedToken?: string | null): SaveResult {
+export async function saveDemoState(storage: StorageInput, scenario: DemoScenario, state: DemoState, expectedToken?: string | null, isCurrent: () => boolean = () => true): Promise<SaveResult> {
   const result = validateState(state, scenario);
   if (!result.ok) return { status: 'invalid', code: result.code, message: `Demo data was not saved: ${result.error} The previous saved state was kept.` };
   if (!storage) return { status: 'unavailable', code: 'storage_unavailable', message: 'Browser storage is unavailable. No change was saved.' };
   try {
-    const before = storage.getItem(DEMO_STORAGE_KEY);
-    if (expectedToken !== undefined && before !== expectedToken) return { status: 'conflict', code: 'stale_revision', message: 'Another view changed or reset this household. Refresh saved data before trying again.' };
-    let revision = 0;
-    try { const previous = before === null ? null : JSON.parse(before); if (previous?.format === 'fixlist-saved-v1') revision = previous.revision; } catch { /* A guarded client never replaces rejected bytes. */ }
-    if (!Number.isSafeInteger(revision + 1)) return { status: 'capacity', code: 'storage_capacity', message: 'The saved revision limit was reached. Export or reset before saving more changes.' };
-    const token = JSON.stringify({ format: 'fixlist-saved-v1', revision: revision + 1, state: result.state });
-    if (!withinSizeLimit(token) || new TextEncoder().encode(token).byteLength + privacyReserveBytes(result.state) > MAX_SERIALIZED_BYTES) return { status: 'capacity', code: 'storage_capacity', message: 'This device has reached its saved-data limit. The last saved state was kept; privacy exits and completion decisions remain available.' };
-    storage.setItem(DEMO_STORAGE_KEY, token);
-    return { status: 'saved', token, message: 'Fictional demo changes saved in this browser only.' };
+    return await withDemoStorageLock((): SaveResult => {
+      if (!isCurrent()) return { status: 'error', code: 'cancelled', message: 'This operation was cancelled before saving.' };
+      const before = storage.getItem(DEMO_STORAGE_KEY);
+      if (expectedToken !== undefined && before !== expectedToken) return { status: 'conflict', code: 'stale_revision', message: 'Another view changed or reset this household. Refresh saved data before trying again.' };
+      let revision = 0;
+      try { const previous = before === null ? null : JSON.parse(before); if (previous?.format === 'fixlist-saved-v1') revision = previous.revision; } catch { /* A guarded client never replaces rejected bytes. */ }
+      if (!Number.isSafeInteger(revision + 1)) return { status: 'capacity', code: 'storage_capacity', message: 'The saved revision limit was reached. Export or reset before saving more changes.' };
+      const token = JSON.stringify({ format: 'fixlist-saved-v1', revision: revision + 1, state: result.state });
+      if (!withinSizeLimit(token) || new TextEncoder().encode(token).byteLength + privacyReserveBytes(result.state) > MAX_SERIALIZED_BYTES) return { status: 'capacity', code: 'storage_capacity', message: 'This device has reached its saved-data limit. The last saved state was kept; privacy exits and completion decisions remain available.' };
+      storage.setItem(DEMO_STORAGE_KEY, token);
+      return { status: 'saved', token, message: 'Fictional demo changes saved in this browser only.' };
+    });
   } catch (error) {
     return { status: 'error', code: error instanceof DOMException && error.name === 'QuotaExceededError' ? 'storage_capacity' : 'storage_unavailable', message: 'Changes could not be saved. The previous saved state was kept; reloading may restore older saved data.' };
   }
 }
-/** Synchronous metadata reset; the app uses resetFixListData to also await the private stores. */
-export function resetDemoState(storage: StorageInput, scenario: DemoScenario): ResetResult {
+/** Caller holds the same lock as saves; attempt both owned keys even after a failure. */
+function resetMetadata(storage: StorageInput, scenario: DemoScenario): ResetResult {
   const state = createInitialState(scenario);
   if (!storage) return { status: 'unavailable', state, message: 'Demo reset in memory. Browser storage is unavailable, so reloading may restore older saved data.' };
-  try { storage.removeItem(DEMO_STORAGE_KEY); return { status: 'reset', state, message: 'Demo metadata reset. Only FixList demo data was removed.' }; }
-  catch { return { status: 'error', state, message: 'Demo reset in memory, but saved data could not be removed. Reloading may restore older saved data.' }; }
+  let failed = false;
+  for (const key of [DEMO_STORAGE_KEY, NAVIGATION_STORAGE_KEY]) { try { storage.removeItem(key); } catch { failed = true; } }
+  return failed ? { status: 'error', state, message: 'Demo reset in memory, but saved data could not be removed. Reloading may restore older saved data.' }
+    : { status: 'reset', state, message: 'Demo metadata reset. Only FixList demo data was removed.' };
+}
+export async function resetDemoState(storage: StorageInput, scenario: DemoScenario): Promise<ResetResult> {
+  try { return await withDemoStorageLock(() => resetMetadata(storage, scenario)); }
+  catch { return { status: 'error', state: createInitialState(scenario), message: 'Saved demo data could not be locked for reset. Reloading may restore older saved data.' }; }
 }
 /** Each owned store is attempted even if another fails; unrelated keys/databases are untouched. */
 export async function resetFixListData(storage: StorageInput, scenario: DemoScenario, stores = { photos: resetPhotoStorage, scan: resetScanStorage }): Promise<ResetResult> {
-  const result = resetDemoState(storage, scenario);
-  const outcomes = await Promise.allSettled([stores.photos(), stores.scan()]);
-  const failed = outcomes.some((o) => o.status === 'rejected' || !o.value.ok);
-  return failed ? { ...result, status: 'error', message: `${result.message} Some saved photos or scans could not be cleared. Reloading may restore older data.` } : result;
+  async function clearPrivateStores(result: ResetResult): Promise<ResetResult> {
+    const outcomes = await Promise.allSettled([Promise.resolve().then(() => stores.photos()), Promise.resolve().then(() => stores.scan())]);
+    const failed = outcomes.some((o) => o.status === 'rejected' || !o.value.ok);
+    return failed ? { ...result, status: 'error', message: `${result.message} Some saved photos or scans could not be cleared. Reloading may restore older data.` } : result;
+  }
+  try { return await withDemoStorageLock(() => clearPrivateStores(resetMetadata(storage, scenario))); }
+  catch { return clearPrivateStores({ status: 'error', state: createInitialState(scenario), message: 'Saved demo data could not be locked for reset. Reloading may restore older saved data.' }); }
 }

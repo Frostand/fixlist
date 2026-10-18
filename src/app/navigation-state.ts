@@ -2,9 +2,10 @@ import type { DemoStorage } from '../lib/demo-storage';
 import type { DemoScenario } from '../domain/types';
 import { visibleRequestsFor, type DemoState, type Person } from '../domain/workflow';
 import { parseRoute, routeHash, type Route } from './routes';
+import { NAVIGATION_STORAGE_KEY, withDemoStorageLock } from '../lib/storage-lock';
 
 /** Navigation context only; deliberately separate from the household saved-state schema. */
-export const NAVIGATION_STORAGE_KEY = 'fixlist:navigation:v1';
+export { NAVIGATION_STORAGE_KEY } from '../lib/storage-lock';
 export interface InvitationDraft { requestId: string; volunteerId: string; residentId: string; revision: number }
 export interface NavigationState { version: 1; invitations: readonly InvitationDraft[]; dismissedGuides: readonly string[]; pendingDestination: Route | null }
 export const emptyNavigationState = (): NavigationState => ({ version: 1, invitations: [], dismissedGuides: [], pendingDestination: null });
@@ -31,11 +32,15 @@ export function loadNavigationState(storage: DemoStorage | null): NavigationStat
     return { ...value, pendingDestination };
   } catch { return emptyNavigationState(); }
 }
-export function saveNavigationState(storage: DemoStorage | null, value: NavigationState): boolean {
-  try { if (!storage) return false; storage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({ ...value, pendingDestination: value.pendingDestination ? routeHash(value.pendingDestination) : null })); return true; } catch { return false; }
+/** Read and transform inside the household lock so drafts cannot overwrite another tab's edits. */
+export async function updateNavigationState(storage: DemoStorage | null, update: (current: NavigationState) => NavigationState | null): Promise<NavigationState | null> {
+  try { return await withDemoStorageLock(() => { if (!storage) return null; const value = update(loadNavigationState(storage)); if (!value) return null; storage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({ ...value, pendingDestination: value.pendingDestination ? routeHash(value.pendingDestination) : null })); return value; }); } catch { return null; }
 }
-export function clearNavigationState(storage: DemoStorage | null): boolean {
-  try { if (!storage) return false; storage.removeItem(NAVIGATION_STORAGE_KEY); return true; } catch { return false; }
+export async function saveNavigationState(storage: DemoStorage | null, value: NavigationState): Promise<boolean> {
+  return (await updateNavigationState(storage, () => value)) !== null;
+}
+export async function clearNavigationState(storage: DemoStorage | null): Promise<boolean> {
+  try { return await withDemoStorageLock(() => { if (!storage) return false; storage.removeItem(NAVIGATION_STORAGE_KEY); return true; }); } catch { return false; }
 }
 export function createInvitationDraft(state: DemoState, requestId: string, volunteerId: string): InvitationDraft | null {
   const request = state.requests.find((r) => r.id === requestId);

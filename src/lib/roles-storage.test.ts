@@ -14,11 +14,11 @@ class Store implements DemoStorage {
 }
 const statuses: HelpRequestStatus[] = ['draft', 'invited', 'accepted', 'declined', 'scheduled', 'in_progress', 'volunteer_reported_done', 'resident_confirmed_done', 'cancelled'];
 describe('version 3 trusted reconstruction', () => {
-  it.each(statuses.flatMap((status) => [true, false].map((active) => ({ status, active }))))('round trip $status, active=$active, every profile', ({ status, active }) => {
+  it.each(statuses.flatMap((status) => [true, false].map((active) => ({ status, active }))))('round trip $status, active=$active, every profile', async ({ status, active }) => {
     let s = atStage(status);
     if (!active) s = run(s, { type: 'unconfirm_concern', concernId: 'rug-concern' });
     for (const p of demoScenario.profiles) {
-      s = run(s, { type: 'select_profile', profileId: p.id }); const store = new Store(); expect(saveDemoState(store, demoScenario, s).status).toBe('saved');
+      s = run(s, { type: 'select_profile', profileId: p.id }); const store = new Store(); expect((await saveDemoState(store, demoScenario, s)).status).toBe('saved');
       const loaded = loadDemoState(store, demoScenario); expect(loaded.status).toBe('loaded'); expect(loaded.state).toEqual(s); expect(loaded.state).not.toBe(s); expect(loaded.state.requests).not.toBe(s.requests); expect(loaded.state.people[0]).not.toBe(s.people[0]); expect(computePlan(demoScenario, loaded.state)).toEqual(computePlan(demoScenario, s));
     }
   });
@@ -65,7 +65,7 @@ function v2(status: 'draft' | 'family_reported_requested' | 'family_reported_in_
 }
 describe('v2 to v4 in-memory migration', () => {
   const modes = [{ status: 'draft', complete: false }, { status: 'family_reported_requested', complete: false }, { status: 'family_reported_in_progress', complete: false }, { status: 'family_reported_requested', complete: true }, { status: 'family_reported_in_progress', complete: true }] as const;
-  it.each(modes.flatMap((mode) => [false, true].map((active) => ({ ...mode, active }))))('$status complete=$complete active=$active preserves history without inferred invitations', ({ status, complete, active }) => {
+  it.each(modes.flatMap((mode) => [false, true].map((active) => ({ ...mode, active }))))('$status complete=$complete active=$active preserves history without inferred invitations', async ({ status, complete, active }) => {
     const old = v2(status, complete, active); const bytes = JSON.stringify(old); const store = new Store(); store.values.set(DEMO_STORAGE_KEY, bytes); store.values.set('other', 'keep');
     const first = loadDemoState(store, demoScenario); const second = loadDemoState(store, demoScenario);
     expect(first.status).toBe('migrated'); expect(first.state).toEqual(second.state); expect(first.state.schemaVersion).toBe(5); expect(first.state.profileId).toBe('maple-owner');
@@ -73,7 +73,7 @@ describe('v2 to v4 in-memory migration', () => {
     if (complete) expect(r.legacyHistory!.completion).toMatchObject({ reportedBy: LEGACY_LABEL, reportedAt: at });
     expect(getRequestViews(demoScenario, first.state)[0]!.active).toBe(active); expect(computePlan(demoScenario, first.state)).toHaveLength(active ? 1 : 0);
     expect(store.values.get(DEMO_STORAGE_KEY)).toBe(bytes); expect(store.writes).toEqual([]); expect(store.removes).toEqual([]);
-    expect(saveDemoState(store, demoScenario, first.state).status).toBe('saved'); expect(loadDemoState(store, demoScenario).state).toEqual(first.state); expect(store.values.get('other')).toBe('keep');
+    expect((await saveDemoState(store, demoScenario, first.state)).status).toBe('saved'); expect(loadDemoState(store, demoScenario).state).toEqual(first.state); expect(store.values.get('other')).toBe('keep');
   });
   it('migrated active drafts can be explicitly shared/invited without losing their inactive completion note', () => {
     const store = new Store(); store.values.set(DEMO_STORAGE_KEY, JSON.stringify(v2('family_reported_requested', true, true)));
@@ -87,6 +87,6 @@ describe('complete FixList reset', () => {
   it('clears only its local key and both owned stores, attempting each even when another fails', async () => {
     const store = new Store(); store.values.set(DEMO_STORAGE_KEY, 'old'); store.values.set('other', 'keep'); const attempts: string[] = [];
     const result = await resetFixListData(store, demoScenario, { photos: async () => { attempts.push('photos'); throw new Error('denied'); }, scan: async () => { attempts.push('scan'); return { ok: true, message: 'cleared' }; } });
-    expect(attempts).toEqual(['photos', 'scan']); expect(result.status).toBe('error'); expect(result.state).toEqual(createInitialState(demoScenario)); expect(store.values.get('other')).toBe('keep'); expect(store.removes).toEqual([DEMO_STORAGE_KEY]);
+    expect(attempts).toEqual(['photos', 'scan']); expect(result.status).toBe('error'); expect(result.state).toEqual(createInitialState(demoScenario)); expect(store.values.get('other')).toBe('keep'); expect(store.removes).toEqual([DEMO_STORAGE_KEY, 'fixlist:navigation:v1']);
   });
 });
