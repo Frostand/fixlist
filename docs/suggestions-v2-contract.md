@@ -51,5 +51,5 @@ Derivations (validators recompute; means compared with 1e-9 absolute tolerance, 
 ## Display rules (app)
 
 - Show the photo `question` and its `limitation`; show the checklist prompt only as "Related checklist question". Never present a score as an answer to the checklist question.
-- `calibration == null`: "Experimental model score 0.77 (uncalibrated; not a probability)". Calibrated: "Model score 0.71 (calibrated on N labeled photos; not validated in real homes)". Never write "% likely".
+- `calibration == null`: "Experimental model score 0.77 (uncalibrated; not a probability)". Calibrated: "Model score 0.71 (adjusted on N example photos labeled by AI; still experimental, not validated in real homes)". Never write "% likely".
 - Group items as Suggested for review / Below threshold / Not visible in analyzed frames (v1: Not suggested). The empty state must not claim that nothing exceeded the threshold when items were relevance-gated.

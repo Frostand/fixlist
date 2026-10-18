@@ -648,7 +648,7 @@ export const en = {
   "report.noVerification": "not available in this demo",
   "scan.loaded": "{count} splats loaded. {notice}",
   "scan.score": "Experimental model score {score} (uncalibrated; not a probability)",
-  "scan.calibrated": "Model score {score} (calibrated on {count} labeled photos; not validated in real homes)",
+  "scan.calibrated": "Model score {score} (adjusted on {count} example photos labeled by AI; still experimental, not validated in real homes)",
   "scan.noScore": "No model score: no relevant frames",
   "scan.in": "in",
   "scan.out": "out",

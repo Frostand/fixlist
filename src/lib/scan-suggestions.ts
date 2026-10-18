@@ -109,7 +109,7 @@ export function suggestionScoreText(item: ScanSuggestion, data: ScanSuggestions)
   const score = suggestionScore(item);
   if (score === null) return 'No model score: no relevant frames';
   return data.version === 2 && data.calibration !== null
-    ? `Model score ${score.toFixed(2)} (calibrated on ${data.calibration.trainExamples} labeled photos; not validated in real homes)`
+    ? `Model score ${score.toFixed(2)} (adjusted on ${data.calibration.trainExamples} example photos labeled by AI; still experimental, not validated in real homes)`
     : `Experimental model score ${score.toFixed(2)} (uncalibrated; not a probability)`;
 }
 export function visibleSuggestionMarkers(layer: ScanSuggestionLayer | null): ScanSuggestion[] {

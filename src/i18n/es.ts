@@ -650,7 +650,7 @@ export const es = {
   "report.noVerification": "no disponible en esta demostración",
   "scan.loaded": "{count} splats cargados. {notice}",
   "scan.score": "Puntuación experimental del modelo {score} (sin calibrar; no es una probabilidad)",
-  "scan.calibrated": "Puntuación del modelo {score} (calibrada con {count} fotos etiquetadas; no validada en viviendas reales)",
+  "scan.calibrated": "Puntuación del modelo {score} (ajustada con {count} fotos de ejemplo etiquetadas por IA; sigue siendo experimental y no está validada en viviendas reales)",
   "scan.noScore": "Sin puntuación del modelo: no hay fotogramas relevantes",
   "scan.in": "acercar",
   "scan.out": "alejar",

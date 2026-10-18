@@ -74,7 +74,7 @@ describe('v2 score wording and relevance grouping', () => {
   it('shows calibration provenance only for a calibrated file, counting the fitting photos', () => {
     const data = suggestionsV2Fixture();
     data.calibration = { method: 'platt', parameters: {}, fittedAt: data.createdAt, labelSource: 'Synthetic test', trainExamples: 42, heldOutExamples: 8, heldOutBrierRaw: 0.2, heldOutBrierCalibrated: 0.1 };
-    expect(render(data)).toContain('Model score 0.86 (calibrated on 42 labeled photos; not validated in real homes)');
+    expect(render(data)).toContain('Model score 0.86 (adjusted on 42 example photos labeled by AI; still experimental, not validated in real homes)');
     expect(render(data)).not.toMatch(/likely|%/i);
   });
   it('groups below-threshold and not-visible items separately and explains relevance gating', () => {
