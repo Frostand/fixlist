@@ -26,7 +26,7 @@ export function PhoneShell({ person, route, title, navigate, children, hasCheckl
   return <div className="phone-app">
     <a className="skip-link screen-only" href="#screen-heading">{t('nav.skipContent')}</a>
     <header className="phone-bar screen-only">
-      <div className="bar-top">{isTabRoot(route) ? <span className="wordmark">{title}</span> : <button className="bar-button" onClick={() => navigate(parentRoute(route, person.role))}><Icon name="back" />{t('nav.back')}</button>}<button className="bar-button" onClick={() => setHelpOpen(!helpOpen)} aria-expanded={helpOpen} aria-controls="context-help"><Icon name="help" />{t('nav.help')}</button></div>
+      <div className="bar-top">{isTabRoot(route) ? <span className="wordmark">{t('app.name')}</span> : <button className="bar-button" onClick={() => navigate(parentRoute(route, person.role))}><Icon name="back" />{t('nav.back')}</button>}<button className="bar-button" onClick={() => setHelpOpen(!helpOpen)} aria-expanded={helpOpen} aria-controls="context-help"><Icon name="help" />{t('nav.help')}</button></div>
       <button className="person-chip" onClick={() => navigate({ screen: 'people' })} aria-label={`${t('nav.switch')}: ${person.name}`}><span className="avatar" aria-hidden="true">{person.name.slice(0, 1)}</span>{t('person.chip', { name: person.name, role: t(`role.${person.role}`) })}<span aria-hidden="true">⌄</span></button>
     </header>
     <main className="phone-main">

@@ -682,6 +682,5 @@ export const es = {
   "scan.storage.clearFailed": "Se quitó el escaneo de esta vista, pero no se pudo borrar del navegador. Recargar puede restaurarlo con sus marcadores.",
   "scan.storage.rejected": "No se abrió el escaneo guardado. Sus datos se conservaron. Intenta importar un formato compatible.",
   "scan.storage.dropped": "Se cargó el escaneo; se omitieron marcadores o sugerencias cuyos vínculos ya no coinciden con el catálogo.",
-  "scan.storage.failed": "No se pudo terminar la operación. Prueba un archivo local de gaussian splats compatible, de menos de 300 MiB; la lista sigue disponible.",
-  "report.nativeUnavailable": "La impresión aún no está disponible en esta demostración de iOS. Puedes leer el informe abajo."
+  "scan.storage.failed": "No se pudo terminar la operación. Prueba un archivo local de gaussian splats compatible, de menos de 300 MiB; la lista sigue disponible."
 } satisfies Record<MessageKey, string>;

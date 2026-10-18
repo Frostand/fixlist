@@ -680,7 +680,6 @@ export const en = {
   "scan.storage.clearFailed": "The scan was cleared from this view, but browser storage could not be cleared. Reload may restore the previous scan and pins.",
   "scan.storage.rejected": "Saved scan was not opened. Saved bytes were left untouched. Try importing a supported scan.",
   "scan.storage.dropped": "Saved scan loaded; some pins or model suggestions were dropped because their catalog links no longer match.",
-  "scan.storage.failed": "The room operation could not finish. Try a supported local Gaussian-splat file under 300 MiB; your checklist is still available.",
-  "report.nativeUnavailable": "Printing is not available in this iOS demo yet. You can read the report below."
+  "scan.storage.failed": "The room operation could not finish. Try a supported local Gaussian-splat file under 300 MiB; your checklist is still available."
 } as const;
 export type MessageKey = keyof typeof en;

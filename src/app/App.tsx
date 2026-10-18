@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { printCurrentPage } from '../lib/native-print';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { demoScenario as scenario } from '../data/demo-scenario';
@@ -123,14 +123,13 @@ function BackToInvitations({ navigate, requestId }: { navigate: Navigate; reques
 function ReportScreen({ state, pins, onError }: { state: ReturnType<typeof loadDemoState>['state']; pins: readonly ScanPin[]; onError(): void }) {
   const t = useT();
   const [snapshot, setSnapshot] = useState(() => createPrintSnapshot(state, new Date().toISOString(), pins));
-  const nativePrintUnavailable = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios';
   async function print() {
     flushSync(() => setSnapshot(createPrintSnapshot(state, new Date().toISOString(), pins)));
     try {
       const deadline = Date.now() + 8000;
       while (document.querySelector('.print-report [data-photo-pending=true]')) { if (Date.now() > deadline) throw new Error('photo-timeout'); await new Promise((resolve) => setTimeout(resolve, 50)); }
       if (document.querySelector('.print-report [data-photo-failed=true]')) throw new Error('photo-missing');
-      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>('.print-report img'), (img) => img.decode())); window.print(); } catch { onError(); }
+      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>('.print-report img'), (img) => img.decode())); await printCurrentPage('FixList report'); } catch { onError(); }
   }
-  return <><div className="screen-only stack"><button disabled={nativePrintUnavailable} onClick={() => void print()}>{t('report.print')}</button><p className="muted">{t(nativePrintUnavailable ? 'report.nativeUnavailable' : 'report.note')}</p></div><div className="paper"><PrintReport scenario={scenario} snapshot={snapshot} /></div></>;
+  return <><div className="screen-only stack"><button onClick={() => void print()}>{t('report.print')}</button><p className="muted">{t('report.note')}</p></div><div className="paper"><PrintReport scenario={scenario} snapshot={snapshot} /></div></>;
 }
