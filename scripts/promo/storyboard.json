@@ -1,0 +1,545 @@
+{
+  "title": "FixList launch promo",
+  "date": "2026-10-18",
+  "output": "recordings/2026-10-18-fixlist-launch-promo.mp4",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "transition": 0.4,
+  "voice": {
+    "name": "Samantha",
+    "rate": 175
+  },
+  "capture": {
+    "device": "iPhone 17 Pro",
+    "ios": "26.5",
+    "bundleId": "app.fixlist.demo",
+    "method": "xcrun simctl io recordVideo --codec=h264",
+    "content": "Fictional Maple House, built-in demo profiles, bundled viennese-v2 only",
+    "note": "Simulator captures are variable-frame-rate. Genuine last frames are extended for readable holds. Navigation excerpts are trimmed; no app screens are recreated."
+  },
+  "scenes": [
+    {
+      "id": "01",
+      "name": "Meet FixList",
+      "vo": "Meet FixList.",
+      "shots": [
+        {
+          "id": "01-title",
+          "duration": 5.3,
+          "layout": "title",
+          "headline": "FixList",
+          "subline": "Fix what matters at home — together.",
+          "detail": "For older adults, family helpers and volunteers"
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "The small things",
+      "vo": "A loose rug. A dark hallway. A missing grab bar. Easy to miss. Hard to fix alone.",
+      "shots": [
+        {
+          "id": "02-problem",
+          "duration": 8,
+          "layout": "problem",
+          "headline": "A loose rug.\nA dark hallway.\nA missing grab bar.",
+          "subline": "Small things — easy to miss,\nhard to fix alone."
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Language and profile",
+      "vo": "Pick a language, then who you are.",
+      "shots": [
+        {
+          "id": "03-start",
+          "duration": 6,
+          "layout": "single",
+          "kicker": "START WITH YOU",
+          "headline": "Pick a language.\nPick who you are.",
+          "subline": "Demo profiles on one device",
+          "phones": [
+            {
+              "source": "start-language.mp4",
+              "start": 1.5,
+              "end": null,
+              "speed": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "04",
+      "name": "One app, three views",
+      "vo": "One app, three views. Margaret makes every decision. Sam sees only what Margaret allows. Alex sees only what Margaret shares.",
+      "shots": [
+        {
+          "id": "04-roles",
+          "duration": 11,
+          "layout": "triple",
+          "headline": "One app. Three views.",
+          "phones": [
+            {
+              "source": "resident-home.mp4",
+              "start": 0,
+              "speed": 1,
+              "label": "Margaret · Resident",
+              "description": "Makes every decision"
+            },
+            {
+              "source": "family-home.mp4",
+              "start": 0,
+              "speed": 1,
+              "label": "Sam · Family helper",
+              "description": "Only what Margaret allows"
+            },
+            {
+              "source": "volunteer-home-invited.mp4",
+              "start": 0,
+              "speed": 1,
+              "label": "Alex · Volunteer",
+              "description": "Only what Margaret shares"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "05",
+      "name": "One question at a time",
+      "vo": "Margaret checks the home one question at a time.",
+      "shots": [
+        {
+          "id": "05-check",
+          "duration": 5.5,
+          "layout": "single",
+          "kicker": "NOTICE",
+          "headline": "Check your home,\none question\nat a time.",
+          "phones": [
+            {
+              "source": "checklist.mp4",
+              "start": 2,
+              "end": 8.8,
+              "speed": 1.6
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "06",
+      "name": "Confirm and plan",
+      "vo": "Nothing enters the plan until Margaret confirms it. Each fix gets a clear next step, based on the CDC home-safety checklist.",
+      "shots": [
+        {
+          "id": "06-confirm",
+          "duration": 4.4,
+          "layout": "single",
+          "kicker": "DECIDE",
+          "headline": "Nothing goes on\nthe plan until\nyou confirm it.",
+          "phones": [
+            {
+              "source": "confirm-plan.mp4",
+              "start": 0,
+              "speed": 1,
+              "end": 1.7
+            }
+          ]
+        },
+        {
+          "id": "06-grouped",
+          "duration": 3,
+          "layout": "single",
+          "kicker": "TAKE THE NEXT STEP",
+          "headline": "Clear next steps.",
+          "subline": "Grouped by effort.\nA reading aid, not a risk ranking.",
+          "phones": [
+            {
+              "source": "plan-source.mp4",
+              "start": 0,
+              "speed": 1
+            }
+          ]
+        },
+        {
+          "id": "06-plan",
+          "duration": 3.2,
+          "layout": "single",
+          "kicker": "TAKE THE NEXT STEP",
+          "headline": "Clear next steps.",
+          "subline": "Based on the CDC\nhome-safety checklist.",
+          "phones": [
+            {
+              "source": "ask-share.mp4",
+              "start": 0,
+              "end": 0.2,
+              "speed": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "07",
+      "name": "Choose what to share",
+      "vo": "To get help, Margaret chooses exactly what to share, and invites a volunteer.",
+      "shots": [
+        {
+          "id": "07-sharing",
+          "duration": 3.5,
+          "layout": "single",
+          "kicker": "ASK FOR HELP",
+          "headline": "Choose exactly\nwhat to share.",
+          "phones": [
+            {
+              "source": "ask-share.mp4",
+              "start": 4.5,
+              "end": 8.6,
+              "speed": 1.5
+            }
+          ]
+        },
+        {
+          "id": "07-choose",
+          "duration": 3.2,
+          "layout": "single",
+          "kicker": "ASK FOR HELP",
+          "headline": "Choose exactly\nwhat to share.",
+          "subline": "Skills are self-reported,\nnot verified.",
+          "phones": [
+            {
+              "source": "ask-share.mp4",
+              "start": 20,
+              "end": 22,
+              "speed": 1
+            }
+          ]
+        },
+        {
+          "id": "07-invite",
+          "duration": 3.2,
+          "layout": "single",
+          "kicker": "ASK FOR HELP",
+          "headline": "Then invite\na volunteer.",
+          "subline": "Local demo invitation.\nNobody is contacted.",
+          "phones": [
+            {
+              "source": "ask-share.mp4",
+              "start": 39,
+              "speed": 1.4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "08",
+      "name": "Same request, different view",
+      "vo": "Same request — different view.",
+      "shots": [
+        {
+          "id": "08-compare",
+          "duration": 5.5,
+          "layout": "double",
+          "headline": "Same request.\nDifferent view.",
+          "phones": [
+            {
+              "source": "resident-request.mp4",
+              "start": 0,
+              "end": 2.4,
+              "speed": 1,
+              "label": "Margaret",
+              "description": "Sees everything"
+            },
+            {
+              "source": "volunteer-task.mp4",
+              "start": 0,
+              "speed": 1,
+              "label": "Alex",
+              "description": "Sees only what is shared"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "09",
+      "name": "Volunteer follow-through",
+      "vo": "Alex accepts, proposes a time, and posts updates.",
+      "shots": [
+        {
+          "id": "09-accept",
+          "duration": 3,
+          "layout": "single",
+          "kicker": "VOLUNTEER VIEW",
+          "headline": "Accept. Schedule.\nPost updates.",
+          "subline": "Skills are self-reported —\nnever “vetted”.",
+          "phones": [
+            {
+              "source": "volunteer-accept.mp4",
+              "start": 0,
+              "end": 2.1,
+              "speed": 1
+            }
+          ]
+        },
+        {
+          "id": "09-schedule",
+          "duration": 3.2,
+          "layout": "single",
+          "kicker": "VOLUNTEER VIEW",
+          "headline": "Accept. Schedule.\nPost updates.",
+          "phones": [
+            {
+              "source": "volunteer-schedule.mp4",
+              "start": 3.4,
+              "speed": 1.5
+            }
+          ]
+        },
+        {
+          "id": "09-update",
+          "duration": 4.8,
+          "layout": "single",
+          "kicker": "VOLUNTEER VIEW",
+          "headline": "Accept. Schedule.\nPost updates.",
+          "subline": "Clear task boundaries.\nCompletion is reported by people.",
+          "phones": [
+            {
+              "source": "volunteer-update.mp4",
+              "start": 17,
+              "speed": 1.6
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "10",
+      "name": "Margaret reviews completion",
+      "vo": "And it's only done when Margaret says so.",
+      "shots": [
+        {
+          "id": "10-agree",
+          "duration": 3.2,
+          "layout": "single",
+          "kicker": "MARGARET DECIDES",
+          "headline": "It’s done when\nMargaret says\nit’s done.",
+          "subline": "Agree to the time.\nReview the completion report.",
+          "phones": [
+            {
+              "source": "resident-agree.mp4",
+              "start": 4.8,
+              "speed": 1
+            }
+          ]
+        },
+        {
+          "id": "10-done",
+          "duration": 4.6,
+          "layout": "single",
+          "kicker": "MARGARET DECIDES",
+          "headline": "It’s done when\nMargaret says\nit’s done.",
+          "subline": "A resident report —\nnot independent verification.",
+          "phones": [
+            {
+              "source": "resident-done.mp4",
+              "start": 6,
+              "speed": 1.25
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "11",
+      "name": "Family permission",
+      "vo": "Family can help too, with permission Margaret can take back anytime.",
+      "shots": [
+        {
+          "id": "11-grant",
+          "duration": 3,
+          "layout": "single",
+          "kicker": "FAMILY HELPER",
+          "headline": "Help, with\npermission you\ncan take back.",
+          "phones": [
+            {
+              "source": "family-permission.mp4",
+              "start": 1.5,
+              "end": 5.8,
+              "speed": 1.5
+            }
+          ]
+        },
+        {
+          "id": "11-sam",
+          "duration": 3,
+          "layout": "single",
+          "kicker": "SAM · FAMILY HELPER",
+          "headline": "Only the access\nMargaret allows.",
+          "subline": "Acting for Margaret.\nChecklist permission granted.",
+          "phones": [
+            {
+              "source": "family-home.mp4",
+              "start": 0,
+              "speed": 1
+            }
+          ]
+        },
+        {
+          "id": "11-revoke",
+          "duration": 3,
+          "layout": "single",
+          "kicker": "MARGARET DECIDES",
+          "headline": "Permission you\ncan take back.",
+          "phones": [
+            {
+              "source": "family-revoke.mp4",
+              "start": 0,
+              "speed": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "12",
+      "name": "Optional room and AI reference",
+      "vo": "Optionally, turn a walk-through video into a 3D room. A local AI model marks areas worth a second look — and Margaret decides.",
+      "shots": [
+        {
+          "id": "12-room",
+          "duration": 6,
+          "layout": "single",
+          "kicker": "OPTIONAL",
+          "headline": "A 3D room from\na walk-through\nvideo.",
+          "subline": "Bundled Viennese apartment demo\nArbitrary units · no measurements",
+          "phones": [
+            {
+              "source": "room-scan-orbit.mp4",
+              "start": 0,
+              "speed": 0.8
+            }
+          ]
+        },
+        {
+          "id": "12-ai",
+          "duration": 5.2,
+          "layout": "single",
+          "kicker": "OPTIONAL · UNVERIFIED MODEL OUTPUT",
+          "headline": "Areas to review.\nYou decide.",
+          "subline": "Experimental model score.\nNot a safety finding.",
+          "phones": [
+            {
+              "source": "ai-review.mp4",
+              "start": 2.6,
+              "end": 8.5,
+              "speed": 1.3
+            }
+          ]
+        },
+        {
+          "id": "12-show",
+          "duration": 4,
+          "layout": "single",
+          "kicker": "OPTIONAL · UNVERIFIED MODEL OUTPUT",
+          "headline": "Areas to review.\nYou decide.",
+          "subline": "Suggestions never answer or\nconfirm the checklist.",
+          "phones": [
+            {
+              "source": "ai-review.mp4",
+              "start": 14.3,
+              "speed": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "13",
+      "name": "Real local-help resource",
+      "vo": "Find real local help through the Eldercare Locator.",
+      "shots": [
+        {
+          "id": "13-help",
+          "duration": 4.8,
+          "layout": "single",
+          "kicker": "CONNECT TO RESOURCES",
+          "headline": "Find real\nlocal help.",
+          "subline": "Eldercare Locator\nU.S. Administration for Community Living",
+          "phones": [
+            {
+              "source": "local-help.mp4",
+              "start": 0,
+              "end": 0.03,
+              "speed": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "14",
+      "name": "Spanish",
+      "vo": "In English or Spanish.",
+      "shots": [
+        {
+          "id": "14-spanish",
+          "duration": 4,
+          "layout": "single",
+          "kicker": "LANGUAGE",
+          "headline": "En español,\ntambién.",
+          "subline": "Machine-translated.\nNot yet reviewed by a native speaker.",
+          "phones": [
+            {
+              "source": "spanish.mp4",
+              "start": 2.9,
+              "speed": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "15",
+      "name": "Native print preview",
+      "vo": "And print a clear report to share.",
+      "shots": [
+        {
+          "id": "15-print",
+          "duration": 5.5,
+          "layout": "single",
+          "kicker": "TAKE IT WITH YOU",
+          "headline": "Print or save\na clear report.",
+          "subline": "Review it in the native\niOS print preview.",
+          "phones": [
+            {
+              "source": "report-print.mp4",
+              "start": 0,
+              "speed": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "16",
+      "name": "Closing and credits",
+      "vo": "FixList. Fix what matters at home — together.",
+      "shots": [
+        {
+          "id": "16-end",
+          "duration": 8,
+          "layout": "end",
+          "headline": "FixList",
+          "subline": "Fix what matters at home — together.",
+          "detail": "Demo build · fictional home and demo profiles · no real accounts yet\nAI suggestions are unverified areas to review, not safety findings · Spanish is machine-translated",
+          "credits": "3D scan reconstructed from ‘UE4Arch.com – Viennese apartment’ by UE4Arch.com, Wikimedia Commons, CC BY-SA 4.0 (trimmed, frame-sampled, reconstructed)\ncommons.wikimedia.org/wiki/File:UE4Arch.com_-_Viennese_apartment.webm · creativecommons.org/licenses/by-sa/4.0/\nNext steps based on CDC ‘Check for Safety’ (2017) · Built with React, TypeScript and Capacitor\nLocal AI: StartLux-Decision · CC BY-NC 4.0 weights · Non-commercial demo\nPromo capture, edit and scripts: OpenAI Codex · Voice: Samantha (macOS) · Fonts: Zilla Slab / Atkinson Hyperlegible Next (OFL)"
+        }
+      ]
+    }
+  ]
+}
