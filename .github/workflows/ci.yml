@@ -27,4 +27,5 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: scan/venv-python -m unittest discover -s scan/tests
+      # Verbose names and a faulthandler traceback keep a native crash diagnosable.
+      - run: scan/venv-python -X faulthandler -m unittest discover -s scan/tests -v
