@@ -3,10 +3,10 @@ import { validateSuggestionLayer, type ScanSuggestionLayer, type SuggestionCatal
 
 /** Local-only scan contracts. These never enter the workflow state or its storage key. */
 export type Point3 = [number, number, number];
-export const MAX_SCAN_BYTES = 300 * 1024 * 1024;
+export const MAX_SCAN_BYTES = 64 * 1024 * 1024;
 export const MAX_METADATA_BYTES = 64 * 1024;
 export const MAX_SCAN_PINS = 200;
-export const MAX_SPLATS = 10_000_000;
+export const MAX_SPLATS = 1_500_000;
 export const SCAN_EXTENSIONS = ['splat', 'ply', 'spz', 'ksplat'] as const;
 export type ScanExtension = (typeof SCAN_EXTENSIONS)[number];
 
@@ -31,8 +31,9 @@ export type ScanDocument = ScanDocumentV1 | ScanDocumentV2;
 export function upgradeScanDocument(document: ScanDocument): ScanDocumentV2 {
   return document.version === 1 ? { ...document, version: 2, suggestions: null } : document;
 }
-export type ScanResult<T> = { ok: true; value: T } | { ok: false; error: string };
-const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
+export type ScanErrorCode = 'SCENE_IDENTITY_MISSING' | 'SCENE_IDENTITY_UNVERIFIED' | 'SCENE_IDENTITY_MISMATCH' | 'SCAN_COMPLEXITY';
+export type ScanResult<T> = { ok: true; value: T } | { ok: false; error: string; code?: ScanErrorCode };
+const fail = (error: string, code?: ScanErrorCode): { ok: false; error: string; code?: ScanErrorCode } => ({ ok: false, error, ...(code ? { code } : {}) });
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -122,8 +123,10 @@ export function validateScanPins(value: unknown, concernIds: ReadonlySet<string>
 
 export function validateScanAsset(value: unknown): ScanResult<ScanAsset> {
   if (!record(value) || !shape(value, ['name', 'blob', 'metadata', 'kind']) || !fileName(value.name) || !(value.blob instanceof Blob) || (value.kind !== 'imported' && value.kind !== 'generated')) return fail('Scan must have a supported local filename, file bytes and a known source kind.');
-  if (value.blob.size === 0 || value.blob.size > MAX_SCAN_BYTES) return fail('Scan file must be nonempty and no larger than 300 MiB.');
+  if (value.blob.size === 0) return fail('Scan file must be nonempty and no larger than 64 MiB.');
+  if (value.blob.size > MAX_SCAN_BYTES) return fail('Scan file must be nonempty and no larger than 64 MiB.', 'SCAN_COMPLEXITY');
   if (scanExtension(value.name) === 'splat' && value.blob.size % 32 !== 0) return fail('A .splat file must contain whole 32-byte splat records.');
+  if (scanExtension(value.name) === 'splat' && value.blob.size / 32 > MAX_SPLATS) return fail(`Scan exceeds the ${MAX_SPLATS} splat complexity limit.`, 'SCAN_COMPLEXITY');
   let metadata: ScanMetadata | null = null;
   if (value.metadata !== null) {
     const parsed = validateScanMetadata(value.metadata);
@@ -156,6 +159,17 @@ export function validateScanDocument(value: unknown, concernIds: ReadonlySet<str
   return { ok: true, value: { document: { ...legacy, version: 2, suggestions }, dropped: pins.value.dropped } };
 }
 
+/** Hydration entry point: hash actual persisted bytes before allowing suggestions. */
+export async function validateScanDocumentAsync(value: unknown, concernIds: ReadonlySet<string>, catalog?: SuggestionCatalog): Promise<ReturnType<typeof validateScanDocument>> {
+  if (record(value)) {
+    const asset = validateScanAsset(value.asset);
+    if (!asset.ok) return asset;
+    const prepared = await prepareScanAsset(asset.value);
+    if (!prepared.ok) return prepared;
+  }
+  return validateScanDocument(value, concernIds, catalog);
+}
+
 /** Validate selection before reading the large binary. Unknown JSON is reconstructed above. */
 export async function importScanFiles(files: readonly File[]): Promise<ScanResult<ScanAsset>> {
   if (files.length < 1 || files.length > 2) return fail('Choose one scan file, plus an optional scene.json, together.');
@@ -174,5 +188,69 @@ export async function importScanFiles(files: readonly File[]): Promise<ScanResul
     if (!parsed.ok) return parsed;
     metadata = parsed.value;
   }
-  return validateScanAsset({ name: file.name, blob: file, metadata, kind: 'imported' });
+  const result = validateScanAsset({ name: file.name, blob: file, metadata, kind: 'imported' });
+  if (!result.ok) return result;
+  const checked = await prepareScanAsset(result.value);
+  return checked.ok ? result : checked;
+}
+
+// Blob bytes are immutable. This cache is deliberately not serialized: a saved
+// hash supplied by JSON must never stand in for hashing the actual selected bytes.
+const verifiedSceneHashes = new WeakMap<Blob, string>();
+export function verifiedSceneHash(blob: Blob): string | undefined { return verifiedSceneHashes.get(blob); }
+
+/** Run after IndexedDB hydration, before synchronous document validation/display. */
+export async function prepareScanAsset(asset: ScanAsset): Promise<ScanResult<string>> {
+  const valid = validateScanAsset(asset);
+  if (!valid.ok) return valid;
+  const complexity = await preflightScanComplexity(asset);
+  if (!complexity.ok) return complexity;
+  const cached = verifiedSceneHashes.get(asset.blob);
+  if (cached) return { ok: true, value: cached };
+  try {
+    const bytes = await asset.blob.arrayBuffer();
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const hash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    verifiedSceneHashes.set(asset.blob, hash);
+    return { ok: true, value: hash };
+  } catch { return fail('Scan bytes could not be hashed. Select the local file again.'); }
+}
+
+/** Header/length gates run before Spark decoding or a full byte allocation. */
+export async function preflightScanComplexity(asset: ScanAsset): Promise<ScanResult<number>> {
+  const reject = (error: string): ScanResult<number> => ({ ok: false, code: 'SCAN_COMPLEXITY', error });
+  const ext = scanExtension(asset.name);
+  if (ext === 'splat') {
+    const count = asset.blob.size / 32;
+    return Number.isInteger(count) && count >= 1 && count <= MAX_SPLATS ? { ok: true, value: count } : reject('Invalid or over-limit .splat record count.');
+  }
+  try {
+    const bytes = new Uint8Array(await asset.blob.slice(0, 64 * 1024).arrayBuffer());
+    if (ext === 'ply') {
+      const header = new TextDecoder().decode(bytes), end = /(?:^|\n)end_header\r?\n/.exec(header);
+      if (!header.startsWith('ply\n') && !header.startsWith('ply\r\n')) return reject('Invalid PLY header.');
+      if (!end) return reject('PLY header exceeds 64 KiB or is incomplete.');
+      const declaration = header.slice(0, end.index);
+      const lines = declaration.split(/\r?\n/);
+      if (!lines.every((line, i) => i === 0 ? line === 'ply' : /^(?:format (?:ascii|binary_little_endian) 1\.0|element vertex \d+|property \w+ \w+|comment(?: .*)?|obj_info(?: .*)?)$/.test(line))
+        || lines.filter((line) => line.startsWith('format ')).length !== 1) return reject('Unsupported PLY header declaration.');
+      if (!/^format (?:ascii|binary_little_endian) 1\.0\r?$/m.test(declaration)
+        || /^property list\b/m.test(declaration) || [...declaration.matchAll(/^element /gm)].length !== 1) return reject('Only bounded scalar-vertex PLY files are supported. Export compressed/list PLY as .splat.');
+      const properties = [...declaration.matchAll(/^property (\w+) (\w+)\r?$/gm)];
+      const widths: Record<string, number> = { char: 1, uchar: 1, int8: 1, uint8: 1, short: 2, ushort: 2, int16: 2, uint16: 2, int: 4, uint: 4, int32: 4, uint32: 4, float: 4, float32: 4, double: 8, float64: 8 };
+      if (properties.length < 3 || properties.length > 64 || properties.some((p) => !widths[p[1]!])
+        || !['x', 'y', 'z'].every((name) => properties.some((p) => p[2] === name))
+        || new Set(properties.map((p) => p[2])).size !== properties.length) return reject('Invalid or over-complex PLY scalar properties.');
+      const counts = [...declaration.matchAll(/^element vertex (\d+)\r?$/gm)];
+      const count = counts.length === 1 ? Number(counts[0]![1]) : 0;
+      if (!Number.isSafeInteger(count) || count < 1 || count > MAX_SPLATS) return reject('PLY vertex count exceeds the scan complexity limit or is invalid.');
+      if (/^format binary_little_endian /m.test(declaration)
+        && asset.blob.size < end.index + end[0].length + count * properties.reduce((sum, p) => sum + widths[p[1]!]!, 0)) return reject('PLY body is shorter than its declared vertex data.');
+      if (asset.metadata && asset.metadata.splatCount !== count) return reject('PLY vertex count disagrees with scene.json.');
+      return { ok: true, value: count };
+    }
+    // Compressed formats cannot be safely budgeted by compressed byte size.
+    // Until bounded header/decompression support exists, fail before decoding.
+    return reject('Compressed .spz/.ksplat imports require bounded decompression support. Export a .splat or PLY file.');
+  } catch { return reject('Scan header could not be read.'); }
 }

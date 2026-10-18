@@ -1,50 +1,55 @@
-import { validateScanDocument, type ScanDocument } from './scan-model';
+import { OperationError, operationFailure, type FailureCode } from '../domain/failures';
+import { validateScanDocument, validateScanDocumentAsync, type ScanDocument, type ScanErrorCode } from './scan-model';
 import type { SuggestionCatalog } from './scan-suggestions';
 
 export const SCAN_DATABASE = 'fixlist-scan';
 const STORE = 'local-scan';
 const KEY = 'current';
+const GENERATION_KEY = '__reset_generation';
 export interface ScanStore {
   read(): Promise<unknown>;
   write(document: ScanDocument): Promise<void>;
   clear(): Promise<void>;
+  invalidate?(): void;
 }
-export type ScanStorageResult = { ok: boolean; message: string };
+export type ScanFailureCode = FailureCode | ScanErrorCode;
+export type ScanStorageResult = { ok: true; message: string } | { ok: false; message: string; code: ScanFailureCode };
 
 /** The injectable store boundary keeps the validation/failure contract testable without a DOM. */
 export async function loadScan(store: ScanStore, concernIds: ReadonlySet<string>, catalog?: SuggestionCatalog): Promise<ScanStorageResult & { document: ScanDocument | null }> {
   try {
     const raw = await store.read();
     if (raw === undefined || raw === null) return { ok: true, document: null, message: 'No saved room scan in this browser.' };
-    const result = validateScanDocument(raw, concernIds, catalog);
-    if (!result.ok) return { ok: false, document: null, message: `Saved scan was not opened: ${result.error} Saved bytes were left untouched.` };
+    const result = await validateScanDocumentAsync(raw, concernIds, catalog);
+    if (!result.ok) return { ok: false, code: result.code ?? 'invalid_media', document: null, message: `Saved scan was not opened: ${result.error} Saved bytes were left untouched.` };
     const { document, dropped } = result.value;
     const suggestionNotice = document.version === 2 && document.suggestions?.droppedItems
       ? ` ${document.suggestions.droppedItems} model suggestion(s) were dropped because their checklist/concern links are unknown or no longer match the catalog.` : '';
     return { ok: true, document, message: (dropped > 0
       ? `Saved scan loaded. ${dropped} pin${dropped === 1 ? ' was' : 's were'} dropped because the linked concern is no longer in the catalog.`
       : 'Saved scan and pins loaded from this browser. Open the viewer to see them.') + suggestionNotice };
-  } catch {
-    return { ok: false, document: null, message: 'Scan storage could not be read. You can still import or generate a room in memory; it may not survive a reload.' };
+  } catch (error) {
+    return { ok: false, code: operationFailure(error, 'storage_unavailable').code, document: null, message: 'Scan storage could not be read. You can still import or generate a room in memory; it may not survive a reload.' };
   }
 }
 export async function saveScan(store: ScanStore, document: ScanDocument, concernIds: ReadonlySet<string>, catalog?: SuggestionCatalog): Promise<ScanStorageResult> {
   const validated = validateScanDocument(document, concernIds, catalog);
-  if (!validated.ok || validated.value.dropped > 0) return { ok: false, message: 'Scan was not saved because its data or linked concerns are invalid.' };
+  if (!validated.ok || validated.value.dropped > 0) return { ok: false, code: !validated.ok ? validated.code ?? 'invalid_media' : 'invalid_media', message: 'Scan was not saved because its data or linked concerns are invalid.' };
   try {
     await store.write(validated.value.document);
     return { ok: true, message: 'Scan, upright setting, pins and model suggestion choices saved in this browser only.' };
-  } catch {
-    return { ok: false, message: 'Scan changes are in memory only: browser storage could not save them. Reload may restore an older scan or lose these changes.' };
+  } catch (error) {
+    return { ok: false, code: operationFailure(error, 'storage_unavailable').code, message: 'Scan changes are in memory only: browser storage could not save them. Reload may restore an older scan or lose these changes.' };
   }
 }
 export async function clearScan(store: ScanStore): Promise<ScanStorageResult> {
   try { await store.clear(); return { ok: true, message: 'Saved scan and pins cleared from this browser.' }; }
-  catch { return { ok: false, message: 'The scan was cleared from this view, but browser storage could not be cleared. Reload may restore the previous scan and pins.' }; }
+  catch (error) { return { ok: false, code: operationFailure(error, 'storage_unavailable').code, message: 'The scan was cleared from this view, but browser storage could not be cleared. Reload may restore the previous scan and pins.' }; }
 }
 
 /** One transaction per operation; success means transaction completion, not just request success. */
 export function createIndexedDbScanStore(factory: IDBFactory | undefined): ScanStore {
+  let observedGeneration = 0;
   function open(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       if (!factory) { reject(new Error('IndexedDB unavailable')); return; }
@@ -64,18 +69,38 @@ export function createIndexedDbScanStore(factory: IDBFactory | undefined): ScanS
       };
     });
   }
-  async function transact(mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest): Promise<unknown> {
+  async function transact(mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest, reset = false): Promise<unknown> {
+    const expectedGeneration = observedGeneration;
     const database = await open();
     try {
       return await new Promise<unknown>((resolve, reject) => {
         const transaction = database.transaction(STORE, mode);
         let result: unknown;
+        let commitGeneration: number | undefined;
         const timeout = setTimeout(() => { try { transaction.abort(); } catch { /* Already ended. */ } reject(new Error('Scan transaction timed out')); }, 10000);
-        transaction.oncomplete = () => { clearTimeout(timeout); resolve(result); };
+        transaction.oncomplete = () => { clearTimeout(timeout); if (commitGeneration !== undefined) observedGeneration = commitGeneration; resolve(result); };
         transaction.onabort = transaction.onerror = () => { clearTimeout(timeout); reject(new Error('Scan transaction failed')); };
         try {
-          const request = operation(transaction.objectStore(STORE));
-          request.onsuccess = () => { result = request.result; };
+          const store = transaction.objectStore(STORE);
+          const generation = store.get(GENERATION_KEY);
+          generation.onsuccess = () => {
+            try {
+              const current = generation.result ?? 0;
+              if (!Number.isSafeInteger(current) || current < 0 || mode === 'readwrite' && !reset && current !== expectedGeneration) {
+                clearTimeout(timeout);
+                reject(new OperationError('stale_revision', 'Scan reset in another view. Reload before saving.'));
+                transaction.abort();
+                return;
+              }
+              if (mode === 'readonly') commitGeneration = current;
+              const request = operation(store);
+              request.onsuccess = () => { result = request.result; };
+              if (reset) { store.put(current + 1, GENERATION_KEY); commitGeneration = current + 1; }
+            } catch (error) {
+              clearTimeout(timeout); reject(error);
+              try { transaction.abort(); } catch { /* ended */ }
+            }
+          };
         } catch (error) {
           clearTimeout(timeout);
           try { transaction.abort(); } catch { /* Already ended. */ }
@@ -87,19 +112,20 @@ export function createIndexedDbScanStore(factory: IDBFactory | undefined): ScanS
   return {
     read: () => transact('readonly', (store) => store.get(KEY)),
     write: async (document) => { await transact('readwrite', (store) => store.put(document, KEY)); },
-    clear: async () => { await transact('readwrite', (store) => store.clear()); },
+    clear: async () => { await transact('readwrite', (store) => store.clear(), true); },
   };
 }
 
 /** Serialize reads, writes and reset so an older in-flight write cannot resurrect a reset scan. */
 export function serializeScanStore(store: ScanStore): ScanStore {
   let tail: Promise<unknown> = Promise.resolve();
+  let invalidated = false;
   function enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = tail.then(operation, operation);
     tail = result.catch(() => undefined);
     return result;
   }
-  return { read: () => enqueue(() => store.read()), write: (document) => enqueue(() => store.write(document)), clear: () => enqueue(() => store.clear()) };
+  return { read: () => enqueue(() => store.read()), write: (document) => invalidated ? Promise.reject(new OperationError('cancelled', 'Scan operation cancelled by reset.')) : enqueue(() => store.write(document)), clear: () => enqueue(() => store.clear()), invalidate: () => { invalidated = true; } };
 }
 let browserStore: ScanStore | undefined;
 export function getScanStore(): ScanStore {
@@ -110,4 +136,4 @@ export function getScanStore(): ScanStore {
   }
   return browserStore;
 }
-export function resetScanStorage(): Promise<ScanStorageResult> { return clearScan(getScanStore()); }
+export async function resetScanStorage(): Promise<ScanStorageResult> { const store = getScanStore(); store.invalidate?.(); const result = await clearScan(store); browserStore = undefined; return result; }

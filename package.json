@@ -15,7 +15,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "ios:sync": "npm run build && cap sync ios",
-    "ios:demo": "npm run ios:sync && node scripts/ios-demo-scan.mjs viennese-v2"
+    "ios:demo": "npm run ios:demo:stage && npm run ios:sync && npm run ios:demo:install",
+    "ios:demo:stage": "node scripts/ios-demo-scan.mjs --stage ios/DerivedData/fixlist-demo-scan-stage viennese-v2",
+    "ios:demo:install": "node scripts/ios-demo-scan.mjs --install-staged ios/DerivedData/fixlist-demo-scan-stage"
   },
   "dependencies": {
     "@capacitor/core": "8.5.3",

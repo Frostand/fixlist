@@ -3,10 +3,12 @@ export type ResidentScreen = 'home' | 'check' | 'plan' | 'help' | 'more' | 'reso
 export type Route = { screen: 'start' | 'people' | 'guide' } | { screen: ResidentScreen; role: 'r' } | { screen: 'question'; role: 'r'; id: string } | { screen: 'request' | 'sharing' | 'invite' | 'review'; role: 'r'; id: string } | { screen: 'home' | 'tasks' | 'profile'; role: 'v' } | { screen: 'task'; role: 'v'; id: string };
 const residentScreens: readonly string[] = ['home', 'check', 'plan', 'help', 'more', 'resources', 'scan', 'report', 'access', 'language', 'about', 'requests'];
 const validPart = (v: string | undefined): v is string => !!v && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(v);
-export function parseRoute(hash: string, search = ''): Route {
+export function parseRoute(hash: string, search = '', fallback: Route = { screen: 'start' }): Route {
   if (new URLSearchParams(search).has('localScan')) return { role: 'r', screen: 'scan' };
+  // Content anchors and malformed fragments are not navigation instructions.
+  if (!hash.startsWith('#/')) return fallback;
   let parts: string[];
-  try { parts = decodeURIComponent(hash.replace(/^#/, '')).split('/').filter(Boolean); } catch { return { screen: 'start' }; }
+  try { parts = decodeURIComponent(hash.replace(/^#/, '')).split('/').filter(Boolean); } catch { return fallback; }
   if (parts.length === 1 && ['start', 'people', 'guide'].includes(parts[0]!)) return { screen: parts[0] as 'start' | 'people' | 'guide' };
   const [role, screen, id] = parts;
   if (role === 'r' && parts.length === 2 && residentScreens.includes(screen!)) return { role, screen: screen as ResidentScreen };
@@ -15,12 +17,13 @@ export function parseRoute(hash: string, search = ''): Route {
     if (role === 'r' && ['question', 'request', 'sharing', 'invite', 'review'].includes(screen!)) return { role, screen: screen as 'question' | 'request' | 'sharing' | 'invite' | 'review', id };
     if (role === 'v' && screen === 'task') return { role, screen, id };
   }
-  return { screen: 'start' };
+  return fallback;
 }
 export function routeHash(route: Route): string { return `#/${'role' in route ? `${route.role}/` : ''}${route.screen}${'id' in route ? `/${encodeURIComponent(route.id)}` : ''}`; }
 export function homeRoute(role: PersonRole): Route { return { role: role === 'volunteer' ? 'v' : 'r', screen: 'home' }; }
 export function isTabRoot(route: Route): boolean { return 'role' in route && (route.role === 'v' ? ['home', 'tasks', 'profile'] : ['home', 'check', 'plan', 'help', 'more']).includes(route.screen); }
-export function parentRoute(route: Route, role: PersonRole): Route {
+export function parentRoute(route: Route, role: PersonRole, returnTo: Route | null = null): Route {
+  if (route.screen === 'resources') return returnTo ?? { role: 'r', screen: 'help' };
   if (!('role' in route)) return { screen: 'people' };
   if (route.role === 'v') return route.screen === 'task' ? { role: 'v', screen: 'tasks' } : homeRoute(role);
   if (['sharing', 'invite', 'review'].includes(route.screen) && 'id' in route) return { role: 'r', screen: 'request', id: route.id };
@@ -28,3 +31,31 @@ export function parentRoute(route: Route, role: PersonRole): Route {
   if (route.screen === 'request') return { role: 'r', screen: 'requests' };
   return { role: 'r', screen: 'more' };
 }
+
+export function navigationUrl(href: string, route: Route): URL {
+  const url = new URL(href); url.searchParams.delete('localScan'); url.hash = routeHash(route); return url;
+}
+export function resourceReturnTo(next: Route, previous: Route, returnTo: Route | null): Route | null {
+  return next.screen === 'resources' ? previous.screen === 'resources' ? returnTo : 'role' in previous ? previous : null : null;
+}
+export function activeTab(route: Route, returnTo: Route | null = null): string | null {
+  if (!('role' in route)) return null;
+  if (route.screen === 'resources') return returnTo && returnTo.screen !== 'resources' ? activeTab(returnTo) : 'help';
+  if (route.screen === 'question') return 'check';
+  if (route.screen === 'task') return 'tasks';
+  if (['request', 'requests', 'sharing', 'invite', 'review'].includes(route.screen)) return 'home';
+  if (['scan', 'report', 'access', 'language', 'about'].includes(route.screen)) return 'more';
+  return route.screen;
+}
+export function authorizedDestination(role: PersonRole, intended: Route | null): Route {
+  return intended && 'role' in intended && intended.role === (role === 'volunteer' ? 'v' : 'r') ? intended : homeRoute(role);
+}
+export function launchNavigation(hash: string, search: string, resume: Route | null, pending: Route | null = null): { route: Route; pending: Route | null } {
+  const route = parseRoute(hash, search, resume ?? { screen: 'start' });
+  if (!resume && !new URLSearchParams(search).has('localScan')) return { route: { screen: 'start' }, pending: 'role' in route ? route : pending };
+  return { route, pending };
+}
+export function personDestination(role: PersonRole, guideCompleted: boolean, guideDismissed: boolean, intended: Route | null): Route {
+  return guideCompleted || guideDismissed ? authorizedDestination(role, intended) : { screen: 'guide' };
+}
+export function usesTabShell(route: Route): boolean { return 'role' in route; }

@@ -49,7 +49,9 @@ decision environment and already downloaded model folder:
   --backend mlx --port 8090
 ```
 
-In a second terminal:
+In a second terminal (the tracked historical calibration must be refit with
+weight/runtime pins before producing new calibrated output; see the repair
+section below):
 
 ```sh
 scan/venv-python scan/suggest.py playroom-video-150
@@ -66,7 +68,7 @@ runner expands `~` at runtime and shell-quotes the actual values in its unreacha
 server hint. These variables do not start a server automatically.
 
 Defaults: 32 keyframes (1–200 allowed; capped at registered frame count),
-suggestion threshold 0.6, location threshold 0.5, `--min-frames 1`, think mode `auto`, 120 seconds
+suggestion threshold 0.6, location threshold 0.5, `--min-frames 1`, think mode `never` (matching the adopted review conditions), 120 seconds
 per HTTP attempt, two retries. Relevance must be at least 0.5. A grid choice with
 `none_probability >= 0.2`, or a null choice, is not localizable. `auto` may take
 much longer than `never`; the historical measured run is recorded below. A request
@@ -91,7 +93,7 @@ answers. It does not make HTTP requests or run a model. A photo-byte hash select
 deterministic values and cells without interpreting the photo; the resulting
 suggested items are **not observations**.
 Output uses `model.name = "DRY-RUN deterministic fake answers (no model invoked)"`
-and `timing.dryRun = 1`. The required `model.backend = "mlx"` identifies the
+and `timing.dryRun = 1`. Dry runs ignore the default real-model calibration; an explicit synthetic fit still receives all condition checks. The required `model.backend = "mlx"` identifies the
 intended real backend; it does not mean MLX ran. Dry runs refuse to replace an
 existing real or unknown result. A later real run can replace the dry-run result.
 
@@ -99,7 +101,8 @@ existing real or unknown result. A later real run can replace the dry-run result
 
 For `private-captures/scans/<scan-name>/`, the runner reads:
 
-- `scene.json` for `splatCount`.
+- `scene.json` for `splatCount` and `scene.splat` for the exact scene identity.
+- Available `run.json` for reconstruction provenance (otherwise explicitly null).
 - `work/dataset/images/` for undistorted registered images.
 - `work/dataset/sparse/` through pycolmap, using registered image names, PINHOLE
   intrinsics, world-to-camera poses and each image's observed sparse 3D points.
@@ -116,26 +119,29 @@ request over the nine equal grid cells, with `allow_none` and `none_check` enabl
 the local StartLux `docs/api.md` and `examples/image_request.py`; the API itself
 returns the `noul` value directly, without another `answer` wrapper.
 
-For an accepted cell, a ray passes through its center. Observed world points are
-transformed into camera coordinates and projected with PINHOLE intrinsics. The
-median **camera-z depth** of points in the cell sets the depth on that ray. If
-the cell has none, the median depth of up to five visible observed points with
-directions nearest the ray is used. With no finite positive observed depth,
-position is null. The world point is transformed as
-`aligned = rotationWorldToAligned @ (worldPoint - sparseCenterOriginal)` and
-rounded to three decimals.
+For an accepted cell, a ray passes through its center. Placement requires at
+least three observed points inside the cell and within five degrees of that
+ray, with `(p90 - p10) / median` camera-z depth spread <= 0.25. No depth is
+borrowed from neighboring cells. Model confidence must be >= 0.7, chosen-cell
+mass >= 0.6, and its margin over the next cell >= 0.25, in addition to the none
+probability gate. Ambiguous choices, too few points and conflicting depth layers
+produce photo-only suggestions. These are conservative heuristic gates, not
+validated location confidence or object-region localization.
 
-Positions are coarse depth proxies, not object centers, verified hazard
-locations, dimensions or surface measurements. A cell can include multiple
-surfaces, and fallback points can be far from the item. Units remain arbitrary;
-decimal rounding is not an accuracy claim. The runner requires matching camera
-and image dimensions to avoid silently placing a location in the wrong frame.
+The approximate world point uses median camera-z depth and
+`aligned = rotationWorldToAligned @ (worldPoint - sparseCenterOriginal)`.
+Output includes explicit `localization` status/reason/support/angular and depth
+spread diagnostics. The UI must show the approximate/photo-only state; decimal
+rounding does not establish accuracy. Empty tracks from pose imports provide no
+depth evidence, so those items stay photo-only. See the binding contract for
+all fields and limits.
 
 ## Current output schema v2 (2026-10-18)
 
 The binding contract is [`docs/suggestions-v2-contract.md`](../docs/suggestions-v2-contract.md).
-Producers write only v2. Import validation accepts v1 with full available-trace
-consistency checks, including legacy items without `viewpoint` (treated as null).
+Producers write v2 with versioned scene identity. The app requires a matching
+scene hash; older unbound files must be regenerated before attachment. The Python
+archival schema still checks v1, including absent `viewpoint` (treated as null).
 V1 lacks relevance traces, so a false legacy suggestion cannot establish why it
 was excluded. Validation never invents that evidence.
 
@@ -146,7 +152,7 @@ The UTF-8 JSON file has exactly these root keys:
 | `format`, `version` | `"fixlist-scan-suggestions"`, integer `2` |
 | `createdAt` | UTC ISO timestamp with milliseconds and `Z` |
 | `model` | Exactly `name`, `backend: "mlx"`, `engine: "startlux-decision"`, `license: "CC BY-NC 4.0 weights"` |
-| `scan` | Positive integer `splatCount`, `framesAnalyzed` (1–200), unique ordered `keyframes` |
+| `scan` | Positive integer `splatCount`, `framesAnalyzed` (1–200), unique ordered `keyframes`, versioned `identity` (see extension) |
 | `thresholds` | Scores `suggestion`, `location`, `relevance: 0.5`, `noneProbability: 0.2`; integer `minFrames` from 1 to frames analyzed |
 | `calibration` | Null for raw output, or the Platt block described below |
 | `notice` | `Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.` |
@@ -166,6 +172,7 @@ Each item has exactly these fields:
 | `status` | `suggested` if count meets `minFrames`; otherwise `not-visible` if no relevant rows; otherwise `below-threshold` |
 | `position` | Best relevant frame's approximate aligned position, or null; allowed only if its score meets `thresholds.location` |
 | `viewpoint` | Aligned camera center for that best frame, or null; requires non-null position |
+| `localization` | Null or explicit approximate/photo-only geometry diagnostics (see contract extension) |
 | `thumbnail` | JPEG data URI if and only if status is `suggested`; ≤320 px per side, ≤128 KiB; re-encoding strips metadata |
 
 The field names `rawProbability`, `probability` and `relevanceProbability` are
@@ -212,7 +219,7 @@ Use a **private, local** dataset directory outside tracked files, for example
   unchanged; `scoring` is the only reserved field. Group correlated frames from
   the same scene/source together **before** looking at results.
 - `scores.jsonl` is appended by scoring. Each row preserves the manifest object
-  and adds `scoring: {model, requestSeconds, requestSignature, response}`; the
+  and adds `scoring: {model, requestSeconds, requestSignature, response, imageSHA256, requestImageSHA256, modelIdentity}`; the
   response contains the raw answers. No encoded request photo is saved there.
 - The labels JSONL has `id` plus each of the eight checklist item IDs at the top
   level, each with exactly `relevant` and `condition` (`true`, `false`, or `null`).
@@ -220,10 +227,10 @@ Use a **private, local** dataset directory outside tracked files, for example
   item must be present; mark uncertainty with null rather than omitting it.
 
 ```sh
-scan/venv-python scan/evaluate_model.py score --dataset private-captures/evaluation/my-dataset --url http://127.0.0.1:8090 --think-mode never --limit 3
+scan/venv-python scan/evaluate_model.py score --dataset private-captures/evaluation/my-dataset --url http://127.0.0.1:8090 --think-mode never --limit 3 --model-dir "$FIXLIST_MODEL_DIR" --runtime-dir "$FIXLIST_RUNTIME_DIR"
 scan/venv-python scan/evaluate_model.py report --dataset private-captures/evaluation/my-dataset --labels private-captures/evaluation/my-dataset/labels.jsonl
 scan/venv-python scan/evaluate_model.py fit --dataset private-captures/evaluation/my-dataset --labels private-captures/evaluation/my-dataset/labels.jsonl --out scan/calibration.json --seed 7 --label-source 'Describe actual annotator and labeling protocol'
-scan/venv-python scan/suggest.py my-scan --calibration scan/calibration.json --think-mode never
+scan/venv-python scan/suggest.py my-scan --calibration scan/calibration.json --think-mode never --model-dir "$FIXLIST_MODEL_DIR" --runtime-dir "$FIXLIST_RUNTIME_DIR"
 scan/venv-python scan/suggest.py my-scan --no-calibration
 ```
 
@@ -231,7 +238,7 @@ scan/venv-python scan/suggest.py my-scan --no-calibration
 limits **new** images. A dataset lock prevents concurrent append races. Each
 complete row uses one O_APPEND write followed by fsync; recoverable short writes
 roll back that row. A malformed/truncated file after abrupt interruption is
-rejected for explicit recovery, never silently discarded. Changed provenance,
+rejected for explicit recovery, never silently discarded. Changed image bytes, provenance, weight/runtime directory bytes,
 mixed model names or changed prompts/think mode are rejected on resume; use a
 separate dataset for a new scoring configuration. Failed inference preserves
 previous complete rows. This script never starts the model server.
@@ -286,7 +293,11 @@ labeled-photo fit is supplied by this implementation. `labelSource` defaults to
 an explicit statement that annotator identity was not provided. Supply the actual
 source with `--label-source`; the tool cannot establish annotation quality.
 
-If `scan/calibration.json` exists and is adopted, `suggest.py` uses it by default.
+If `scan/calibration.json` exists and is adopted, `suggest.py` selects it by default.
+The default think mode is now `never`, matching its review conditions. Real
+application also requires matching weight/runtime content identity; the tracked
+historical fit lacks it and must be refit from new pinned scores before real use.
+Missing identity is checked on the first response and never silently accepted.
 `--no-calibration` disables it. An explicit unadopted file is refused unless
 `--force-calibration` is also supplied. Forcing changes neither the adoption
 report nor its evidence limits. Invalid calibration files fail validation;
@@ -481,3 +492,81 @@ Historical implementation checklist (v1):
 - [x] Execute deterministic tests and mocked HTTP-byte pipeline checks.
 - [x] Parent: execute the two socket-based fake HTTP server tests outside this sandbox.
 - [x] Measure the real-scan deterministic dry run and document its limits.
+
+## Content identity and resume repair (2026-10-18)
+
+Scene attachment, disclosure parity and localization uncertainty now follow the
+extension sections of [the binding contract](../docs/suggestions-v2-contract.md).
+Every new scene output hashes the exact scene, analyzed source frames, producer
+script and available alignment/reconstruction provenance. Bytes are checked
+again before writing, so a changed scene/frame does not receive stale output.
+The source code does not retrofit guessed identities into earlier private files.
+
+Evaluation now requires `--model-dir` and `--runtime-dir`: set them to the exact
+local weights and serving-code environment used by the loopback server. Both
+must be ordinary, symlink-free directories; all relative names and file bytes
+are content hashed. For an environment whose venv launcher is a symlink, point
+`--runtime-dir` at the ordinary installed serving-packages directory being
+pinned, and record the interpreter/OS separately for a full reproducibility
+claim. These are operator-configured local pins; the client does not attest
+which bytes an arbitrary running server loaded. Do not equate local identity
+with independent runtime qualification.
+
+Every score row records the original photo SHA-256, the exact preprocessed
+request-image SHA-256 (including encoder output), and the model/runtime
+identity. Resume and fitting verify the photo bytes; resume also compares the
+current weight/runtime bytes before skipping any ID. Changed bytes fail closed
+and retain all prior rows. Legacy rows without hashes need a separate rescore,
+not a fabricated identity migration. Reports/fits now need the original image
+bytes available to validate those pins. New fit files carry model identity plus
+manifest, score-file and label-file hashes. Prompt/preprocessing signatures,
+think mode, thresholds and aggregation semantics remain separately recorded.
+
+The tracked historical calibration has no weight/runtime identity and was not
+rewritten or refit here. Default think mode `never` removes the original
+pre-inference condition conflict and reaches the local endpoint. If that server
+responds, an unpinned historical fit is then refused before calibrated output.
+To produce a new calibrated result, score and refit with the exact local content
+pins, then pass those same `--model-dir`/`--runtime-dir` arguments to `suggest.py`.
+Raw experiments can explicitly use `--no-calibration`; this never makes raw
+scores calibrated. A different model/runtime does not inherit a fit by name.
+
+## Post-hoc scene identity for surviving legacy results
+
+`scan/venv-python scan/bind_scene_identity.py <run-dir>` performs a read-only
+inspection by default. It verifies run completion and the full existing v1/v2
+suggestions schema, refuses an already-bound file, decodes and validates actual
+scene bytes/count/metadata, and checks every named frame in the producer's
+`work/dataset/images/` directory. Descriptor-anchored reads reject symlinked
+frames and ancestors. The scene and all referenced frames must predate or equal
+the original inference `createdAt`; changed/newer or missing files refuse binding.
+The JSON report prints each check and the exact identity that would be attached.
+
+`--write` is a separate explicit operator choice: it rechecks all inspected bytes,
+creates an exclusive `suggestions.unbound-<UTC timestamp>.json.bak` of the exact
+original, then atomically replaces suggestions.json. It never overwrites a backup
+and never silently rebinds an identified file. No model or network call occurs.
+
+The identity has the producer's same versioned shape and real SHA-256 of the
+current scene, ordered source frames, this binding script, available alignment
+and completed run JSON. `processing.producer` is distinctly
+`bind_scene_identity.py post-hoc (identity computed after inference from the run directory)`.
+`model.identity` is null even if the old file claimed weight identity: this tool
+attests no weights. The original model score/calibration trace and inference
+createdAt are preserved; binding is not a new scored or calibrated run.
+
+This is deliberately weaker evidence than inference-time hashing. File mtimes
+are mutable and cannot prove the bytes were identical when inference ran, nor
+prove a claim made by run.json. The tool establishes a conservative association
+with a surviving local run, clearly labeled after-the-fact. It cannot establish
+model accuracy, geometric correctness, household safety, authentic provenance,
+or the historical model/runtime. The app still checks the bound hash against
+actual loaded scene bytes, so an equal-count different scene is rejected.
+
+For exact score → fit → inference recovery commands for the unpinned historical
+calibration, use [README's rescore/refit sequence](README.md#rescorerefit-a-byte-pinned-calibration).
+It uses a fresh dataset, the actual model/serving-code directories, original
+images, grouped manifest and actual labels; it writes a separate private pinned
+fit. Identity/adoption/request conditions remain mandatory. Explicit
+`--no-calibration` yields `calibration: null` and clearly experimental raw scores.
+No model, fit or real private write was performed during this follow-up.

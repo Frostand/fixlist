@@ -63,12 +63,12 @@ function v2(status: 'draft' | 'family_reported_requested' | 'family_reported_in_
   const initial = createInitialState(demoScenario);
   return { schemaVersion: 2, scenarioId: demoScenario.id, checklistAnswers: { ...initial.checklistAnswers, 'rug-check': 'yes' }, confirmations: { ...initial.confirmations, ...(active ? { 'rug-concern': { humanConfirmed: true, confirmedBy: FAMILY_LABEL, confirmedAt: at } } : {}) }, profileId: 'maple-owner', requests: [{ id: 'request-review-rug', referenceActionId: 'review-rug', helperLabel: HELPER_LABEL, recordedBy: FAMILY_LABEL, status, note: REQUEST_NOTE, completion: complete ? { status: 'family_reported_complete', reportedBy: FAMILY_LABEL, reportedAt: at } : { status: 'unconfirmed', reportedBy: null, reportedAt: null }, source: { ...REQUEST_SOURCE } }] };
 }
-describe('v2 to v3 in-memory migration', () => {
+describe('v2 to v4 in-memory migration', () => {
   const modes = [{ status: 'draft', complete: false }, { status: 'family_reported_requested', complete: false }, { status: 'family_reported_in_progress', complete: false }, { status: 'family_reported_requested', complete: true }, { status: 'family_reported_in_progress', complete: true }] as const;
   it.each(modes.flatMap((mode) => [false, true].map((active) => ({ ...mode, active }))))('$status complete=$complete active=$active preserves history without inferred invitations', ({ status, complete, active }) => {
     const old = v2(status, complete, active); const bytes = JSON.stringify(old); const store = new Store(); store.values.set(DEMO_STORAGE_KEY, bytes); store.values.set('other', 'keep');
     const first = loadDemoState(store, demoScenario); const second = loadDemoState(store, demoScenario);
-    expect(first.status).toBe('migrated'); expect(first.state).toEqual(second.state); expect(first.state.schemaVersion).toBe(3); expect(first.state.profileId).toBe('maple-owner');
+    expect(first.status).toBe('migrated'); expect(first.state).toEqual(second.state); expect(first.state.schemaVersion).toBe(5); expect(first.state.profileId).toBe('maple-owner');
     const r = first.state.requests[0]!; expect(r).toMatchObject({ status: 'draft', revision: 1, volunteerId: null, createdBy: { actorId: 'family-before-roles', at: null }, reportedDone: null, confirmedDone: null, legacyHistory: { label: LEGACY_LABEL, status, completion: { status: complete ? 'family_reported_complete' : 'unconfirmed' } } });
     if (complete) expect(r.legacyHistory!.completion).toMatchObject({ reportedBy: LEGACY_LABEL, reportedAt: at });
     expect(getRequestViews(demoScenario, first.state)[0]!.active).toBe(active); expect(computePlan(demoScenario, first.state)).toHaveLength(active ? 1 : 0);

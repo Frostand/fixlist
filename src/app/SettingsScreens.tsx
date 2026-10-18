@@ -1,19 +1,20 @@
 import { authored } from '../i18n/authored';
-import { computePlan, createInitialState } from '../domain/workflow';
-import { useState } from 'react';
+import { computePlan } from '../domain/workflow';
+import { useEffect, useRef, useState } from 'react';
 import type { DemoScenario } from '../domain/types';
 import type { DemoState, Person, DelegationScope } from '../domain/workflow';
 import { useT } from '../i18n';
 import { ScreenLink, type Navigate } from './PhoneShell';
-import { LanguagePicker } from './PeopleScreens';
+import { LanguagePicker, openGuide } from './PeopleScreens';
 import { ProgramDetails, ProfileFacts } from './CatalogViews';
-import { guideIdFor } from './view-model';
+import { guideProgress } from './view-model';
 import { BoundariesCard } from './VolunteerScreens';
 import type { Dispatch } from './ui-controller';
+import { focusTarget, focusVisible } from './focus';
 export function ResourcesScreen({ scenario, state, person, dispatch }: { scenario: DemoScenario; state: DemoState; person: Person; dispatch: Dispatch }) {
   const t = useT(), resource = scenario.localHelpResources[0]!;
-  const factsState = person.role === 'resident' ? state : createInitialState(scenario);
-  return <div className="stack"><article className="card resource-card"><h2>{resource.name}</h2><p>{t('resource.description')}</p><p className="muted">{t('resource.verified', { date: resource.source.verifiedAt })}</p><a className="button" href={`tel:${resource.phone}`}>{t('resource.call', { phone: resource.phone })}</a><a className="source-link" href={resource.url}>{t('resource.website')}</a></article><section className="stack"><h2>{t('resource.fictional')}</h2>{person.role === 'resident' ? <label>{t('resource.profile')}<select id="fictional-profile" value={state.profileId} onChange={(e) => dispatch({ type: 'select_profile', profileId: e.target.value })}>{scenario.profiles.map((p) => <option value={p.id} key={p.id}>{authored(t, p.label)}</option>)}</select></label> : null}<ProfileFacts scenario={scenario} state={factsState} />{scenario.programs.map((p) => <article className="card" key={p.id}><h3>{authored(t, p.name)}</h3><p>{authored(t, p.description)}</p><ProgramDetails program={p} scenario={scenario} state={factsState} plan={person.role === 'resident' ? computePlan(scenario, state) : []} live /></article>)}</section></div>;
+  const resident = person.id === state.household.residentId;
+  return <div className="stack"><article className="card resource-card"><h2>{resource.name}</h2><p>{t('resource.description')}</p><p className="muted">{t('resource.verified', { date: resource.source.verifiedAt })}</p><a className="button" href={`tel:${resource.phone}`}>{t('resource.call', { phone: resource.phone })}</a><a className="source-link" href={resource.url}>{t('resource.website')}</a></article>{resident ? <section className="stack"><h2>{t('resource.fictional')}</h2><label>{t('resource.profile')}<select id="fictional-profile" value={state.profileId} onChange={(e) => dispatch({ type: 'select_profile', profileId: e.target.value })}>{scenario.profiles.map((p) => <option value={p.id} key={p.id}>{authored(t, p.label)}</option>)}</select></label><ProfileFacts scenario={scenario} state={state} />{scenario.programs.map((p) => <article className="card" key={p.id}><h3>{authored(t, p.name)}</h3><p>{authored(t, p.description)}</p><ProgramDetails program={p} scenario={scenario} state={state} plan={computePlan(scenario, state)} live /></article>)}</section> : <p className="notice">{t('routing.resourcesGeneral')}</p>}</div>;
 }
 export function AccessScreen({ state, dispatch }: { state: DemoState; dispatch: Dispatch }) {
   const t = useT();
@@ -25,14 +26,30 @@ function HelperAccess({ helper, scopes, dispatch }: { helper: Person; scopes: re
 }
 export function MoreScreen({ person, resident, canViewScan, navigate, dispatch, onReset }: { person: Person; resident: boolean; canViewScan: boolean; navigate: Navigate; dispatch: Dispatch; onReset(): void }) {
   const t = useT();
-  function replay() { if (dispatch({ type: 'set_onboarding', guideId: guideIdFor(person), stepIndex: 0, completed: false }).ok) navigate({ screen: 'guide' }); }
-  return <div className="stack"><div className="link-group">{canViewScan ? <ScreenLink title={t('nav.scan')} route={{ role: 'r', screen: 'scan' }} navigate={navigate} /> : null}{resident ? <><ScreenLink title={t('nav.access')} route={{ role: 'r', screen: 'access' }} navigate={navigate} /><ScreenLink title={t('nav.report')} route={{ role: 'r', screen: 'report' }} navigate={navigate} /></> : null}<ScreenLink title={t('nav.language')} route={{ role: 'r', screen: 'language' }} navigate={navigate} /><ScreenLink title={t('nav.about')} route={{ role: 'r', screen: 'about' }} navigate={navigate} /></div><button className="secondary" onClick={replay}>{t('more.replay')}</button><button className="secondary" onClick={() => navigate({ screen: 'people' })}>{t('nav.switch')}</button>{resident ? <button className="secondary danger" onClick={onReset}>{t('more.reset')}</button> : null}</div>;
+  function replay() { openGuide(person, dispatch, navigate); }
+  return <div className="stack"><div className="link-group">{canViewScan ? <ScreenLink title={t('nav.scan')} route={{ role: 'r', screen: 'scan' }} navigate={navigate} /> : null}{resident ? <><ScreenLink title={t('nav.access')} route={{ role: 'r', screen: 'access' }} navigate={navigate} /><ScreenLink title={t('nav.report')} route={{ role: 'r', screen: 'report' }} navigate={navigate} /></> : null}<ScreenLink title={t('nav.language')} route={{ role: 'r', screen: 'language' }} navigate={navigate} /><ScreenLink title={t('nav.about')} route={{ role: 'r', screen: 'about' }} navigate={navigate} /></div><button className="secondary" onClick={replay}>{t(guideProgress(person).completed ? 'more.replay' : 'routing.resumeGuide')}</button><button className="secondary" onClick={() => navigate({ screen: 'people' })}>{t('nav.switch')}</button>{resident ? <button id={focusTarget('reset-close')} className="secondary danger" onClick={onReset}>{t('more.reset')}</button> : null}</div>;
 }
 export function HelpScreen({ person, navigate, dispatch }: { person: Person; navigate: Navigate; dispatch: Dispatch }) {
   const t = useT();
-  return <div className="stack"><p>{t('more.helpBody')}</p><button onClick={() => { if (dispatch({ type: 'set_onboarding', guideId: guideIdFor(person), stepIndex: 0, completed: false }).ok) navigate({ screen: 'guide' }); }}>{t('more.replay')}</button>{person.role !== 'volunteer' ? <ScreenLink title={t('nav.resources')} route={{ role: 'r', screen: 'resources' }} navigate={navigate} /> : null}<p className="notice">{t('app.disclosure')}</p></div>;
+  return <div className="stack"><p>{t('more.helpBody')}</p><button onClick={() => openGuide(person, dispatch, navigate)}>{t(guideProgress(person).completed ? 'more.replay' : 'routing.resumeGuide')}</button>{person.role !== 'volunteer' ? <ScreenLink title={t('nav.resources')} route={{ role: 'r', screen: 'resources' }} navigate={navigate} /> : null}<p className="notice">{t('app.disclosure')}</p></div>;
 }
 export function VolunteerProfile({ person, dispatch, navigate }: { person: Person; dispatch: Dispatch; navigate: Navigate }) {
   const t = useT(), [skills, setSkills] = useState(person.skills.join('\n')), [availability, setAvailability] = useState(person.availability);
   return <div className="stack"><form className="card stack" onSubmit={(e) => { e.preventDefault(); dispatch({ type: 'set_volunteer_profile', skills: skills.split('\n').map((s) => s.trim()).filter(Boolean), availability: availability.trim() }); }}><h2>{t('volunteer.skills')}</h2><p className="label-note">{t('request.selfReport')}</p><label>{t('volunteer.skillsLabel')}<textarea value={skills} onChange={(e) => setSkills(e.target.value)} /></label><label>{t('volunteer.availability')}<textarea maxLength={280} value={availability} onChange={(e) => setAvailability(e.target.value.replace(/[\r\n]/g, ' '))} /></label><button>{t('volunteer.save')}</button></form><section className="card"><h2>{t('nav.language')}</h2><LanguagePicker onSelect={(language) => dispatch({ type: 'set_language', language })} /></section><HelpScreen person={person} dispatch={dispatch} navigate={navigate} /><BoundariesCard /><button className="secondary" onClick={() => navigate({ screen: 'people' })}>{t('nav.switch')}</button></div>;
+}
+
+export function ResetConfirmation({ onReset, onCancel }: { onReset(): void; onCancel(): void }) {
+  const t = useT(), dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const trigger = document.getElementById(focusTarget('reset-close'));
+    dialog.current?.showModal(); focusVisible(document.getElementById(focusTarget('reset-open')));
+    return () => { if (trigger?.isConnected) focusVisible(trigger); };
+  }, []);
+  return <dialog ref={dialog} className="card reset-confirm" aria-labelledby="reset-title" aria-describedby="reset-description reset-bundled-description" onCancel={(event) => { event.preventDefault(); onCancel(); }} style={{ position: 'fixed', insetBlockStart: '1rem', insetBlockEnd: 'auto', marginBlock: 0, maxHeight: 'calc(100dvh - 10rem - env(safe-area-inset-bottom))', width: 'min(36rem, calc(100% - 2rem))', overflowY: 'auto' }}><h2 id="reset-title">{t('more.reset')}</h2><p id="reset-description">{t('more.resetBody')}</p><p id="reset-bundled-description">{t('scan.bundledReset')}</p><div className="stack"><button id={focusTarget('reset-open')} className="secondary" onClick={onCancel}>{t('more.keep')}</button><button className="danger" onClick={onReset}>{t('more.resetConfirm')}</button></div></dialog>;
+}
+
+/** Recovery is deliberate; selecting a person never replaces rejected saved bytes. */
+export function RecoveryNotice({ status, message, onExport, onReset, onRefresh, canManage = true }: { status: 'invalid' | 'error' | 'unavailable' | 'migrated'; message: string; onExport(): void; onReset(): void; onRefresh(): void; canManage?: boolean }) {
+  const t = useT();
+  return <section className="card stack" aria-label={t(`data.recovery.${status}`)}><p>{t(`data.recovery.${status}`)}</p><details open><summary>{t('data.recoveryDetails')}</summary><p lang="en">{message}</p></details>{canManage ? <button className="secondary" onClick={onExport}>{t('data.export')}</button> : <p>{t('data.recoveryResident')}</p>}<button className="secondary" onClick={onRefresh}>{t('data.refresh')}</button>{canManage ? <button className="danger secondary" onClick={onReset}>{t('data.recoveryReset')}</button> : null}</section>;
 }

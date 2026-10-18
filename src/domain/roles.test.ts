@@ -41,7 +41,7 @@ describe('permission table: each command for resident, granted delegate, both vo
     let s = fullGrant(activeState());
     if (actorId === 'margaret' || actorId === 'sam') s = run(s, { type: 'add_photo', photoId: 'own', checklistItemId: 'rug-check', width: 1, height: 1 }, actorId);
     expect(dispatch(s, { type: 'remove_photo', photoId: 'own' }, actorId).ok).toBe(['margaret', 'sam'].includes(actorId));
-    if (actorId === 'sam') expect(dispatch(s, { type: 'remove_photo', photoId: 'own' }, 'margaret').ok).toBe(false);
+    if (actorId === 'sam') expect(dispatch(s, { type: 'remove_photo', photoId: 'own' }, 'margaret').ok).toBe(true);
   });
   it.each(permissionCases.filter((c) => c.allowed.includes('sam')))('ungranted and revoked delegate: $name', ({ state, command }) => {
     let s = state(); expect(dispatch(s, command(s), 'sam').ok).toBe(false);

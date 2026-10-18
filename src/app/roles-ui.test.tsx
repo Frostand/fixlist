@@ -98,7 +98,7 @@ describe('UI controller and role screens', () => {
     const h = harness(); h.run({ type: 'answer_checklist', checklistItemId: 'rug-check', answer: 'yes' }); h.run({ type: 'grant_delegation', personId: 'sam', scopes: ['confirm'] }); h.run({ type: 'select_person', personId: 'sam' });
     const household = visibleHouseholdFor(scenario, h.state, 'sam')!;
     const html = renderToStaticMarkup(<ResidentPlan scenario={scenario} state={h.state} person={h.state.people[1]!} household={household} dispatch={h.dispatch} navigate={noop} />);
-    expect(html).toContain('Confirm this is something to fix'); expect(html).not.toContain('Ask for help'); expect(household).not.toHaveProperty('checklistAnswers');
+    expect(html).not.toContain('Confirm this is something to fix'); expect(html).toContain('Confirmation also requires checklist access'); expect(html).not.toContain('Ask for help'); expect(household).not.toHaveProperty('checklistAnswers');
     const rejected = applyCommand(scenario, h.state, { type: 'create_request', referenceActionId: 'review-rug', expectedRevision: 0, actorId: 'sam', at }); expect(rejected.ok).toBe(false);
   });
 });

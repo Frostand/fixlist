@@ -16,7 +16,7 @@ const concerns = new Set(demoScenario.concerns.map((concern) => concern.id));
 describe('pure scan pin print snapshot', () => {
   it('includes immutable manual, AI and older pin entries without mutating workflow state', () => {
     const document = suggestionDocumentFixture();
-    const pinned = pinScanSuggestion(document, suggestionId(document.suggestions.data.items[0]!), 'ai-pin', at);
+    const pinned = pinScanSuggestion(document, suggestionId(document.suggestions.data.items[0]!), 'ai-pin', at, testJpeg);
     if (!pinned.ok) throw new Error(pinned.error);
     expect(pinned.value.pins[0]).toMatchObject({ image: document.suggestions.data.items[0]!.thumbnail, origin: 'ai-suggestion' });
     const pins = [manual(), ...pinned.value.pins, { id: 'old-pin', concernId: 'rug-concern', position: [0, 0, 0] as [number, number, number], createdAt: at }];

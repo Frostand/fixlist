@@ -227,8 +227,17 @@ export function createLocalScansHandler(capturesRoot: string) {
 /** Refuse to build when public/ links outside itself or into private folders; a build would copy the target into dist. */
 export async function assertSafePublicDir(projectRoot: string, publicDir: string): Promise<void> {
   if (!publicDir || !existsSync(publicDir)) return;
-  const publicRoot = (await canonicalFilePath(publicDir)).target;
+  const project = (await canonicalFilePath(projectRoot)).target;
+  const lexicalRoot = resolve(publicDir);
+  const { target: publicRoot, ancestors: publicAncestors } = await canonicalFilePath(lexicalRoot);
   const privateRoots = await Promise.all([join(projectRoot, 'private-captures'), join(projectRoot, 'ios')].map(async (path) => (await canonicalFilePath(path)).target));
+  // The root itself is an input to copying. Never derive the allowed boundary
+  // from an already redirected root, including a redirected ancestor.
+  if (!isInside(lexicalRoot, resolve(projectRoot)) || !isInside(publicRoot, project)
+    || publicRoot !== resolve(project, relative(resolve(projectRoot), lexicalRoot))
+    || [publicRoot, ...publicAncestors].some((item) => privateRoots.some((root) => isInside(item, root)))) {
+    throw new Error('Refusing to build: public/ root or ancestor redirects outside its allowed public path or into a private folder.');
+  }
   const walk = async (directory: string): Promise<void> => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name);

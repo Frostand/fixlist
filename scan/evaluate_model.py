@@ -8,6 +8,7 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -17,6 +18,7 @@ import time
 from types import SimpleNamespace
 
 from PIL import Image
+from artifact_identity import file_sha256, inference_identity
 
 import suggest as s
 from evaluation_stats import (
@@ -66,6 +68,16 @@ def request_signature(catalog, think_mode):
     return s.request_signature(catalog, think_mode)
 
 
+def prepared_image(path, name):
+    try:
+        with Image.open(path) as image:
+            frame = SimpleNamespace(path=path, width=image.width, height=image.height, name=name)
+        uri = s.image_data(frame, s.REVIEW_IMAGE_MAX_EDGE)
+        return uri, hashlib.sha256(uri.encode('ascii')).hexdigest()
+    except (OSError, Image.DecompressionBombError) as error:
+        raise s.SuggestionError(f'Cannot read dataset image {name}.') from error
+
+
 @contextmanager
 def score_lock(path):
     s.require(not path.is_symlink(), 'Refusing a symlink score lock.')
@@ -97,7 +109,7 @@ def append_score(path, row):
         os.close(descriptor)
 
 
-def validate_scores(rows, entries, catalog, signature=None):
+def validate_scores(rows, entries, catalog, signature=None, *, dataset=None, model_identity=None):
     by_id, seen, model = {row['id']: row for row in entries}, {}, None
     signatures = set()
     for row in rows:
@@ -106,7 +118,21 @@ def validate_scores(rows, entries, catalog, signature=None):
         s.require({k: v for k, v in row.items() if k != 'scoring'} == by_id[key],
                   'Scored metadata differs from manifest; provenance cannot be changed on resume.')
         scoring = row.get('scoring')
-        s.exact(scoring, ['model', 'requestSeconds', 'requestSignature', 'response'], 'scoring')
+        s.exact(scoring, ['model', 'requestSeconds', 'requestSignature', 'response', 'imageSHA256', 'requestImageSHA256', 'modelIdentity'], 'scoring')
+        s.validate_model_identity(scoring['modelIdentity'])
+        s.require(all(type(scoring[key]) is str and len(scoring[key]) == 64
+                      and all(c in '0123456789abcdef' for c in scoring[key])
+                      for key in ['imageSHA256', 'requestImageSHA256']), 'Missing image/request content hash; rescore legacy rows.')
+        if dataset is not None:
+            s.require(scoring['imageSHA256'] == file_sha256(Path(dataset)/'images'/by_id[key]['file']),
+                      'Image bytes changed; stale scores cannot resume or fit. Use a separate dataset.')
+            _, encoded_hash = prepared_image(Path(dataset)/'images'/by_id[key]['file'], by_id[key]['file'])
+            s.require(scoring['requestImageSHA256'] == encoded_hash,
+                      'Preprocessed request image bytes changed; stale scores cannot resume or fit.')
+        if model_identity is not None:
+            s.require(scoring['modelIdentity'] == model_identity, 'Model weight/runtime bytes changed; use a separate dataset.')
+        elif seen:
+            s.require(scoring['modelIdentity'] == next(iter(seen.values()))['scoring']['modelIdentity'], 'Mixed model content identities.')
         s.number(scoring['requestSeconds'], 'requestSeconds')
         s.bounded_text(scoring['requestSignature'], 'requestSignature', 64)
         signatures.add(scoring['requestSignature'])
@@ -124,7 +150,8 @@ def validate_scores(rows, entries, catalog, signature=None):
     return seen, model
 
 
-def score_dataset(dataset, *, url=s.DEFAULT_URL, think_mode='never', limit=None, client=None, progress=print):
+def score_dataset(dataset, *, url=s.DEFAULT_URL, think_mode='never', limit=None, client=None, progress=print,
+                  model_dir=None, runtime_dir=None):
     dataset = Path(dataset).resolve()
     s.require(think_mode in ('never', 'auto'), 'Unsupported think mode.')
     if limit is not None:
@@ -132,31 +159,34 @@ def score_dataset(dataset, *, url=s.DEFAULT_URL, think_mode='never', limit=None,
     entries, catalog = manifest(dataset), s.load_questions()
     signature = request_signature(catalog, think_mode)
     client = s.DecisionClient(url) if client is None else client
+    model_dir = model_dir if model_dir is not None else getattr(client, 'model_dir', None)
+    runtime_dir = runtime_dir if runtime_dir is not None else getattr(client, 'runtime_dir', None)
+    identity = inference_identity(model_dir, runtime_dir)
+    s.require(identity is not None, 'Scoring requires --model-dir and --runtime-dir for actual local content identity.')
     path, completed = dataset / 'scores.jsonl', 0
     with score_lock(dataset / '.scores.lock'):
         s.require(not path.is_symlink(), 'Refusing a symlink scores.jsonl.')
         rows = read_jsonl(path, complete_lines=True) if path.exists() else []
-        seen, model = validate_scores(rows, entries, catalog, signature)
+        seen, model = validate_scores(rows, entries, catalog, signature, dataset=dataset, model_identity=identity)
         for row in entries:
             if row['id'] in seen:
                 continue
             if limit is not None and completed >= limit:
                 break
             image_path = dataset / 'images' / row['file']
-            try:
-                with Image.open(image_path) as image:
-                    frame = SimpleNamespace(path=image_path, width=image.width, height=image.height, name=row['file'])
-            except (OSError, Image.DecompressionBombError) as error:
-                raise s.SuggestionError(f"Cannot read dataset image {row['file']}.") from error
-            request = s.build_review_request(catalog, s.image_data(frame, s.REVIEW_IMAGE_MAX_EDGE), think_mode)
+            image_hash = file_sha256(image_path)
+            uri, encoded_hash = prepared_image(image_path, row['file'])
+            request = s.build_review_request(catalog, uri, think_mode)
             started = time.perf_counter()
             payload = client.decide(request)
             name, _ = s.parse_response(payload, request['questions'])
+            s.require(file_sha256(image_path) == image_hash, 'Image changed during inference; no row appended.')
             seconds = time.perf_counter() - started
             s.require(model is None or model == name, 'Server model changed; no row appended for this image.')
             model = name
             append_score(path, {**row, 'scoring': {'model': name, 'requestSeconds': seconds,
-                                                'requestSignature': signature, 'response': payload}})
+                                                'requestSignature': signature, 'response': payload,
+                                                'imageSHA256': image_hash, 'requestImageSHA256': encoded_hash, 'modelIdentity': identity}})
             completed += 1
             progress(f"Scored {row['id']}: {seconds:.3f}s ({name})")
     progress(f'{completed} new images scored; prior ids skipped.')
@@ -165,8 +195,8 @@ def score_dataset(dataset, *, url=s.DEFAULT_URL, think_mode='never', limit=None,
 
 def labeled_rows(dataset, labels_path):
     dataset = Path(dataset)
-    entries, catalog = manifest(dataset, require_images=False), s.load_questions()
-    scores, model = validate_scores(read_jsonl(dataset / 'scores.jsonl'), entries, catalog)
+    entries, catalog = manifest(dataset), s.load_questions()
+    scores, model = validate_scores(read_jsonl(dataset / 'scores.jsonl'), entries, catalog, dataset=dataset)
     labels, rows = {}, []
     ids = [item['checklistItemId'] for item in catalog]
     known = {entry['id'] for entry in entries}
@@ -247,6 +277,10 @@ def fit_dataset(dataset, labels_path, output, *, seed=7, label_source=None):
     s.validate_calibration(block, s.load_questions())
     document = {'format': 'fixlist-photo-calibration', 'version': 1, 'adopted': bool(adopted),
                 'model': model, 'scoringConditions': conditions, 'calibration': block, 'protocol': PROTOCOL,
+                'modelIdentity': read_jsonl(Path(dataset)/'scores.jsonl')[0]['scoring']['modelIdentity'],
+                'dataIdentity': {name: file_sha256(path) for name, path in {
+                    'manifestSHA256': Path(dataset)/'manifest.jsonl', 'scoresSHA256': Path(dataset)/'scores.jsonl',
+                    'labelsSHA256': Path(labels_path)}.items()},
                 'split': {'seed': seed, 'devGroups': dev_groups, 'heldOutGroups': test_groups, 'cvValidationGroups': folds},
                 'selection': {'method': method, 'cvBrier': cv_scores},
                 'report': {'developmentImageItemLabels': len(dev), 'heldOutImageItemLabels': len(test),
@@ -274,6 +308,8 @@ def main(argv=None):
     scoring.add_argument('--url', default=s.DEFAULT_URL)
     scoring.add_argument('--think-mode', choices=['never', 'auto'], default='never')
     scoring.add_argument('--limit', type=int)
+    scoring.add_argument('--model-dir', type=Path, required=True)
+    scoring.add_argument('--runtime-dir', type=Path, required=True)
     fitting = commands.add_parser('fit', help='Choose on dev groups and report on untouched held-out groups')
     fitting.add_argument('--dataset', type=Path, required=True)
     fitting.add_argument('--labels', type=Path, required=True)
@@ -286,7 +322,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == 'score':
-            score_dataset(args.dataset, url=args.url, think_mode=args.think_mode, limit=args.limit)
+            score_dataset(args.dataset, url=args.url, think_mode=args.think_mode, limit=args.limit,
+                          model_dir=args.model_dir, runtime_dir=args.runtime_dir)
         elif args.command == 'fit':
             result = fit_dataset(args.dataset, args.labels, args.out, seed=args.seed, label_source=args.label_source)
             print(f"Selected {result['selection']['method']}; adopted={result['adopted']}. Wrote {args.out}.")

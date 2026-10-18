@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { clearScan, createIndexedDbScanStore, loadScan, saveScan, serializeScanStore, SCAN_DATABASE, type ScanStore } from './scan-storage';
 import type { ScanDocument, ScanPin } from './scan-model';
+import { verifiedSceneHash } from './scan-model';
+import { suggestionCatalogFixture, suggestionDocumentFixture } from './scan-suggestions.fixture';
 
 const concerns = new Set(['rug']);
 const pin: ScanPin = { id: 'pin-1', concernId: 'rug', position: [0, 1, 0], createdAt: '2026-10-17T14:00:00.000Z' };
@@ -17,6 +19,20 @@ class MemoryStore implements ScanStore {
 }
 
 describe('scan persistence contract through an injectable store', () => {
+  it('hashes cold restored scene bytes before publishing identified suggestions and preserves typed mismatches', async () => {
+    const store = new MemoryStore(), input = suggestionDocumentFixture(), ids = new Set(['rug-concern']);
+    const cold = structuredClone(input); store.value = cold;
+    expect(verifiedSceneHash(cold.asset.blob)).toBeUndefined();
+    const restored = await loadScan(store, ids, suggestionCatalogFixture);
+    expect(restored).toMatchObject({ ok: true, document: { suggestions: input.suggestions } });
+    expect(verifiedSceneHash(cold.asset.blob)).toBe(input.suggestions.data.scan.identity!.sceneSHA256);
+    const wrongScene = { ...cold, asset: { ...cold.asset, blob: new Blob([new Uint8Array(32).fill(1)]) } }; store.value = wrongScene;
+    expect(await loadScan(store, ids, suggestionCatalogFixture)).toMatchObject({ ok: false, code: 'SCENE_IDENTITY_MISMATCH', document: null });
+    expect(store.value).toBe(wrongScene); expect(store.writes).toBe(0);
+    delete input.suggestions.data.scan.identity; store.value = input;
+    expect(await loadScan(store, ids, suggestionCatalogFixture)).toMatchObject({ ok: false, code: 'SCENE_IDENTITY_MISSING', document: null });
+    expect(await saveScan(store, input, ids, suggestionCatalogFixture)).toMatchObject({ ok: false, code: 'SCENE_IDENTITY_MISSING' });
+  });
   it('keeps an absent database empty without a write', async () => {
     const store = new MemoryStore();
     expect(await loadScan(store, concerns)).toMatchObject({ ok: true, document: null });
@@ -108,7 +124,7 @@ function idbHarness() {
   let transaction: { oncomplete?: () => void; onabort?: () => void; onerror?: () => void; objectStore: () => unknown; abort: () => void };
   let operation: { onsuccess?: () => void; result?: unknown };
   const close = vi.fn(), createObjectStore = vi.fn();
-  const store = { get: vi.fn(() => { operation = {}; return operation; }), put: vi.fn(() => { operation = {}; return operation; }), clear: vi.fn(() => { operation = {}; return operation; }) };
+  const store = { get: vi.fn((key: string) => { if (key === '__reset_generation') { const generation = { result: 0, onsuccess: undefined as (() => void) | undefined }; queueMicrotask(() => generation.onsuccess?.()); return generation; } operation = {}; return operation; }), put: vi.fn(() => { operation = {}; return operation; }), clear: vi.fn(() => { operation = {}; return operation; }) };
   const database = {
     close, createObjectStore, onversionchange: undefined,
     objectStoreNames: { contains: () => false },

@@ -27,6 +27,7 @@ def make_scan(root):
     (root / 'work/dataset/images').mkdir(parents=True)
     sparse = root / 'work/dataset/sparse'
     sparse.mkdir()
+    (root / 'scene.splat').write_bytes(bytes(32 * 10))
     (root / 'scene.json').write_text(json.dumps({'splatCount': 10}))
     (root / 'work/alignment.json').write_text(json.dumps({
         'rotationWorldToAligned': np.eye(3).tolist(),
@@ -34,9 +35,9 @@ def make_scan(root):
     }))
     (sparse / 'cameras.txt').write_text('1 PINHOLE 90 90 90 90 45 45\n')
     (sparse / 'images.txt').write_text(
-        '1 1 0 0 0 0 0 0 1 000001.jpg\n45 45 1\n'
-        '2 1 0 0 0 0 0 0 1 000002.jpg\n45 45 1\n')
-    (sparse / 'points3D.txt').write_text('1 0 0 6 255 255 255 0 1 0 2 0\n')
+        '1 1 0 0 0 0 0 0 1 000001.jpg\n45 45 1 45.15 45 2 45 45.15 3\n'
+        '2 1 0 0 0 0 0 0 1 000002.jpg\n45 45 1 45.15 45 2 45 45.15 3\n')
+    (sparse / 'points3D.txt').write_text('1 0 0 6 255 255 255 0 1 0 2 0\n2 .01 0 6 255 255 255 0 1 1 2 1\n3 0 .01 6 255 255 255 0 1 2 2 2\n')
     for name in ['000001.jpg', '000002.jpg']:
         Image.new('RGB', (90, 90), (60, 80, 100)).save(root / 'work/dataset/images' / name)
 
@@ -155,22 +156,22 @@ class GeometryTests(unittest.TestCase):
                 s.select_keyframes(*args)
 
     def test_cell_center_ray_uses_median_camera_z_not_euclidean_distance(self):
-        f = self.frame([[0, 0, 4], [0, 0, 8], [0, 0, 100], [20, 20, 3], [0, 0, -1]])
+        f = self.frame([[0, 0, 8], [.01, 0, 8.1], [0, .01, 7.9], [20, 20, 3], [0, 0, -1]])
         np.testing.assert_allclose(s.locate_in_frame(f, 'middle-center', np.eye(3), np.zeros(3)), [0, 0, 8])
-        f = self.frame([[1, 1, 3], [2, 2, 6]])
+        f = self.frame([[1.5, 1.5, 4.5], [1.51, 1.5, 4.51], [1.5, 1.51, 4.49]])
         np.testing.assert_allclose(s.locate_in_frame(f, 'bottom-right', np.eye(3), np.zeros(3)), [1.5, 1.5, 4.5])
 
     def test_world_pose_and_alignment_order(self):
         rotation = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0.]])
         # world [2,3,10] projects to the camera center at z=6.
         translation = np.array([-10., -3., 8.])
-        f = self.frame([[2, 3, 10]], rotation, translation)
+        f = self.frame([[2, 3, 10], [2.01, 3, 10], [2, 3.01, 10]], rotation, translation)
         align = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1.]])
         np.testing.assert_allclose(s.locate_in_frame(f, 'middle-center', align, np.array([1, 1, 1.])), [-2, 1, 9])
 
     def test_nearest_ray_fallback_and_missing_depth(self):
         f = self.frame([[0, 0, 9]])
-        np.testing.assert_allclose(s.locate_in_frame(f, 'top-left', np.eye(3), np.zeros(3)), [-3, -3, 9])
+        self.assertIsNone(s.locate_in_frame(f, 'top-left', np.eye(3), np.zeros(3)))
         for points in [[], [[0, 0, -3]], [[float('nan'), 0, 2]]]:
             self.assertIsNone(s.locate_in_frame(self.frame(points), 'middle-center', np.eye(3), np.zeros(3)))
 
@@ -214,6 +215,13 @@ class PipelineTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         make_scan(self.root)
+        for name in ['model', 'runtime']:
+            (self.root/name).mkdir()
+            (self.root/name/'synthetic.bin').write_bytes(('synthetic '+name).encode())
+        # Fake server results have no evidence from the tracked real-model fit.
+        calibration_default = patch.object(s, 'DEFAULT_CALIBRATION', self.root / 'absent-default-fit.json')
+        calibration_default.start()
+        self.addCleanup(calibration_default.stop)
 
     def run_dry(self):
         return s.run_scan(self.root, keyframes=2, dry_run=True, progress=lambda line: None)
@@ -373,10 +381,11 @@ class PipelineTests(unittest.TestCase):
             result = s.run_scan(self.root, keyframes=1, progress=lambda line: None)
         self.assertTrue(all(not (item['status'] == 'suggested') and item['thumbnail'] is None for item in result['items']))
 
-    def calibration_document(self, adopted=True, model=s.DRY_MODEL, think_mode='auto'):
+    def calibration_document(self, adopted=True, model=s.DRY_MODEL, think_mode='never'):
         return {'format': 'fixlist-photo-calibration', 'version': 1, 'model': model,
                 'scoringConditions': {'thinkMode': think_mode, 'imageMaxEdge': 1024,
                                       'requestSignature': e.request_signature(s.load_questions(), think_mode)},
+                'modelIdentity': s.inference_identity(self.root/'model', self.root/'runtime'),
                 'adopted': adopted, 'calibration': {
             'method': 'platt', 'parameters': {key: {'a': .8, 'b': -.2} for key in s.ITEM_LINKS},
             'fittedAt': '2026-10-18T00:00:00.000Z', 'labelSource': 'Synthetic unit-test labels only',
@@ -423,11 +432,35 @@ class PipelineTests(unittest.TestCase):
         path.write_text(json.dumps(document))
         client, _ = self.mock_client(fixture_response)
         with patch.object(s, 'DecisionClient', return_value=client):
-            result = s.run_scan(self.root, keyframes=1, calibration=path, think_mode='never', progress=lambda _: None)
+            result = s.run_scan(self.root, keyframes=1, calibration=path, think_mode='never', progress=lambda _: None,
+                                model_dir=self.root/'model', runtime_dir=self.root/'runtime')
         self.assertEqual(result['calibration'], document['calibration'])
         for item in result['items']:
             self.assertAlmostEqual(item['perFrame'][0]['probability'], s.platt_probability(.8, .8, -.2))
         s.validate_output(result)
+
+    def test_same_model_name_does_not_transfer_calibration_to_changed_weight_bytes(self):
+        path = self.root / 'test-calibration.json'
+        document = self.calibration_document(model='fake-http-model')
+        path.write_text(json.dumps(document))
+        (self.root/'model/synthetic.bin').write_bytes(b'changed weights, same model name')
+        client, _ = self.mock_client(fixture_response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            with self.assertRaisesRegex(s.SuggestionError, 'weight/runtime content identity'):
+                s.run_scan(self.root, keyframes=1, calibration=path, model_dir=self.root/'model',
+                           runtime_dir=self.root/'runtime', progress=lambda _: None)
+        self.assertFalse((self.root/'suggestions.json').exists())
+
+    def test_legacy_calibration_without_model_bytes_is_not_applied_by_name(self):
+        path = self.root / 'test-calibration.json'
+        document = self.calibration_document(model='fake-http-model'); del document['modelIdentity']
+        path.write_text(json.dumps(document))
+        client, _ = self.mock_client(fixture_response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            with self.assertRaisesRegex(s.SuggestionError, 'weight/runtime content identity'):
+                s.run_scan(self.root, keyframes=1, calibration=path, model_dir=self.root/'model',
+                           runtime_dir=self.root/'runtime', progress=lambda _: None)
+        self.assertFalse((self.root/'suggestions.json').exists())
 
     def test_calibration_conditions_and_missing_provenance_fail_closed_even_with_force(self):
         for mutate in [lambda d: d.pop('model'), lambda d: d.pop('scoringConditions'),
@@ -482,7 +515,7 @@ class PipelineTests(unittest.TestCase):
         for item in result['items']:
             item['maxProbability'] = item.pop('score')
             item['suggested'] = item.pop('status') == 'suggested'
-            for key in ['relevantFrames', 'relevanceQuestion', 'limitation', 'viewpoint']:
+            for key in ['relevantFrames', 'relevanceQuestion', 'limitation', 'viewpoint', 'localization']:
                 del item[key]
             for row in item['perFrame']:
                 del row['rawProbability'], row['relevanceProbability']

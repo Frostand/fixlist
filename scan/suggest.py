@@ -26,11 +26,13 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 import numpy as np
 from PIL import Image
+from artifact_identity import scene_identity, inference_identity
 
 from suggestion_schema import (
     ITEM_LINKS, NOTICE, SuggestionError, bounded_text, exact, frame_name,
     integer, number, probability, require, validate_suggestions, validate_calibration,
     validate_calibration_document, platt_probability,
+    validate_model_identity,
 )
 
 
@@ -54,6 +56,23 @@ RELEVANCE_THRESHOLD = .5
 NONE_THRESHOLD = .2
 DRY_MODEL = 'DRY-RUN deterministic fake answers (no model invoked)'
 REVIEW_IMAGE_MAX_EDGE = 1024
+
+
+def calibration_recovery_commands(scan_name='SCAN_NAME'):
+    """Ready-to-run commands once the operator supplies the actual private inputs."""
+    return ('Prepare a fresh private dataset with images/, manifest.jsonl and labels.jsonl; '
+            'set FIXLIST_PINNED_DATASET, FIXLIST_MODEL_DIR, FIXLIST_RUNTIME_DIR and FIXLIST_LABEL_SOURCE. '
+            'Use the exact model and ordinary serving-code directories used by the local server. Then run:\n'
+            'scan/venv-python scan/evaluate_model.py score --dataset "$FIXLIST_PINNED_DATASET" '
+            '--url http://127.0.0.1:8090 --think-mode never --model-dir "$FIXLIST_MODEL_DIR" --runtime-dir "$FIXLIST_RUNTIME_DIR"\n'
+            'scan/venv-python scan/evaluate_model.py fit --dataset "$FIXLIST_PINNED_DATASET" '
+            '--labels "$FIXLIST_PINNED_DATASET/labels.jsonl" --out "$FIXLIST_PINNED_DATASET/calibration.pinned.json" '
+            '--seed 7 --label-source "$FIXLIST_LABEL_SOURCE"\n'
+            f'scan/venv-python scan/suggest.py {shlex.quote(scan_name)} --calibration "$FIXLIST_PINNED_DATASET/calibration.pinned.json" '
+            '--think-mode never --model-dir "$FIXLIST_MODEL_DIR" --runtime-dir "$FIXLIST_RUNTIME_DIR"\n'
+            'The fit must pass adoption; forcing never waives identity checks. For explicitly raw experiments, '
+            f'use: scan/venv-python scan/suggest.py {shlex.quote(scan_name)} --no-calibration '
+            '(experimental uncalibrated scores only).')
 
 
 def read_json(path, maximum=16_000_000):
@@ -157,7 +176,13 @@ def parse_response(payload, questions):
 
 def parse_grid_choice(answer):
     probability(answer.get('none_probability'), 'location.none_probability')
-    return None if answer['none_probability'] >= NONE_THRESHOLD else answer['choice']
+    choice = answer['choice']
+    ranked = sorted(answer['probabilities'].values(), reverse=True)
+    if (answer['none_probability'] >= NONE_THRESHOLD or choice is None or answer['confidence'] < .7
+            or answer['probabilities'][choice] < .6 or answer['probabilities'][choice] != ranked[0]
+            or ranked[0] - ranked[1] < .25):
+        return None
+    return choice
 
 
 class NoRedirects(HTTPRedirectHandler):
@@ -301,8 +326,11 @@ def load_scan(scan_dir, count):
     return scene['splatCount'], frames, rotation, center
 
 
-def locate_in_frame(frame, cell, alignment_rotation, sparse_center):
+def localize_in_frame(frame, cell, alignment_rotation, sparse_center):
+    """Conservative coarse placement; sparse depth is never object-localization proof."""
     require(cell in GRID, 'Unknown localization grid cell.')
+    evidence = {'method': 'grid-sparse-depth', 'status': 'photo-only', 'reason': 'insufficient-support',
+                'support': 0, 'maxAngleDegrees': None, 'relativeDepthSpread': None}
     row, col = GRID[cell]
     fx, fy, cx, cy = frame.intrinsics
     u, v = (col + .5) * frame.width / 3, (row + .5) * frame.height / 3
@@ -310,30 +338,42 @@ def locate_in_frame(frame, cell, alignment_rotation, sparse_center):
     points = frame.observed_world @ frame.rotation.T + frame.translation
     points = points[np.isfinite(points).all(axis=1) & (points[:, 2] > 1e-9)]
     if not len(points):
-        return None
+        return None, evidence
     px = fx * points[:, 0] / points[:, 2] + cx
     py = fy * points[:, 1] / points[:, 2] + cy
     in_image = (px >= 0) & (px < frame.width) & (py >= 0) & (py < frame.height)
     points, px, py = points[in_image], px[in_image], py[in_image]
     if not len(points):
-        return None
+        return None, evidence
     mask = ((px >= col * frame.width / 3) & (px < (col + 1) * frame.width / 3)
             & (py >= row * frame.height / 3) & (py < (row + 1) * frame.height / 3))
-    if np.any(mask):
-        depths = points[mask, 2]
-    else:
-        # Nearest observed directions to the ray; use at most five. This is an
-        # approximate depth proxy, especially across walls/foreground objects.
-        directions = points / np.linalg.norm(points, axis=1)[:, None]
-        angular_distance = 1 - directions @ (ray / np.linalg.norm(ray))
-        nearest = np.argsort(angular_distance, kind='stable')[:5]
-        depths = points[nearest, 2]
+    # Never borrow depth from a different grid cell. Even in-cell observations
+    # must be within five degrees of the chosen ray, with coherent depth.
+    directions = points / np.linalg.norm(points, axis=1)[:, None]
+    angles = np.degrees(np.arccos(np.clip(directions @ (ray / np.linalg.norm(ray)), -1, 1)))
+    selected = mask & (angles <= 5)
+    evidence['support'] = int(np.count_nonzero(selected))
+    if evidence['support'] < 3:
+        return None, evidence
+    evidence['maxAngleDegrees'] = float(np.max(angles[selected]))
+    depths = points[selected, 2]
     depth = float(np.median(depths))
+    spread = float((np.quantile(depths, .9) - np.quantile(depths, .1)) / depth)
+    evidence['relativeDepthSpread'] = spread
+    if spread > .25:
+        evidence['reason'] = 'ambiguous-depth'
+        return None, evidence
     world_point = frame.rotation.T @ (ray * depth - frame.translation)
     aligned = alignment_rotation @ (world_point - sparse_center)
     if not np.isfinite(aligned).all() or np.any(np.abs(aligned) > 1e8):
-        return None
-    return [round(float(value), 3) for value in aligned]
+        evidence['reason'] = 'invalid-geometry'
+        return None, evidence
+    evidence.update(status='approximate', reason='coarse-grid-depth-proxy')
+    return [round(float(value), 3) for value in aligned], evidence
+
+
+def locate_in_frame(frame, cell, alignment_rotation, sparse_center):
+    return localize_in_frame(frame, cell, alignment_rotation, sparse_center)[0]
 
 
 def camera_viewpoint(frame, alignment_rotation, sparse_center):
@@ -386,13 +426,14 @@ def aggregate_items(catalog, observations, threshold, thumbnailer, min_frames=1)
             'relevantFrames': len(relevant), 'framesAboveThreshold': count,
             'bestFrame': best['frame'] if best else None, 'position': position,
             'viewpoint': best.get('viewpoint') if position is not None else None,
+            'localization': best.get('localization') if best else None,
             'thumbnail': thumbnailer(best['frame']) if status == 'suggested' else None,
             'perFrame': [{key: row[key] for key in ['frame', 'rawProbability', 'probability', 'relevanceProbability']} for row in rows],
         })
     return items
 
 
-def load_calibration(path=None, *, disabled=False, force=False, catalog=None, think_mode='auto'):
+def load_calibration(path=None, *, disabled=False, force=False, catalog=None, think_mode='never'):
     """Return an applicable fit document, retaining provenance for response checks."""
     require(not (disabled and (path is not None or force)), '--no-calibration cannot be combined with calibration/force.')
     require(not force or path is not None, '--force-calibration requires --calibration FILE.')
@@ -408,7 +449,7 @@ def load_calibration(path=None, *, disabled=False, force=False, catalog=None, th
         return None
     require(document['scoringConditions'] == scoring_conditions(catalog, think_mode),
             'Calibration request conditions differ (think mode, image limit or request signature); '
-            'refit for this run or use --no-calibration. No output written.')
+            'refit for this run or use --no-calibration. No output written.\n' + calibration_recovery_commands())
     return document
 
 
@@ -436,8 +477,9 @@ def save_output(path, data, catalog):
 
 
 def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_threshold=.5,
-             think_mode='auto', timeout=120, retries=2, dry_run=False, min_frames=1,
-             calibration=None, no_calibration=False, force_calibration=False, progress=print):
+             think_mode='never', timeout=120, retries=2, dry_run=False, min_frames=1,
+             calibration=None, no_calibration=False, force_calibration=False, progress=print,
+             model_dir=None, runtime_dir=None):
     started = time.perf_counter()
     probability(threshold, 'suggestion threshold')
     probability(location_threshold, 'location threshold')
@@ -453,10 +495,13 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
                 and type(prior['timing'].get('dryRun')) in (int, bool) and prior['timing']['dryRun'] == 1,
                 'Dry run will not replace an existing real/unknown suggestions.json; use a separate private scan copy.')
     catalog = load_questions()
-    calibration_document = load_calibration(calibration, disabled=no_calibration, force=force_calibration,
+    # Fake responses have no calibration evidence. Explicit fits still undergo all checks.
+    calibration_document = load_calibration(calibration, disabled=no_calibration or (dry_run and calibration is None and not force_calibration), force=force_calibration,
                                             catalog=catalog, think_mode=think_mode)
     calibration_block = None if calibration_document is None else calibration_document['calibration']
+    identity = inference_identity(model_dir, runtime_dir)
     splat_count, frames, align_rotation, center = load_scan(scan_dir, keyframes)
+    capture_identity = scene_identity(scan_dir, frames, Path(__file__))
     integer(min_frames, 'minFrames', 1, len(frames))
     if dry_run:
         progress('DRY RUN: deterministic fake answers; no model or HTTP. Results are not observations.')
@@ -477,6 +522,10 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
             require(calibration_document['model'] == name,
                     f'Calibration model {calibration_document["model"]!r} differs from response model {name!r}; '
                     'use a matching calibration or --no-calibration; no output written.')
+            if not dry_run:
+                require(identity is not None and calibration_document.get('modelIdentity') == identity,
+                        'Calibration lacks matching weight/runtime content identity. Refit with pinned local directories; '
+                        'no calibration transfers by model name. No output written.\n' + calibration_recovery_commands(scan_dir.name))
         model_name = name
         return answers
 
@@ -502,9 +551,12 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
             location = ask(build_location_request(item, image_data(frame, REVIEW_IMAGE_MAX_EDGE), think_mode))['location']
             cell = parse_grid_choice(location)
             if cell is not None:
-                best['position'] = locate_in_frame(frame, cell, align_rotation, center)
+                best['position'], best['localization'] = localize_in_frame(frame, cell, align_rotation, center)
                 if best['position'] is not None:
                     best['viewpoint'] = camera_viewpoint(frame, align_rotation, center)
+            else:
+                best['localization'] = {'method': 'grid-sparse-depth', 'status': 'photo-only', 'reason': 'ambiguous-choice',
+                                        'support': 0, 'maxAngleDegrees': None, 'relativeDepthSpread': None}
     thumbnails = {}
 
     def thumbnail(name):
@@ -513,11 +565,17 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
         return thumbnails[name]
 
     items = aggregate_items(catalog, observations, threshold, thumbnail, min_frames)
+    require(scene_identity(scan_dir, frames, Path(__file__)) == capture_identity,
+            'Scene, frames or processing bytes changed during inference; no output written.')
+    require(identity == inference_identity(model_dir, runtime_dir),
+            'Model/runtime bytes changed during inference; no output written.')
     data = {
         'format': 'fixlist-scan-suggestions', 'version': 2,
         'createdAt': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
-        'model': {'name': model_name, 'backend': 'mlx', 'engine': 'startlux-decision', 'license': 'CC BY-NC 4.0 weights'},
-        'scan': {'splatCount': splat_count, 'framesAnalyzed': len(frames), 'keyframes': [frame.name for frame in frames]},
+        'model': {'name': model_name, 'backend': 'mlx', 'engine': 'startlux-decision', 'license': 'CC BY-NC 4.0 weights',
+                  'identity': identity},
+        'scan': {'splatCount': splat_count, 'framesAnalyzed': len(frames), 'keyframes': [frame.name for frame in frames],
+                 'identity': capture_identity},
         'thresholds': {'suggestion': threshold, 'location': location_threshold,
                        'relevance': RELEVANCE_THRESHOLD, 'noneProbability': NONE_THRESHOLD, 'minFrames': min_frames},
         'calibration': calibration_block, 'notice': NOTICE, 'items': items,
@@ -545,7 +603,9 @@ def main(argv=None):
     group.add_argument('--calibration', type=Path)
     group.add_argument('--no-calibration', action='store_true')
     parser.add_argument('--force-calibration', action='store_true')
-    parser.add_argument('--think-mode', choices=['auto', 'never'], default='auto')
+    parser.add_argument('--think-mode', choices=['auto', 'never'], default='never')
+    parser.add_argument('--model-dir', type=Path, help='Exact local weights directory used by the server (content hashed)')
+    parser.add_argument('--runtime-dir', type=Path, help='Exact local serving environment directory (content hashed)')
     parser.add_argument('--timeout', type=float, default=120, help='Seconds per HTTP attempt (default 120)')
     parser.add_argument('--retries', type=int, default=2, help='Retries per transient request failure (default 2)')
     parser.add_argument('--dry-run', action='store_true', help='Deterministic fake answers without HTTP or a model')
@@ -562,7 +622,8 @@ def main(argv=None):
         run_scan(scan_dir, url=args.url, keyframes=args.keyframes, threshold=args.threshold,
                  location_threshold=args.location_threshold, think_mode=args.think_mode,
                  timeout=args.timeout, retries=args.retries, dry_run=args.dry_run, min_frames=args.min_frames,
-                 calibration=args.calibration, no_calibration=args.no_calibration, force_calibration=args.force_calibration)
+                 calibration=args.calibration, no_calibration=args.no_calibration, force_calibration=args.force_calibration,
+                 model_dir=args.model_dir, runtime_dir=args.runtime_dir)
     except (SuggestionError, OSError, ValueError) as error:
         print(f'Error: {error}', file=sys.stderr)
         return 2

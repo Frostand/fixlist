@@ -31,19 +31,22 @@ export interface HouseholdPhoto {
   width: number;
   height: number;
 }
+export const MAX_HOUSEHOLD_PHOTOS = 64;
+export const MAX_REMOVED_PHOTO_HISTORY = 32;
 export const sharingFields = ['roomName', 'photos', 'scanLocation', 'visitTimes', 'areaLabel'] as const;
 export type SharingField = typeof sharingFields[number];
 export type RequestSharing = Record<SharingField, boolean>;
 export const noSharing = (): RequestSharing => ({ roomName: false, photos: false, scanLocation: false, visitTimes: false, areaLabel: false });
 export const REQUEST_HISTORY_LIMIT = 120;
 // After ordinary edits stop: five field revocations, release the assignment,
-// then close the draft. No events need to be discarded or compacted.
-export const MAX_REQUEST_HISTORY = REQUEST_HISTORY_LIMIT + sharingFields.length + 2;
+// then close the draft, with one additional completion decision. No events
+// need to be discarded or compacted.
+export const MAX_REQUEST_HISTORY = REQUEST_HISTORY_LIMIT + sharingFields.length + 3;
 export type HelpRequestStatus = 'draft' | 'invited' | 'declined' | 'accepted' | 'scheduled' | 'in_progress' | 'volunteer_reported_done' | 'resident_confirmed_done' | 'cancelled';
 export function remainingPrivacyEvents(request: { status: HelpRequestStatus; sharing: RequestSharing }): number {
   const closures = ['draft', 'declined'].includes(request.status) ? 1
     : ['cancelled', 'resident_confirmed_done'].includes(request.status) ? 0 : 2;
-  return sharingFields.filter((field) => request.sharing[field]).length + closures;
+  return sharingFields.filter((field) => request.sharing[field]).length + closures + (request.status === 'volunteer_reported_done' ? 1 : 0);
 }
 export interface RequestEvent extends Attribution { type: string; text: string | null }
 export interface LegacyRequestHistory {
@@ -55,6 +58,8 @@ export interface LegacyRequestHistory {
 export interface HelpRequest {
   id: string;
   referenceActionId: string;
+  episode: number;
+  professionalReferral: 'recorded' | 'contacted' | 'closed' | null;
   status: HelpRequestStatus;
   revision: number;
   volunteerId: string | null;

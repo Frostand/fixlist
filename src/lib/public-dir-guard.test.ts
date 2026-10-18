@@ -42,4 +42,17 @@ describe('build-time public/ guard', () => {
     const root = await fixture();
     await expect(assertSafePublicDir(root, join(root, 'missing-public'))).resolves.toBeUndefined();
   });
+
+  it.each(['private-captures', 'ios/App/App/public'])('rejects a public root linked to %s', async (target) => {
+    const root = await fixture();
+    await rm(join(root, 'public'), { recursive: true });
+    await symlink(join(root, target), join(root, 'public'));
+    await expect(assertSafePublicDir(root, join(root, 'public'))).rejects.toThrow(/Refusing to build/);
+  });
+
+  it('rejects a symlinked public ancestor', async () => {
+    const root = await fixture();
+    await symlink(join(root, 'ios/App/App'), join(root, 'assets'));
+    await expect(assertSafePublicDir(root, join(root, 'assets/public'))).rejects.toThrow(/Refusing to build/);
+  });
 });

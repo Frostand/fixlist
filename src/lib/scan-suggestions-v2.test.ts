@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import disclosureCases from '../../scan/tests/disclosure-parity.json';
 import { loadScan, type ScanStore } from './scan-storage';
 import { plattProbability, validateScanSuggestions, suggestionForChecklist, visibleSuggestionMarkers, suggestionId } from './scan-suggestions';
 import { suggestionCatalogFixture as catalog, suggestionDocumentFixture, suggestionsFixture, suggestionsV2Fixture as fixture, testJpeg } from './scan-suggestions.fixture';
@@ -136,3 +137,53 @@ describe('v1 consistency and read-only saved layer compatibility', () => {
     expect(input.suggestions.data.items[0]).not.toHaveProperty('viewpoint');
   });
 });
+
+describe('content identity and trusted disclosures', () => {
+  it('rejects another scene with an equal splat count before accepting any item', async () => {
+    const { prepareScanAsset } = await import('./scan-model');
+    const other = { ...asset, blob: new Blob([new Uint8Array(32).fill(1)]) };
+    expect((await prepareScanAsset(other)).ok).toBe(true);
+    expect(validateScanSuggestions(fixture(), catalog, other)).toMatchObject({ ok: false, code: 'SCENE_IDENTITY_MISMATCH' });
+  });
+  it('fails closed for legacy identity and for unverified restored Blob bytes', () => {
+    const legacy = fixture(); delete legacy.scan.identity;
+    expect(validate(legacy)).toMatchObject({ ok: false, code: 'SCENE_IDENTITY_MISSING' });
+    expect(validateScanSuggestions(fixture(), catalog, { ...asset, blob: new Blob([new Uint8Array(32)]) })).toMatchObject({ ok: false, code: 'SCENE_IDENTITY_UNVERIFIED' });
+  });
+  it('provides a typed scene guard for the parent-owned pin action boundary', async () => {
+    const { prepareScanAsset } = await import('./scan-model');
+    const { validateSuggestionScene } = await import('./scan-suggestions');
+    const input = suggestionDocumentFixture();
+    input.asset = { ...input.asset, blob: new Blob([new Uint8Array(32).fill(1)]) };
+    await prepareScanAsset(input.asset);
+    expect(validateSuggestionScene(input.suggestions.data, input.asset)).toMatchObject({ ok: false, code: 'SCENE_IDENTITY_MISMATCH' });
+    expect(input.pins).toHaveLength(0);
+  });
+  it('accepts a persisted blob only after hashing the actual hydrated bytes', async () => {
+    const { prepareScanAsset } = await import('./scan-model');
+    const restored = { ...asset, blob: new Blob([new Uint8Array(32)]) };
+    await prepareScanAsset(restored);
+    expect(validateScanSuggestions(fixture(), catalog, restored).ok).toBe(true);
+  });
+  it('rejects unsupported coordinate conventions and malformed frame provenance', () => {
+    const input = fixture();
+    expect(validate({ ...input, scan: { ...input.scan, identity: { ...input.scan.identity, coordinateSystem: 'z-up' } } }).ok).toBe(false);
+    expect(validate({ ...input, scan: { ...input.scan, identity: { ...input.scan.identity, frames: [{ frame: 'wrong.jpg', sha256: 'f'.repeat(64) }] } } }).ok).toBe(false);
+  });
+  it('preserves explicit uncertainty and rejects unsupported claimed placement', () => {
+    const input = fixture();
+    input.items[0]!.localization = { method: 'grid-sparse-depth', status: 'approximate', reason: 'coarse-grid-depth-proxy', support: 3, maxAngleDegrees: 1, relativeDepthSpread: 0.1 };
+    expect(validate(input).ok).toBe(true);
+    for (const change of [{ support: 1 }, { maxAngleDegrees: 15 }, { relativeDepthSpread: 0.8 }, { status: 'photo-only' }]) {
+      const bad = structuredClone(input); Object.assign(bad.items[0]!.localization!, change);
+      expect(validate(bad).ok).toBe(false);
+    }
+  });
+});
+
+for (const c of disclosureCases) {
+  it(`TS/Python disclosure parity: ${c.name}`, () => {
+    const input = fixture(); input.notice = c.notice; input.model.license = c.license;
+    expect(validate(input).ok).toBe(c.valid);
+  });
+}

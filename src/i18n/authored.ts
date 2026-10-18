@@ -1,6 +1,7 @@
 import { en, type MessageKey } from './en';
 import { es } from './es';
 import type { Translator } from './index';
+import type { ScanFailureCode } from '../lib/scan-storage';
 const translatedValues = new Set<string>(Object.values(es));
 const authoredKeys = new Map<string, MessageKey>(Object.entries(en).map(([key, value]) => [value, key as MessageKey]));
 const scanStorageFallbackKeys = new Map<string, MessageKey>([
@@ -47,4 +48,16 @@ export function scanMessage(t: Translator, message: string): string {
   if (message.includes('dropped')) return t('scan.storage.dropped');
   const localized = authored(t, message);
   return localized !== message || !message ? localized : t('scan.storage.failed');
+}
+
+const scanFailureKeys: Record<ScanFailureCode, MessageKey> = {
+  SCENE_IDENTITY_MISSING: 'scan.failure.sceneMissing', SCENE_IDENTITY_UNVERIFIED: 'scan.failure.sceneUnverified',
+  SCENE_IDENTITY_MISMATCH: 'scan.failure.sceneMismatch', SCAN_COMPLEXITY: 'scan.failure.complexity',
+  stale_revision: 'failure.stale_revision', permission_denied: 'failure.permission_denied', storage_capacity: 'failure.storage_capacity',
+  storage_unavailable: 'scan.failure.storageUnavailable', invalid_media: 'failure.invalid_media', cancelled: 'failure.cancelled',
+  processing_failure: 'failure.processing_failure', invalid_state: 'failure.invalid_state', recovery_required: 'failure.recovery_required',
+};
+/** Codes, rather than English library strings, select localized scan recovery instructions. */
+export function scanFailureMessage(t: Translator, failure: { code?: ScanFailureCode | undefined; message: string }): string {
+  return failure.code ? t(scanFailureKeys[failure.code]) : scanMessage(t, failure.message);
 }

@@ -100,7 +100,7 @@ describe('bounded request history preserves privacy and exit transitions', () =>
   it('rejects saved histories that would consume the remaining privacy reserve', () => {
     const state = fillHistory(sharedState());
     const request = state.requests[0]!;
-    const invalid = { ...state, requests: [{ ...request, history: [...request.history, request.history.at(-1)!], revision: request.revision + 1 }] };
+    const invalid = { ...state, requests: [{ ...request, history: [...request.history, request.history.at(-1)!, request.history.at(-1)!], revision: request.revision + 2 }] };
     expect(validateState(invalid, demoScenario)).toMatchObject({ ok: false, error: expect.stringContaining('privacy reserve') });
   });
 });

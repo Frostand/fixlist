@@ -1,6 +1,6 @@
 import type { DemoScenario, HumanConfirmation } from '../domain/types';
 import type { Attribution, HelpRequest, Person } from '../domain/roles';
-import { MAX_REQUEST_HISTORY, remainingPrivacyEvents, sharingFields } from '../domain/roles';
+import { MAX_HOUSEHOLD_PHOTOS, MAX_REMOVED_PHOTO_HISTORY, MAX_REQUEST_HISTORY, remainingPrivacyEvents, sharingFields } from '../domain/roles';
 import { attributionLabel, canConfirmConcern, createInitialState, isChecklistAnswer, isIsoTimestamp, requestIdForAction, validId, validText, type DemoState } from '../domain/workflow';
 import { demoPeople, LEGACY_ACTOR_ID, LEGACY_LABEL } from '../data/demo-people';
 
@@ -34,10 +34,11 @@ function one<T extends string>(v: unknown, values: readonly T[]): T { return typ
 function unique<T>(values: T[], key: (v: T) => string): T[] { if (new Set(values.map(key)).size !== values.length) reject('Duplicate saved ID.'); return values; }
 const attrKeys = ['actorId', 'at'];
 const personKeys = ['id', 'name', 'role', 'fictional', 'language', 'onboarding', 'checklistPosition', 'skills', 'availability', 'selfReportLabel', 'createdBy', 'updatedBy'];
-export function reconstructState(value: unknown, scenario: DemoScenario): DemoState {
+/** Schema 4 is accepted only by its explicit migration entry point. Validate all history before trimming. */
+export function reconstructState(value: unknown, scenario: DemoScenario, version: 4 | 5 = 5): DemoState {
   const initial = createInitialState(scenario);
-  const root = obj(value, Object.keys(initial));
-  if (root.schemaVersion !== 3 || root.scenarioId !== scenario.id) reject('Unsupported demo version or scenario.');
+  const root = obj(value, Object.keys(initial).filter((key) => version !== 4 || key !== 'removedPhotoHistoryTruncated'));
+  if (root.schemaVersion !== version || root.scenarioId !== scenario.id) reject('Unsupported demo version or scenario.');
   // IDs/roles first, before validating cross-record attribution. Fixture identities are immutable.
   const rawPeople = arr(root.people, 20).map((p) => obj(p, personKeys));
   const identities = unique(rawPeople.map((p) => ({ id: id(p.id), role: one(p.role, ['resident', 'family_helper', 'volunteer']) })), (p) => p.id);
@@ -88,20 +89,37 @@ export function reconstructState(value: unknown, scenario: DemoScenario): DemoSt
     if (personRole(d.personId) !== 'family_helper') reject('Only family helpers can hold grants.');
     return { personId: id(d.personId), scopes: unique(arr(d.scopes, 3).map((s) => one(s, ['checklist', 'confirm', 'requests'] as const)), (s) => s), updatedBy: attribution(d.updatedBy, ['resident']) };
   }), (d) => d.personId);
-  const photos = unique(arr(root.photos, 64).map((v) => {
+  const photos = unique(arr(root.photos, MAX_HOUSEHOLD_PHOTOS).map((v) => {
     const p = obj(v, ['id', 'checklistItemId', 'addedBy', 'addedAt', 'width', 'height']);
     if (!scenario.checklist.some((c) => c.id === p.checklistItemId) || !['resident', 'family_helper'].includes(personRole(p.addedBy) ?? '')) reject('Invalid photo owner or checklist item.');
     return { id: id(p.id), checklistItemId: id(p.checklistItemId), addedBy: id(p.addedBy), addedAt: iso(p.addedAt), width: int(p.width, 1, 1600), height: int(p.height, 1, 1600) };
   }), (p) => p.id);
-  const requestKeys = ['id', 'referenceActionId', 'status', 'revision', 'volunteerId', 'sharing', 'visitTimes', 'areaLabel', 'scanLocation', 'proposedTime', 'agreedTime', 'updates', 'reportedDone', 'confirmedDone', 'createdBy', 'updatedBy', 'history', 'legacyHistory', 'independentVerification'];
-  const requests = unique(arr(root.requests, scenario.referenceActions.length).map((v): HelpRequest => {
+  const episodeRaw = obj(root.actionEpisodes, scenario.referenceActions.map((a) => a.id));
+  const actionEpisodes = Object.fromEntries(Object.entries(episodeRaw).map(([k, v]) => [k, int(v, 0, 1000000)]));
+  const removedPhotos = unique(arr(root.removedPhotos, version === 4 ? 64 : MAX_REMOVED_PHOTO_HISTORY).map((v) => {
+    const p = obj(v, ['id', 'checklistItemId', 'addedBy', 'addedAt', 'width', 'height', 'removedBy']);
+    if (!scenario.checklist.some((c) => c.id === p.checklistItemId) || !['resident', 'family_helper'].includes(personRole(p.addedBy) ?? '')) reject('Invalid removed photo attribution.');
+    const removedBy = attribution(p.removedBy, ['resident', 'family_helper']);
+    if (removedBy.actorId !== household.residentId && removedBy.actorId !== p.addedBy) reject('Invalid photo removal authority.');
+    return { id: id(p.id), checklistItemId: id(p.checklistItemId), addedBy: id(p.addedBy), addedAt: iso(p.addedAt), width: int(p.width, 1, 1600), height: int(p.height, 1, 1600), removedBy };
+  }), (p) => p.id);
+  if ((version === 4 && photos.length + removedPhotos.length > 64) || photos.some((p) => removedPhotos.some((r) => p.id === r.id))) reject('Invalid photo attribution history.');
+  const removedPhotoHistoryTruncated = version === 4 ? removedPhotos.length > MAX_REMOVED_PHOTO_HISTORY : bool(root.removedPhotoHistoryTruncated);
+  const actionCounts = new Map<string, number>();
+  const requestKeys = ['id', 'referenceActionId', 'episode', 'professionalReferral', 'status', 'revision', 'volunteerId', 'sharing', 'visitTimes', 'areaLabel', 'scanLocation', 'proposedTime', 'agreedTime', 'updates', 'reportedDone', 'confirmedDone', 'createdBy', 'updatedBy', 'history', 'legacyHistory', 'independentVerification'];
+  const requests = unique(arr(root.requests, 64).map((v): HelpRequest => {
     const r = obj(v, requestKeys);
     const action = scenario.referenceActions.find((a) => a.id === r.referenceActionId);
-    if (!action || r.id !== requestIdForAction(action.id)) return reject('Unknown or mismatched request/action ID.');
+    if (!action) return reject('Unknown request/action ID.');
+    const ordinal = (actionCounts.get(action.id) ?? 0) + 1; actionCounts.set(action.id, ordinal);
+    if (r.id !== (ordinal === 1 ? requestIdForAction(action.id) : `${requestIdForAction(action.id)}-${ordinal}`)) reject('Unknown or mismatched request/action ID.');
+    const episode = int(r.episode, 1, actionEpisodes[action.id]!);
     const status = one(r.status, ['draft', 'invited', 'declined', 'accepted', 'scheduled', 'in_progress', 'volunteer_reported_done', 'resident_confirmed_done', 'cancelled']);
     const volunteerId = r.volunteerId === null ? null : id(r.volunteerId);
     const assigned = !['draft', 'declined', 'cancelled'].includes(status);
     if (assigned !== (volunteerId !== null) || volunteerId && personRole(volunteerId) !== 'volunteer' || assigned && (action.effort === 'professional' || action.helpRouting.kind !== 'family_review')) reject('Invalid volunteer assignment.');
+    const professionalReferral = r.professionalReferral === null ? null : one(r.professionalReferral, ['recorded', 'contacted', 'closed']);
+    if (professionalReferral && (action.effort !== 'professional' || !['draft', 'cancelled'].includes(status))) reject('Invalid professional referral.');
     const rawSharing = obj(r.sharing, sharingFields);
     const sharing = Object.fromEntries(sharingFields.map((k) => [k, bool(rawSharing[k])])) as HelpRequest['sharing'];
     function timed(v: unknown, role: Person['role']): (Attribution & { text: string }) | null {
@@ -137,7 +155,7 @@ export function reconstructState(value: unknown, scenario: DemoScenario): DemoSt
     }
     const createdBy = requestAttribution(r.createdBy);
     const updatedBy = r.updatedBy && typeof r.updatedBy === 'object' && Object.getOwnPropertyDescriptor(r.updatedBy, 'actorId')?.value === LEGACY_ACTOR_ID ? requestAttribution(r.updatedBy) : attribution(r.updatedBy);
-    const residentEvents = ['set_sharing', 'revoke_shared_field', 'invite_volunteer', 'agree_time', 'confirm_done', 'not_done_yet', 'cancel_invitation', 'cancel_request'];
+    const residentEvents = ['record_referral', 'contact_referral', 'close_referral', 'set_sharing', 'revoke_shared_field', 'invite_volunteer', 'agree_time', 'confirm_done', 'not_done_yet', 'cancel_invitation', 'cancel_request'];
     const volunteerEvents = ['accept_invitation', 'decline_invitation', 'propose_time', 'post_update', 'report_done', 'withdraw'];
     const history = arr(r.history, MAX_REQUEST_HISTORY).map((v) => {
       const h = obj(v, ['actorId', 'at', 'type', 'text']);
@@ -148,9 +166,32 @@ export function reconstructState(value: unknown, scenario: DemoScenario): DemoSt
     let stage = 'draft';
     let currentVolunteer: string | null = null;
     let hasProposal = false;
+    let referralStage: HelpRequest['professionalReferral'] = null;
+    let replayProposal: HelpRequest['proposedTime'] = null, replayAgreement: HelpRequest['agreedTime'] = null;
+    let replayUpdates: HelpRequest['updates'] = [];
+    let replayReported: Attribution | null = null, replayConfirmed: Attribution | null = null;
+    let previousTime = createdBy.at;
+
     for (const [index, event] of history.entries()) {
-      if (event.type === 'create_request') { if (index !== 0 || legacyHistory) reject('Creation can only be the first new-request event.'); continue; }
+      if (previousTime !== null && event.at < previousTime) reject('Request events run backwards in time.');
+      previousTime = event.at;
+      if (event.type === 'create_request') {
+        if (index !== 0 || legacyHistory || event.at !== createdBy.at || event.actorId !== createdBy.actorId) reject('Creation must match the first new-request event.');
+        continue;
+      }
+      const by = { actorId: event.actorId, at: event.at };
+      if (['propose_time', 'post_update'].includes(event.type) && !validText(event.text, 280)) reject('A work event needs its original text.');
+      if (event.type === 'propose_time') replayProposal = { ...by, text: event.text! };
+      if (event.type === 'agree_time') replayAgreement = { ...by, text: replayProposal?.text ?? '' };
+      if (event.type === 'post_update') replayUpdates = [...replayUpdates, { ...by, text: event.text! }];
+      if (event.type === 'report_done') replayReported = by;
+      if (event.type === 'confirm_done') replayConfirmed = by;
+      if (event.type === 'not_done_yet') { replayReported = null; replayConfirmed = null; }
+      if (['withdraw', 'cancel_invitation', 'decline_invitation', 'cancel_request'].includes(event.type)) {
+        replayProposal = null; replayAgreement = null; replayUpdates = []; replayReported = null; replayConfirmed = null;
+      }
       const permitted: Record<string, readonly string[]> = {
+        record_referral: ['draft'], contact_referral: ['draft'], close_referral: ['draft'],
         set_sharing: ['draft', 'declined', 'invited', 'accepted', 'scheduled', 'in_progress', 'volunteer_reported_done'],
         revoke_shared_field: ['draft', 'invited', 'declined', 'accepted', 'scheduled', 'in_progress', 'volunteer_reported_done', 'resident_confirmed_done', 'cancelled'],
         invite_volunteer: ['draft', 'declined'], accept_invitation: ['invited'], decline_invitation: ['invited'], propose_time: ['accepted'], agree_time: ['accepted'], post_update: ['scheduled', 'in_progress'], report_done: ['in_progress'], confirm_done: ['volunteer_reported_done'], not_done_yet: ['volunteer_reported_done'], withdraw: ['invited', 'accepted', 'scheduled', 'in_progress', 'volunteer_reported_done'], cancel_invitation: ['invited', 'accepted', 'scheduled', 'in_progress', 'volunteer_reported_done'], cancel_request: ['draft', 'invited', 'declined', 'accepted', 'scheduled', 'in_progress', 'volunteer_reported_done'],
@@ -158,6 +199,11 @@ export function reconstructState(value: unknown, scenario: DemoScenario): DemoSt
       if (!permitted[event.type]?.includes(stage)) reject('Illegal request transition in history.');
       if (volunteerEvents.includes(event.type) && event.actorId !== currentVolunteer) reject('History actor is not the invited volunteer.');
       if (event.type === 'invite_volunteer') { if (personRole(event.text) !== 'volunteer') reject('Unknown invitation target.'); currentVolunteer = event.text; stage = 'invited'; }
+      if (['record_referral', 'contact_referral', 'close_referral'].includes(event.type)) {
+        if (action.effort !== 'professional') reject('A nonprofessional action cannot record a professional referral.');
+        if (referralStage !== (event.type === 'record_referral' ? null : event.type === 'contact_referral' ? 'recorded' : 'contacted')) reject('Illegal professional referral transition.');
+        referralStage = event.type === 'record_referral' ? 'recorded' : event.type === 'contact_referral' ? 'contacted' : 'closed';
+      }
       if (event.type === 'accept_invitation') stage = 'accepted';
       if (event.type === 'propose_time') hasProposal = true;
       if (event.type === 'agree_time') { if (!hasProposal) reject('Agreement lacks a proposal.'); stage = 'scheduled'; }
@@ -167,18 +213,23 @@ export function reconstructState(value: unknown, scenario: DemoScenario): DemoSt
       if (event.type === 'not_done_yet') stage = 'in_progress';
       if (['withdraw', 'cancel_invitation', 'decline_invitation', 'cancel_request'].includes(event.type)) { currentVolunteer = null; hasProposal = false; stage = event.type === 'decline_invitation' ? 'declined' : event.type === 'cancel_request' ? 'cancelled' : 'draft'; }
     }
-    if (stage !== status || currentVolunteer !== volunteerId) reject('Request status or volunteer disagrees with history.');
+    // History is authoritative for proposals, progress and completion aggregates.
+    for (const [actual, replayed] of [[proposedTime, replayProposal], [agreedTime, replayAgreement], [updates, replayUpdates], [reportedDone, replayReported], [confirmedDone, replayConfirmed]]) {
+      if (JSON.stringify(actual) !== JSON.stringify(replayed)) reject('Request records disagree with their authoritative events.');
+    }
+    if (professionalReferral !== referralStage || stage !== status || currentVolunteer !== volunteerId) reject('Request status or volunteer disagrees with history.');
     // Even a loaded state must retain capacity for all remaining revocations
     // and exits; a full live request with shared fields is not valid state.
     if (history.length + remainingPrivacyEvents({ status, sharing }) > MAX_REQUEST_HISTORY) reject('Request history lacks its privacy reserve.');
     const revision = int(r.revision, 1, MAX_REQUEST_HISTORY + 1);
     if (revision !== history.length + (legacyHistory ? 1 : 0) || !legacyHistory && history[0]?.type !== 'create_request') reject('Request revision/history mismatch.');
     const last = history.at(-1);
+    if (!last && (updatedBy.actorId !== createdBy.actorId || updatedBy.at !== createdBy.at)) reject('An unchanged legacy request cannot have new attribution.');
     if (last && (last.actorId !== updatedBy.actorId || last.at !== updatedBy.at)) reject('Latest request attribution is inconsistent.');
     if (r.independentVerification !== 'not available in this demo') reject('Independent verification is unavailable.');
-    return { id: r.id as string, referenceActionId: action.id, status, revision, volunteerId, sharing, visitTimes: text(r.visitTimes, 280, true), areaLabel: text(r.areaLabel, 80, true), scanLocation: r.scanLocation === null ? null : id(r.scanLocation), proposedTime, agreedTime, updates, reportedDone, confirmedDone, createdBy, updatedBy, history, legacyHistory, independentVerification: 'not available in this demo' };
+    return { id: r.id as string, referenceActionId: action.id, episode, professionalReferral, status, revision, volunteerId, sharing, visitTimes: text(r.visitTimes, 280, true), areaLabel: text(r.areaLabel, 80, true), scanLocation: r.scanLocation === null ? null : id(r.scanLocation), proposedTime, agreedTime, updates, reportedDone, confirmedDone, createdBy, updatedBy, history, legacyHistory, independentVerification: 'not available in this demo' };
   }), (r) => r.id);
-  const state: DemoState = { schemaVersion: 3, scenarioId: scenario.id, checklistAnswers, checklistAttribution, confirmationAttribution, confirmations, profileId, profileAttribution, requests, people, household: { id: 'maple-house', residentId: household.residentId as string }, delegations, photos, activePersonId };
+  const state: DemoState = { schemaVersion: 5, actionEpisodes, removedPhotos: removedPhotos.slice(-MAX_REMOVED_PHOTO_HISTORY), removedPhotoHistoryTruncated, scenarioId: scenario.id, checklistAnswers, checklistAttribution, confirmationAttribution, confirmations, profileId, profileAttribution, requests, people, household: { id: 'maple-house', residentId: household.residentId as string }, delegations, photos, activePersonId };
   for (const concern of scenario.concerns) if (confirmations[concern.id]?.humanConfirmed && !canConfirmConcern(scenario, state, concern.id)) reject('Confirmed concern lacks its required yes answers.');
   return state;
 }

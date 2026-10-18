@@ -6,18 +6,19 @@ import { SparkRenderer, SplatFileType, SplatMesh } from '@sparkjsdev/spark';
 import { MAX_SPLATS, point3, scanExtension, type Point3, type ScanAsset, type ScanPin } from '../lib/scan-model';
 import { createPickIndex, isMarkerOccluded, pickAlongRay, type PickIndex } from '../lib/scan-pick';
 import { captureScanImage } from '../lib/scan-image';
-import { createScanTapTracker, scanPixelRatio } from '../lib/scan-device';
+import { createScanTapTracker, guardSparkDisposal, scanCameraKey, scanPixelRatio } from '../lib/scan-device';
 import { suggestionId, type ScanSuggestion } from '../lib/scan-suggestions';
 import type { ScanConcern } from './ScanPanel';
 
 interface Props {
   asset: ScanAsset; flipUpright: boolean; pins: readonly ScanPin[]; concerns: readonly ScanConcern[];
   suggestions: readonly ScanSuggestion[]; expectedSuggestionCount: number | null;
-  placing: boolean; focus: { position: Point3; viewpoint?: Point3 | null; sequence: number } | null;
+  placing: boolean; focus: { position: Point3; viewpoint?: Point3 | null; sequence: number; capture?: boolean } | null;
   onPlace: (position: Point3, image: string | null) => void; onReady: (count: number) => void; onError: (message: string) => void;
+  onCapture: (image: string | null) => void;
 }
 type CameraMove = 'left' | 'right' | 'up' | 'down' | 'in' | 'out';
-interface Runtime { reset(): void; orient(flip: boolean): void; focus(position: Point3, viewpoint?: Point3 | null): void; move(direction: CameraMove): void; hit(x: number, y: number): void; schedule(): void }
+interface Runtime { reset(): void; orient(flip: boolean): void; focus(position: Point3, viewpoint?: Point3 | null): void; capture(position: Point3): string | null; move(direction: CameraMove): void; hit(x: number, y: number): void; schedule(): void }
 const fileTypes = { splat: SplatFileType.SPLAT, ply: SplatFileType.PLY, spz: SplatFileType.SPZ, ksplat: SplatFileType.KSPLAT };
 
 /** This is the only app module importing Three/Spark; it is loaded by explicit user action. */
@@ -202,6 +203,16 @@ export default function ScanViewer(props: Props) {
       }
       return pickIndex;
     }
+    function capture(position: Point3): string | null {
+      if (!renderer || !mesh) return null;
+      renderer.render(scene, camera);
+      const point = mesh.localToWorld(new THREE.Vector3(...position)).project(camera);
+      if (point.z < -1 || point.z > 1 || Math.abs(point.x) > 1 || Math.abs(point.y) > 1) return null;
+      const origin = mesh.worldToLocal(camera.position.clone()).toArray();
+      const tolerance = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.max(canvas.clientHeight, 1) * 2;
+      if (isMarkerOccluded(ensurePickIndex(), origin, position, tolerance, extent, camera.near)) return null;
+      return captureScanImage(canvas, { x: (point.x + 1) / 2, y: (1 - point.y) / 2 });
+    }
     function hit(x: number, y: number) {
       if (!mesh || !latest.current.placing) return;
       raycaster.setFromCamera(pointer.set(x, y), camera);
@@ -220,16 +231,14 @@ export default function ScanViewer(props: Props) {
         setHitMessage('');
         // Render and copy in this same task; preserveDrawingBuffer is unnecessary.
         renderer?.render(scene, camera);
-        latest.current.onPlace(position, captureScanImage(canvas));
+        latest.current.onPlace(position, captureScanImage(canvas, { x: (x + 1) / 2, y: (1 - y) / 2 }));
       } catch {
         setHitMessage(t("legacy.scanviewer.8"));
       }
     }
     function keydown(event: KeyboardEvent) {
-      const moves: Record<string, CameraMove> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', '+': 'in', '=': 'in', '-': 'out', _: 'out' };
-      const direction = moves[event.key];
-      if (direction) { event.preventDefault(); move(direction); }
-      else if (event.key === t("nav.home")) { event.preventDefault(); reset(); }
+      const direction = scanCameraKey(event.key);
+      if (direction) { event.preventDefault(); if (direction === 'reset') reset(); else move(direction); }
     }
     function down(event: PointerEvent) {
       taps.down(event);
@@ -276,7 +285,8 @@ export default function ScanViewer(props: Props) {
         sourceBounds = mesh.getBoundingBox();
         if (!point3(sourceBounds.min.toArray()) || !point3(sourceBounds.max.toArray()) || sourceBounds.isEmpty()) throw new Error(t("legacy.scanviewer.15"));
         extent = Math.max(sourceBounds.getSize(new THREE.Vector3()).length(), 0.001);
-        spark = new SparkRenderer({ renderer, onDirty: schedule });
+        spark = new SparkRenderer({ renderer, onDirty: schedule, enableLod: false, enableDriveLod: false });
+        guardSparkDisposal(spark);
         scene.add(spark, mesh);
         controls = new OrbitControls(camera, canvas);
         controls.enableDamping = false;
@@ -295,7 +305,7 @@ export default function ScanViewer(props: Props) {
         observer = new ResizeObserver(resize);
         observer.observe(element);
         resize();
-        runtime.current = { reset, orient, focus, move, hit, schedule };
+        runtime.current = { reset, orient, focus, capture, move, hit, schedule };
         orient(latest.current.flipUpright);
         setLoaded(true);
         latest.current.onReady(mesh.numSplats);
@@ -319,7 +329,15 @@ export default function ScanViewer(props: Props) {
   }, [props.asset]);
 
   useEffect(() => { runtime.current?.orient(props.flipUpright); }, [props.flipUpright]);
-  useEffect(() => { if (props.focus) runtime.current?.focus(props.focus.position, props.focus.viewpoint); }, [props.focus]);
+  useEffect(() => {
+    if (!props.focus || !runtime.current) return;
+    runtime.current.focus(props.focus.position, props.focus.viewpoint);
+    if (props.focus.capture) {
+      let image: string | null = null;
+      try { image = runtime.current.capture(props.focus.position); } catch { /* A note can be saved without an image. */ }
+      latest.current.onCapture(image);
+    }
+  }, [props.focus]);
   useEffect(() => { runtime.current?.schedule(); }, [props.pins, props.concerns, props.suggestions]);
 
   return <div className="scan-viewer">

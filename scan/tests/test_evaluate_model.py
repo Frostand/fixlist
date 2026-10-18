@@ -152,6 +152,9 @@ class DatasetTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         (self.root / 'images').mkdir()
+        for name in ['model', 'runtime']:
+            (self.root/name).mkdir()
+            (self.root/name/'synthetic.bin').write_bytes(('synthetic '+name).encode())
         self.entries = [{'id': f'id{i}', 'file': f'{i}.jpg', 'group': f'scene{i // 2}',
                          'provenance': {'source': 'synthetic test', 'license': 'test only', 'nested': [i, None]}}
                         for i in range(3)]
@@ -170,7 +173,9 @@ class DatasetTests(unittest.TestCase):
                 if len(client.calls) == fail_at:
                     raise s.SuggestionError('simulated outage')
                 return response(request)
-        return Client()
+        result = Client()
+        result.model_dir, result.runtime_dir = self.root/'model', self.root/'runtime'
+        return result
 
     def test_resumable_scoring_uses_same_request_and_passes_provenance(self):
         client = self.fake_client()
@@ -271,12 +276,16 @@ class DatasetTests(unittest.TestCase):
         self.entries = [{'id': f'id{i}', 'file': 'unused.jpg', 'group': f'group{i // 8:02d}',
                          'source': 'synthetic fixture'} for i in range(80)]
         self.write_manifest()
+        Image.new('RGB', (4, 4)).save(self.root/'images/unused.jpg')
         scores, labels = [], []
         for i, entry in enumerate(self.entries):
             raw = [.05, .15, .3, .4, .6, .7, .85, .95][i % 8]
             req = s.build_review_request(s.load_questions(), 'unused', 'never')
             scores.append({**entry, 'scoring': {'model': 'fake-evaluation-model', 'requestSeconds': .1,
-                          'requestSignature': e.request_signature(s.load_questions(), 'never'), 'response': response(req, raw)}})
+                          'requestSignature': e.request_signature(s.load_questions(), 'never'), 'response': response(req, raw),
+                          'imageSHA256': e.file_sha256(self.root/'images/unused.jpg'),
+                          'requestImageSHA256': e.prepared_image(self.root/'images/unused.jpg', 'unused.jpg')[1],
+                          'modelIdentity': e.inference_identity(self.root/'model', self.root/'runtime')}})
             # Identical group-level distributions keep the fixture reproducible.
             truth = i % 8 in (1, 3, 5, 6, 7)
             labels.append({'id': entry['id'], **{key: {'relevant': True, 'condition': truth} for key in ids}})

@@ -6,7 +6,7 @@ import { useT } from '../i18n';
 import type { DemoScenario } from '../domain/types';
 import { computePlan, getRequestViews } from '../domain/workflow';
 import type { PrintSnapshot } from '../lib/print';
-import { actionTitle, requestStatusLabels } from './display';
+import { actionTitle, LocalTime, requestStatusLabels } from './display';
 import { ActionMetadata, CoverageSummary, ProfileFacts, ProgramDetails, RequestWorkContext } from './CatalogViews';
 
 export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; snapshot: PrintSnapshot }) {
@@ -17,7 +17,7 @@ export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; sn
     <article className="print-report" aria-labelledby="report-title">
       <header>
         <p className="eyebrow">{t("legacy.printreport.1")}</p><h2 id="report-title">{t("legacy.printreport.2")}</h2><p><strong>{authored(t, scenario.title)}</strong></p>
-        <p>{t("legacy.printreport.3")}<time dateTime={snapshot.generatedAt}>{snapshot.generatedAt}</time>{t("legacy.printreport.4")}</p><p>{authored(t, scenario.disclosure)}</p>
+        <p>{t("legacy.printreport.3")}<LocalTime iso={snapshot.generatedAt} />{t("legacy.printreport.4")}</p><p>{authored(t, scenario.disclosure)}</p>
         <p><strong>{t("legacy.printreport.5")}</strong>{t("legacy.printreport.6")}</p>
       </header>
       <section aria-labelledby="report-coverage-heading"><h3 id="report-coverage-heading">{t("legacy.printreport.7")}</h3><CoverageSummary scenario={scenario} state={snapshot.state} /><ul>{scenario.checklist.map((q) => <li key={q.id}><strong>{authored(t, q.prompt)}</strong>: {t(`check.${snapshot.state.checklistAnswers[q.id] ?? 'unknown'}`)}{snapshot.state.checklistAttribution[q.id] ? <p>{t('person.by', { name: personLabel(snapshot.state.people, snapshot.state.checklistAttribution[q.id]!.actorId, t) })}</p> : null}</li>)}</ul></section>
@@ -31,7 +31,7 @@ export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; sn
                 <ul>{item.evidence.map((evidence) => <li key={evidence.id}>{authored(t, evidence.observation)} <span className="source-note">{t("legacy.printreport.11")}{authored(t, evidence.source.label)} ({authored(t, evidence.source.status)}).</span></li>)}</ul>
                 <ul>{item.concernIds.map((id) => {
                   const confirmation = snapshot.state.confirmations[id];
-                  return confirmation?.humanConfirmed ? <li key={id}>{t("legacy.printreport.12")}{personLabel(snapshot.state.people, confirmation.actorId, t)}{t("legacy.printreport.13")}<time dateTime={confirmation.confirmedAt}>{confirmation.confirmedAt}</time>.</li> : null;
+                  return confirmation?.humanConfirmed ? <li key={id}>{t("legacy.printreport.12")}{personLabel(snapshot.state.people, confirmation.actorId, t)}{t("legacy.printreport.13")}<LocalTime iso={confirmation.confirmedAt} />.</li> : null;
                 })}</ul>
                 <p>{t('plan.next')}: {authored(t, item.referenceAction.nextStep)}</p><a href={item.referenceAction.guidance.url}>{t('plan.source')}</a><ActionMetadata action={item.referenceAction} roomNames={[...new Set(item.evidence.map((evidence) => scenario.rooms.find((room) => room.id === evidence.roomId)?.name ?? t("legacy.printreport.14")))]} />
               </article>

@@ -33,3 +33,12 @@ describe('iOS scan readiness without a browser', () => {
     tap.down(pointer({ timeStamp: 200 })); expect(tap.up(pointer({ timeStamp: 300 }))).toBe(true);
   });
 });
+
+import { scanCameraKey } from './scan-device';
+import { translate } from '../i18n';
+it.each(['en', 'es'] as const)('uses stable camera keys with %s interface labels', (language) => {
+  expect(translate(language, 'nav.home')).toBe(language === 'es' ? 'Inicio' : 'Home');
+  expect(scanCameraKey('Home')).toBe('reset');
+  expect(scanCameraKey('ArrowLeft')).toBe('left');
+  expect(scanCameraKey('Inicio')).toBeNull();
+});

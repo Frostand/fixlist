@@ -17,6 +17,7 @@ import time
 
 import numpy as np
 from PIL import Image, ImageOps
+from artifact_identity import file_sha256, tree_identity
 
 from scan_core import (ScanError, PIPELINE, bake_transform, build_metadata, check_registration,
                        decode_splat, encode_splat, estimate_scene_alignment, laplacian_variance,
@@ -49,10 +50,36 @@ def natural_key(path):
     return [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)',path.name)]
 
 
+def source_identity(config):
+    """Content pins, not path/mtime/model-name promises. Missing inputs are explicit."""
+    source = Path(config['input']) if 'input' in config else None
+    inputs = {}
+    if source is not None:
+        if source.is_dir():
+            for path in sorted(source.rglob('*')):
+                if path.suffix.lower() in IMAGE_SUFFIXES or path.name == 'transforms.json':
+                    if path.is_symlink():
+                        raise ScanError('Input identity refuses symlinked sources.')
+                    if path.is_file():
+                        inputs[str(path.relative_to(source))] = file_sha256(path)
+        else:
+            inputs['input'] = tree_identity(source)
+    tools = {key: tree_identity(Path(config[key])) for key in ['ffmpeg', 'ffprobe', 'brush'] if key in config}
+    code = {name: file_sha256(Path(__file__).with_name(name)) for name in
+            ['reconstruct.py', 'scan_core.py', 'learned_match.py', 'artifact_identity.py', 'requirements.txt']}
+    weights = {}
+    if config.get('features') in ('auto', 'aliked'):
+        cache = Path(os.environ.get('TORCH_HOME', str(Path.home()/'.cache/torch')))/'hub/checkpoints'
+        for name in ['aliked-n16.pth', 'aliked_lightglue_v0-1_arxiv.pth']:
+            weights[name] = tree_identity(cache/name)
+    return {'version': 1, 'inputs': inputs, 'tools': tools, 'code': code, 'weights': weights}
+
+
 class Run:
     def __init__(self, output, config, resume):
         self.output = output
         self.path = output/'run.json'
+        content = source_identity(config)
         if resume:
             if not self.path.is_file():
                 raise ScanError('--resume needs an existing run.json; otherwise choose a new --name.')
@@ -70,12 +97,49 @@ class Run:
                     comparison['max_frames']=150
             if old != comparison:
                 raise ScanError('Resume settings/input differ from the saved run. Use the same options or a new --name.')
+            if comparison != config:
+                content = source_identity(comparison)
+            if self.report.get('sourceIdentity') != content:
+                raise ScanError('Resume input/tool/code/model bytes changed or old run lacks content identity. Preserve it and use a new --name.')
+            self.verify_artifacts()
         else:
             self.report = {'pipeline':PIPELINE,'createdAt':now(),'status':'running','config':config,
-                           'stages':{},'metrics':{},'attempts':[]}
+                           'stages':{},'metrics':{},'attempts':[], 'sourceIdentity': content}
         self.report['status']='running'
         self.report['attempts'].append({'startedAt':now()})
         self.flush()
+
+    def artifact_snapshot(self):
+        result = {}
+        for directory in ['work']:
+            base = self.output/directory
+            if not base.exists():
+                continue
+            for path in sorted(base.rglob('*')):
+                relative = path.relative_to(self.output)
+                if any(part == 'cache' or part.startswith('training-attempt-') for part in relative.parts):
+                    continue
+                # Failed training output is never reusable; retry_training archives it.
+                if relative.parts[:2] == ('work', 'training') and self.report['stages'].get('training', {}).get('status') in {'failed', 'running'}:
+                    continue
+                if path.is_symlink():
+                    raise ScanError('Resume artifacts contain a symlink; use a new --name.')
+                if path.is_file():
+                    result[str(relative)] = file_sha256(path)
+        for name in ['scene.splat', 'scene.json']:
+            path = self.output/name
+            if path.exists():
+                result[name] = tree_identity(path)
+        return result
+
+    def verify_artifacts(self):
+        saved = self.report.get('artifactIdentity')
+        if saved is None:
+            if any(entry.get('status') == 'complete' for entry in self.report['stages'].values()):
+                raise ScanError('Completed stages lack content identity. Preserve this run and use a new --name.')
+            return
+        if saved != self.artifact_snapshot():
+            raise ScanError('Completed artifact bytes changed/missing; stale stages cannot resume. Preserve this run and use a new --name.')
 
     def flush(self):
         save_json(self.path,self.report)
@@ -122,6 +186,7 @@ class Run:
         try:
             fn()
             entry['status']='complete'
+            self.report['artifactIdentity'] = self.artifact_snapshot()
         except BaseException as e:
             entry['status']='failed'
             entry['error']=str(e)
@@ -329,6 +394,7 @@ def estimate_poses(args,run):
     total=run.report['metrics']['frames']['inputFrames']
     chosen=work/'sparse'
     if chosen.is_dir() and 'poses' in run.report['metrics']:
+        run.verify_artifacts()
         check_registration(run.report['metrics']['poses']['registeredFrames'],total)
         return pc.Reconstruction(chosen)
     options=mapping_options(pc,args)
@@ -611,7 +677,7 @@ def main(argv=None):
         output.mkdir(parents=True,exist_ok=args.resume)
         (output/'work').mkdir(exist_ok=True)
         config={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items() if k not in ['resume','stop_after','retry_training','name']}
-        config.update({'ffmpeg':ffmpeg,'brush':brush,'pycolmap':pycolmap.__version__})
+        config.update({'ffmpeg':ffmpeg,'ffprobe':ffprobe,'brush':brush,'pycolmap':pycolmap.__version__})
         run=Run(output,config,args.resume)
         if args.retry_training:
             run.retry_training()

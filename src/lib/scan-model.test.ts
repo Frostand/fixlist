@@ -107,6 +107,7 @@ describe('scan file and persisted-document validation', () => {
   it('rejects empty, over-limit and partial-record files without reading their binary', () => {
     const oversized = new Blob([new Uint8Array(32)]);
     Object.defineProperty(oversized, 'size', { value: MAX_SCAN_BYTES + 1 });
+    expect(validateScanAsset({ ...scanDocument().asset, blob: oversized, metadata: null })).toMatchObject({ ok: false, code: 'SCAN_COMPLEXITY' });
     for (const blob of [new Blob(), oversized, new Blob([new Uint8Array(33)])]) {
       expect(validateScanAsset({ ...scanDocument().asset, blob, metadata: null }).ok).toBe(false);
     }
@@ -140,5 +141,28 @@ describe('scan file and persisted-document validation', () => {
     Object.defineProperty(broken, 'text', { value: async () => { throw new Error('Disk unavailable'); } });
     expect(await importScanFiles([new File(['x'], 'room.ply'), broken])).toMatchObject({ ok: false, error: expect.stringContaining('could not be read') });
     expect(await importScanFiles([new File(['x'], 'room.ply'), new File(['{oops'], 'scene.json')])).toMatchObject({ ok: false, error: expect.stringContaining('not valid JSON') });
+  });
+});
+
+describe('decoded complexity preflight before Spark allocation', () => {
+  it('rejects oversized raw-record counts before reading bytes', async () => {
+    const { preflightScanComplexity, MAX_SPLATS } = await import('./scan-model');
+    const blob = new Blob([new Uint8Array(32)]);
+    Object.defineProperty(blob, 'size', { value: 32 * (MAX_SPLATS + 1) });
+    Object.defineProperty(blob, 'arrayBuffer', { value: () => { throw new Error('must not allocate'); } });
+    expect(validateScanAsset({ name: 'scene.splat', blob, metadata: null, kind: 'imported' })).toMatchObject({ ok: false, code: 'SCAN_COMPLEXITY' });
+    expect(await preflightScanComplexity({ name: 'scene.splat', blob, metadata: null, kind: 'imported' })).toMatchObject({ ok: false, code: 'SCAN_COMPLEXITY' });
+  });
+  it('checks the bounded PLY header and rejects decompression without a bound', async () => {
+    const { preflightScanComplexity, MAX_SPLATS } = await import('./scan-model');
+    for (const count of [0, MAX_SPLATS + 1]) {
+      const blob = new Blob([`ply\nformat binary_little_endian 1.0\nelement vertex ${count}\nend_header\n`]);
+      expect((await preflightScanComplexity({ name: 'scene.ply', blob, metadata: null, kind: 'imported' })).ok).toBe(false);
+    }
+    const blob = new Blob(['ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\nend_header\n']);
+    expect(await preflightScanComplexity({ name: 'scene.ply', blob, metadata: null, kind: 'imported' })).toEqual({ ok: true, value: 3 });
+    for (const extension of ['spz', 'ksplat']) {
+      expect(await preflightScanComplexity({ name: `scene.${extension}`, blob: new Blob([new Uint8Array(32)]), metadata: null, kind: 'imported' })).toMatchObject({ ok: false, code: 'SCAN_COMPLEXITY' });
+    }
   });
 });

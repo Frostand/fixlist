@@ -119,6 +119,8 @@ def validate_calibration_document(document, catalog):
             'Unsupported calibration file; refit with scoring provenance or use --no-calibration.')
     require(type(document.get('adopted')) is bool, 'Calibration file requires adopted: boolean.')
     bounded_text(document.get('model'), 'calibration model', 200)
+    if 'modelIdentity' in document:
+        validate_model_identity(document['modelIdentity'])
     conditions = document.get('scoringConditions')
     exact(conditions, ['thinkMode', 'imageMaxEdge', 'requestSignature'], 'calibration scoringConditions')
     require(conditions['thinkMode'] in ('auto', 'never'), 'Invalid calibration think mode.')
@@ -140,12 +142,14 @@ def validate_suggestions(data, catalog):
     require(data['notice'] == NOTICE, 'Required human-confirmation notice is missing.')
     utc_timestamp(data['createdAt'], 'createdAt', milliseconds=True)
     model = data['model']
-    exact(model, ['name', 'backend', 'engine', 'license'], 'model')
+    exact(model, ['name', 'backend', 'engine', 'license'] + (['identity'] if 'identity' in model else []), 'model')
     bounded_text(model['name'], 'model name', 200)
     require(model['backend'] == 'mlx' and model['engine'] == 'startlux-decision'
             and model['license'] == 'CC BY-NC 4.0 weights', 'Invalid model provenance.')
+    if model.get('identity') is not None:
+        validate_model_identity(model['identity'])
     scan = data['scan']
-    exact(scan, ['splatCount', 'framesAnalyzed', 'keyframes'], 'scan')
+    exact(scan, ['splatCount', 'framesAnalyzed', 'keyframes'] + (['identity'] if 'identity' in scan else []), 'scan')
     integer(scan['splatCount'], 'splatCount', 1, 10_000_000)
     integer(scan['framesAnalyzed'], 'framesAnalyzed', 1, 200)
     require(type(scan['keyframes']) is list and len(scan['keyframes']) == scan['framesAnalyzed'],
@@ -153,6 +157,8 @@ def validate_suggestions(data, catalog):
     for name in scan['keyframes']:
         frame_name(name)
     require(len(set(scan['keyframes'])) == len(scan['keyframes']), 'Duplicate keyframes.')
+    if 'identity' in scan:
+        validate_scene_identity(scan['identity'], scan['keyframes'])
     thresholds = data['thresholds']
     exact(thresholds, ['suggestion', 'location', 'relevance', 'noneProbability']
           + (['minFrames'] if version == 2 else []), 'thresholds')
@@ -173,7 +179,8 @@ def validate_suggestions(data, catalog):
         common = ['checklistItemId', 'concernId', 'question', 'meanProbability', 'framesAboveThreshold',
                   'bestFrame', 'position', 'viewpoint', 'thumbnail', 'perFrame']
         exact(item, common + (['maxProbability', 'suggested'] if version == 1 else
-                             ['relevanceQuestion', 'limitation', 'status', 'score', 'relevantFrames']), 'item')
+                             ['relevanceQuestion', 'limitation', 'status', 'score', 'relevantFrames'])
+              + (['localization'] if version == 2 and 'localization' in item else []), 'item')
         for key in ['checklistItemId', 'concernId', 'question'] + ([] if version == 1 else ['relevanceQuestion', 'limitation']):
             require(item[key] == question[key], f'Item does not match the trusted question catalog: {key}.')
         probability(item['meanProbability'], 'meanProbability')
@@ -218,6 +225,8 @@ def validate_suggestions(data, catalog):
             require(item['status'] == status, 'Status is inconsistent.')
             suggested = status == 'suggested'
         position = item['position']
+        if version == 2 and item.get('localization') is not None:
+            validate_localization(item['localization'], position)
         if position is not None:
             require(best is not None and score >= thresholds['location'], 'Position below localization threshold.')
         for key in ['position', 'viewpoint']:
@@ -247,3 +256,48 @@ def validate_suggestions(data, catalog):
         require(not model['name'].startswith('DRY-RUN ') and timing['attempts'] >= timing['requests']
                 and timing['retries'] == timing['attempts'] - timing['requests'], 'Invalid real-request provenance.')
     return data
+
+
+def validate_scene_identity(identity, keyframes):
+    exact(identity, ['version', 'sceneSHA256', 'coordinateSystem', 'units', 'frames', 'processing'], 'scene identity')
+    require(type(identity['version']) is int and identity['version'] == 1
+            and identity['coordinateSystem'] == 'y-up-right-handed' and identity['units'] == 'arbitrary',
+            'Unsupported scene identity coordinates/version.')
+    def digest(value):
+        return type(value) is str and re.fullmatch('[0-9a-f]{64}', value)
+    require(digest(identity['sceneSHA256']), 'Invalid scene hash.')
+    frames = identity['frames']
+    require(type(frames) is list and len(frames) in (0, len(keyframes)), 'Invalid source frame identities.')
+    for row, frame in zip(frames, keyframes):
+        exact(row, ['frame', 'sha256'], 'source frame identity')
+        require(row['frame'] == frame and digest(row['sha256']), 'Invalid source frame hash/order.')
+    processing = identity['processing']
+    exact(processing, ['producer', 'producerSHA256', 'alignmentSHA256', 'reconstructionSHA256'], 'processing provenance')
+    bounded_text(processing['producer'], 'processing producer', 200)
+    for key in ['producerSHA256', 'alignmentSHA256', 'reconstructionSHA256']:
+        require(processing[key] is None or digest(processing[key]), 'Invalid processing hash.')
+
+
+def validate_localization(value, position):
+    exact(value, ['method', 'status', 'reason', 'support', 'maxAngleDegrees', 'relativeDepthSpread'], 'localization')
+    require(value['method'] == 'grid-sparse-depth' and value['status'] in ('photo-only', 'approximate'), 'Invalid localization method/status.')
+    require(value['reason'] in ('insufficient-support', 'ambiguous-depth', 'invalid-geometry', 'coarse-grid-depth-proxy', 'ambiguous-choice'), 'Invalid localization reason.')
+    integer(value['support'], 'localization support', 0)
+    for key in ['maxAngleDegrees', 'relativeDepthSpread']:
+        if value[key] is not None:
+            number(value[key], key, 0)
+    if value['status'] == 'approximate':
+        require(position is not None and value['reason'] == 'coarse-grid-depth-proxy' and value['support'] >= 3
+                and type(value['maxAngleDegrees']) in (int, float) and value['maxAngleDegrees'] <= 5
+                and type(value['relativeDepthSpread']) in (int, float) and value['relativeDepthSpread'] <= .25,
+                'Unsupported approximate placement.')
+    else:
+        require(position is None, 'Photo-only localization cannot carry a position.')
+
+
+def validate_model_identity(value):
+    exact(value, ['version', 'weightsSHA256', 'runtimeSHA256'], 'model identity')
+    require(type(value['version']) is int and value['version'] == 1, 'Unsupported model identity.')
+    for key in ['weightsSHA256', 'runtimeSHA256']:
+        require(type(value[key]) is str and re.fullmatch('[0-9a-f]{64}', value[key]), 'Invalid model/runtime hash.')
+    return value
