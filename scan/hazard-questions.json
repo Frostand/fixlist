@@ -21,7 +21,7 @@
     {
       "checklistItemId": "stair-clutter-check",
       "concernId": "stair-clutter-concern",
-      "originalQuestion": "Do objects obstruct the stairs?",
+      "originalQuestion": "Do objects obstruct the sample stairs?",
       "question": "Are loose objects visibly occupying a stair tread or the walking area of a stair landing in this photo?",
       "relevanceQuestion": "Are stairs or a stair landing visible in this photo?",
       "limitation": "This covers visible steps only, not the entire staircase."
@@ -29,7 +29,7 @@
     {
       "checklistItemId": "handrail-check",
       "concernId": "handrail-concern",
-      "originalQuestion": "Is the stair handrail loose?",
+      "originalQuestion": "Is the sample stair handrail loose?",
       "question": "Does a visible stair handrail have an obvious break, detached bracket, or visibly separated wall or floor attachment in this photo?",
       "relevanceQuestion": "Is a stair handrail and at least one of its attachment points visible in this photo?",
       "limitation": "Visible damage is a proxy. A single photo cannot test looseness or load capacity."
@@ -37,7 +37,7 @@
     {
       "checklistItemId": "stair-lighting-check",
       "concernId": "stair-lighting-concern",
-      "originalQuestion": "Is a light or accessible switch missing for the stairs?",
+      "originalQuestion": "Is a light or accessible switch missing for the sample stairs?",
       "question": "Are visible stair treads or a stair landing so dimly lit in this photo that their edges are difficult to distinguish?",
       "relevanceQuestion": "Are stairs or a stair landing visible in this photo?",
       "limitation": "Exposure affects apparent brightness. A photo cannot establish missing lighting, switch accessibility, or normal lighting conditions."
@@ -45,7 +45,7 @@
     {
       "checklistItemId": "night-lighting-check",
       "concernId": "night-lighting-concern",
-      "originalQuestion": "Is the route from bed to bathroom dark?",
+      "originalQuestion": "Is the sample route from bed to bathroom dark?",
       "question": "Is a visible walking path beside a bed or through a bedroom doorway so dimly lit in this photo that floor obstacles would be difficult to see?",
       "relevanceQuestion": "Is a bed with an adjoining floor walking path, or a bedroom doorway and its walking path, visible in this photo?",
       "limitation": "A single photo cannot establish a bed-to-bathroom route or its nighttime lighting."
@@ -53,7 +53,7 @@
     {
       "checklistItemId": "shower-surface-check",
       "concernId": "shower-surface-concern",
-      "originalQuestion": "Is the shower surface slippery?",
+      "originalQuestion": "Is the sample shower surface described as slippery?",
       "question": "Is pooled water, a visibly wet glossy patch, or a loose bunched mat visible on a bathtub or shower floor in this photo?",
       "relevanceQuestion": "Is the floor or standing surface of a bathtub or shower visible in this photo?",
       "limitation": "Visible wetness or a loose mat is a proxy. A photo cannot measure friction or determine slipperiness."
@@ -61,7 +61,7 @@
     {
       "checklistItemId": "bathroom-support-check",
       "concernId": "bathroom-support-concern",
-      "originalQuestion": "Is support missing where needed near the tub or toilet?",
+      "originalQuestion": "Is support reported as missing where needed near the sample tub or toilet?",
       "question": "Is a bathtub, shower, or toilet and its adjoining wall visible in this photo with no grab bar visible beside that fixture?",
       "relevanceQuestion": "Is a bathtub, shower, or toilet together with its adjoining wall visible in this photo?",
       "limitation": "An out-of-frame bar may exist. A photo cannot determine a person's support needs or whether a bar is properly installed."

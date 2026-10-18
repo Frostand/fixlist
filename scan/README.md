@@ -21,6 +21,16 @@ scan/venv-python scan/reconstruct.py /path/to/ordered-photos \
 
 Photo directories are read nonrecursively in natural filename order (`frame2` before `frame10`). Use one fixed camera/lens and consistent image dimensions. JPEG, PNG, TIFF, WebP and BMP are supported; convert HEIC to JPEG locally first. Video autorotation and image EXIF orientation are applied before pose estimation. Input URLs are not accepted.
 
+## Local photo review and evaluation
+
+[`SUGGESTIONS.md`](SUGGESTIONS.md) documents the local photo-review step, current
+`suggestions.json` v2 contract, optional adopted calibration, and the grouped
+held-out evaluation protocol. `scan/evaluate_model.py` provides `score`, `report`
+and `fit` commands using the same local review requests; it does not fine-tune
+a model or start a server. Raw model scores remain uncalibrated unless the
+output has a non-null calibration block. Existing real scans are preserved by
+the synthetic test suite.
+
 ## Prerequisites and exact setup
 
 Parent-supplied hardware: Apple M5 Pro, 48 GB unified memory. macOS 26.5.2 was verified; this worker's CPU-identification `sysctl` query was denied. No CUDA and no COLMAP CLI. COLMAP pose estimation is CPU-only. The learned worker selects MPS when available, otherwise CPU (observed here). Brush needs Metal access in the process running it. Internet is needed only to acquire tools/test data initially; reconstruction has no download step.

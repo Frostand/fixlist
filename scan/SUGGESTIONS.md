@@ -7,10 +7,12 @@ separately confirms a concern. This script does not change app state, answer or
 confirm anything, create plan items, or certify a home as safe. It is not a
 complete assessment or a validated hazard detector.
 
-Probabilities are the model's estimates for a question about a single photo.
-They are **not calibrated against labeled FixList photos**, safety probabilities,
-or measured risks. Nearby frames are correlated; taking a maximum across many
-frames can increase false suggestions. Low probabilities and absent suggestions
+With `calibration: null`, the exported numbers are **experimental model scores**,
+not calibrated probabilities, safety probabilities, or measured risks. A non-null
+calibration block identifies a fitted mapping and its labeled-photo evidence; it
+still does not establish performance in real homes. Nearby frames are correlated;
+taking a maximum across many frames can increase false suggestions. Low scores
+and absent suggestions
 do not establish that a fixture is absent or an area is safe. Neither the
 thresholds nor the question wording have received physical or family validation.
 
@@ -30,8 +32,8 @@ but asks narrower visible questions and records the limits:
 | Bathroom support | Fixture/adjoining wall with no visible grab bar | Out-of-frame bars, installation and individual needs |
 
 Each item has its own relevance question so the model can answer low when the
-needed fixture or scene is outside the photo. Relevance gates suggestions using
-the **same best frame**, rather than a different frame containing the fixture.
+needed fixture or scene is outside the photo. Only frames meeting the relevance threshold can contribute to the suggestion
+count or become the best frame. A high score on an irrelevant frame is excluded.
 
 ## Setup and commands
 
@@ -42,7 +44,9 @@ torch**. The MLX model runs in a separate server process using the existing
 decision environment and already downloaded model folder:
 
 ```sh
-/Users/al1234/.local/share/fixlist-scan/decide-venv/bin/startlux-decide serve --model /Users/al1234/.local/share/fixlist-scan/models/StartLux-Decision-v1.1-9B-AutoThink-MLX-4bit --backend mlx --port 8090
+"${FIXLIST_DECIDE_BIN:-$HOME/.local/share/fixlist-scan/decide-venv/bin/startlux-decide}" serve \
+  --model "${FIXLIST_MODEL_DIR:-$HOME/.local/share/fixlist-scan/models/StartLux-Decision-v1.1-9B-AutoThink-MLX-4bit}" \
+  --backend mlx --port 8090
 ```
 
 In a second terminal:
@@ -57,17 +61,21 @@ Example with explicit controls:
 scan/venv-python scan/suggest.py playroom-video-150 --url http://127.0.0.1:8090 --keyframes 32 --threshold 0.6 --location-threshold 0.5 --think-mode never --timeout 120 --retries 2
 ```
 
+`FIXLIST_DECIDE_BIN` and `FIXLIST_MODEL_DIR` override those defaults. The Python
+runner expands `~` at runtime and shell-quotes the actual values in its unreachable
+server hint. These variables do not start a server automatically.
+
 Defaults: 32 keyframes (1–200 allowed; capped at registered frame count),
-suggestion threshold 0.6, location threshold 0.5, think mode `auto`, 120 seconds
+suggestion threshold 0.6, location threshold 0.5, `--min-frames 1`, think mode `auto`, 120 seconds
 per HTTP attempt, two retries. Relevance must be at least 0.5. A grid choice with
 `none_probability >= 0.2`, or a null choice, is not localizable. `auto` may take
-much longer than `never`; no real-model runtime has been measured here. A request
+much longer than `never`; the historical measured run is recorded below. A request
 that times out can still be running on the server when a retry starts.
 
 HTTP 429/500/502/503/504 and connection/timeout failures receive bounded retries
 with a short backoff. Other HTTP failures (including 401 and 422) fail immediately;
 there is no authentication bypass or credential handling. An unreachable-server
-error prints the exact serve command above. Malformed responses, missing answers,
+error prints the runtime-expanded serve command with environment overrides. Malformed responses, missing answers,
 nonfinite probabilities and changing server model names stop the run. Failures
 leave any existing `suggestions.json` intact.
 
@@ -101,9 +109,10 @@ Registered filenames are sorted naturally and sampled evenly including endpoints
 (a one-frame request selects the middle frame). Each selected photo produces one
 `POST /v1/systemone` with eight `noul` review questions and eight `noul` scope
 questions, one JPEG data URI, and one `<image>` marker. Request photos are resized
-to at most 1024 pixels per side, keeping aspect ratio. Every review probability
-at or above the location threshold produces a separate `choice` request over
-the nine equal grid cells, with `allow_none` and `none_check` enabled. This follows
+to at most 1024 pixels per side, keeping aspect ratio. After all review requests complete, each item
+selects its highest-scoring **relevant** frame (ties use keyframe order). Only
+that frame, if at or above the location threshold, produces a separate `choice`
+request over the nine equal grid cells, with `allow_none` and `none_check` enabled. This follows
 the local StartLux `docs/api.md` and `examples/image_request.py`; the API itself
 returns the `noul` value directly, without another `answer` wrapper.
 
@@ -122,58 +131,189 @@ surfaces, and fallback points can be far from the item. Units remain arbitrary;
 decimal rounding is not an accuracy claim. The runner requires matching camera
 and image dimensions to avoid silently placing a location in the wrong frame.
 
-## Output schema v1
+## Current output schema v2 (2026-10-18)
+
+The binding contract is [`docs/suggestions-v2-contract.md`](../docs/suggestions-v2-contract.md).
+Producers write only v2. Import validation accepts v1 with full available-trace
+consistency checks, including legacy items without `viewpoint` (treated as null).
+V1 lacks relevance traces, so a false legacy suggestion cannot establish why it
+was excluded. Validation never invents that evidence.
 
 The UTF-8 JSON file has exactly these root keys:
 
 | Key | Contract |
 | --- | --- |
-| `format`, `version` | `"fixlist-scan-suggestions"`, integer `1` |
-| `createdAt` | UTC ISO timestamp with milliseconds |
+| `format`, `version` | `"fixlist-scan-suggestions"`, integer `2` |
+| `createdAt` | UTC ISO timestamp with milliseconds and `Z` |
 | `model` | Exactly `name`, `backend: "mlx"`, `engine: "startlux-decision"`, `license: "CC BY-NC 4.0 weights"` |
-| `scan` | Exactly positive integer `splatCount`, integer `framesAnalyzed`, unique ordered `keyframes` |
-| `thresholds` | Exactly probabilities `suggestion`, `location`, `relevance: 0.5`, `noneProbability: 0.2` |
+| `scan` | Positive integer `splatCount`, `framesAnalyzed` (1–200), unique ordered `keyframes` |
+| `thresholds` | Scores `suggestion`, `location`, `relevance: 0.5`, `noneProbability: 0.2`; integer `minFrames` from 1 to frames analyzed |
+| `calibration` | Null for raw output, or the Platt block described below |
 | `notice` | `Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.` |
-| `items` | All eight catalog items, in catalog order, with the fields below |
-| `timing` | Exactly numeric `totalSeconds`, `requestSeconds`, `requests`, `attempts`, `retries`, `dryRun` (0 or 1) |
+| `items` | All eight catalog items, in catalog order |
+| `timing` | `totalSeconds`, `requestSeconds`, `requests`, `attempts`, `retries`, `dryRun` (integer 0 or 1) |
 
-Each item has exactly `checklistItemId`, `concernId`, `question`,
-`maxProbability`, `meanProbability`, `framesAboveThreshold`, `suggested`,
-`bestFrame`, `position`, `thumbnail`, and `perFrame`.
+Each item has exactly these fields:
 
-- Probabilities are raw checklist-question `P(yes)`, not multiplied by relevance.
-  `framesAboveThreshold` counts frames with `P(yes) >= thresholds.suggestion`.
-- `bestFrame` is the highest-probability frame, breaking ties in keyframe order.
-  `suggested` is true only when that frame meets both the suggestion and relevance
-  thresholds. It never creates a checklist answer or confirmation.
-- `position` is that best frame's aligned position, or null. A different frame's
-  position is not substituted when the best frame cannot be localized. A
-  non-suggested item may have a position when it met the lower location threshold.
-- A suggested item has a JPEG data URI `thumbnail`, at most 320 pixels per side;
-  other items have null. Re-encoding strips image metadata. Maximum thumbnail
-  length is 128 KiB; maximum output length is 4 MiB.
-- `perFrame` contains exactly one `{ "frame": name, "probability": number }`
-  per selected frame, in keyframe order. The scope answers are used internally;
-  their trace is not exported in this v1 interchange schema. A consumer cannot
-  independently recompute the relevance decision from the output alone.
-- `timing.requests` counts logical photo/localization calls (simulated calls for
-  a dry run); `attempts` counts actual HTTP attempts; `retries` counts extra
-  attempts. `requestSeconds` includes parsing and retry/backoff time; dry runs
-  record fake-response time. `totalSeconds` ends after aggregation and thumbnails,
-  before final validation and atomic serialization. The final progress line
-  reports elapsed runner time through saving.
+| Field | Meaning |
+| --- | --- |
+| `checklistItemId`, `concernId`, `question`, `relevanceQuestion`, `limitation` | Equal the shared trusted catalog |
+| `perFrame` | Ordered rows with exactly `frame`, `rawProbability`, `probability`, `relevanceProbability` |
+| `relevantFrames` | Count of rows whose relevance score is at least `thresholds.relevance` |
+| `framesAboveThreshold` | Count of relevant rows whose output score meets `thresholds.suggestion` |
+| `bestFrame`, `score` | Highest-scoring relevant frame and its output score; both null when none is relevant; first keyframe wins ties |
+| `meanProbability` | Mean output score over **all** rows, including irrelevant rows |
+| `status` | `suggested` if count meets `minFrames`; otherwise `not-visible` if no relevant rows; otherwise `below-threshold` |
+| `position` | Best relevant frame's approximate aligned position, or null; allowed only if its score meets `thresholds.location` |
+| `viewpoint` | Aligned camera center for that best frame, or null; requires non-null position |
+| `thumbnail` | JPEG data URI if and only if status is `suggested`; ≤320 px per side, ≤128 KiB; re-encoding strips metadata |
 
-`suggestion_schema.py` checks exact shapes, catalog links/text, UTC dates, finite
-numbers, probabilities in [0,1], bounded counts/lengths, consistent aggregates,
-valid JPEG thumbnails and finite positions. It rejects booleans as numeric
-fields. The runner validates before saving, uses a private temporary file and
-atomic replacement, and refuses output symlinks. A failed run does not leave a
-partial result. Input media and the resulting base64 thumbnails are private.
+The field names `rawProbability`, `probability` and `relevanceProbability` are
+interchange names, not empirical probability claims. With no calibration,
+`probability` equals `rawProbability` exactly. With calibration it equals
+`sigmoid(a * logit(clamp(rawProbability, 1e-6, 1-1e-6)) + b)` for that item.
+Relevance scores remain raw and are not multiplied into output scores.
+
+A non-null `calibration` has exactly `method: "platt"`, `parameters` (all eight
+item IDs, each `{a, b}` with finite coefficients and `a > 0`), `fittedAt` (UTC),
+`labelSource` (≤200 characters), integer `trainExamples` and `heldOutExamples`,
+and `heldOutBrierRaw` and `heldOutBrierCalibrated` in [0,1]. Counts refer to distinct scored **photos with usable labels** in each split.
+Pooled metric n instead counts image-item labels; both denominators are recorded
+in the fit report. See the protocol below.
+
+Both validators recompute all available derivations: raw/calibrated score,
+relevance and above-threshold counts, best frame, score, status and mean. Means
+and mapped scores use absolute tolerance 1e-9; remaining summaries are exact.
+Positions/viewpoints must be finite and obey the location gate. Validation
+rejects extra/missing fields, booleans as numbers, malformed timestamps and
+invalid JPEGs. Output is limited to 4 MiB. Saving validates first, fsyncs a
+private temporary file, atomically replaces the destination, and refuses output
+symlinks. Failures preserve prior results.
+
+`timing.requests` counts logical review/localization calls (simulated in dry
+runs); `attempts` counts actual HTTP attempts; `retries` counts extra attempts.
+V2 uses at most one localization per item. `requestSeconds` includes parsing and
+retry/backoff time. `totalSeconds` ends before validation/atomic serialization;
+the progress line includes saving. Neither is a user-latency guarantee.
+
+## Evaluation and calibration tooling
+
+No fine-tuning or model training is implemented. `evaluate_model.py` uses only
+stdlib, NumPy and Pillow and reuses `suggest.py`'s exact 16-question review
+request, 1024-pixel JPEG encoding, response parser and loopback-only client.
+It does not load pycolmap or torch for evaluation.
+
+Use a **private, local** dataset directory outside tracked files, for example
+`private-captures/evaluation/my-dataset/`:
+
+- `images/` contains the images; subdirectories are allowed.
+- `manifest.jsonl` has one object per image: `id`, `file` (relative to images/),
+  `group` (scene/source ID), and provenance fields. Provenance is passed through
+  unchanged; `scoring` is the only reserved field. Group correlated frames from
+  the same scene/source together **before** looking at results.
+- `scores.jsonl` is appended by scoring. Each row preserves the manifest object
+  and adds `scoring: {model, requestSeconds, requestSignature, response}`; the
+  response contains the raw answers. No encoded request photo is saved there.
+- The labels JSONL has `id` plus each of the eight checklist item IDs at the top
+  level, each with exactly `relevant` and `condition` (`true`, `false`, or `null`).
+  For example an item value is `{"relevant": true, "condition": false}`. Every
+  item must be present; mark uncertainty with null rather than omitting it.
+
+```sh
+scan/venv-python scan/evaluate_model.py score --dataset private-captures/evaluation/my-dataset --url http://127.0.0.1:8090 --think-mode never --limit 3
+scan/venv-python scan/evaluate_model.py report --dataset private-captures/evaluation/my-dataset --labels private-captures/evaluation/my-dataset/labels.jsonl
+scan/venv-python scan/evaluate_model.py fit --dataset private-captures/evaluation/my-dataset --labels private-captures/evaluation/my-dataset/labels.jsonl --out scan/calibration.json --seed 7 --label-source 'Describe actual annotator and labeling protocol'
+scan/venv-python scan/suggest.py my-scan --calibration scan/calibration.json
+scan/venv-python scan/suggest.py my-scan --no-calibration
+```
+
+`score` defaults to `think-mode never`; it skips already-scored IDs, and `limit`
+limits **new** images. A dataset lock prevents concurrent append races. Each
+complete row uses one O_APPEND write followed by fsync; recoverable short writes
+roll back that row. A malformed/truncated file after abrupt interruption is
+rejected for explicit recovery, never silently discarded. Changed provenance,
+mixed model names or changed prompts/think mode are rejected on resume; use a
+separate dataset for a new scoring configuration. Failed inference preserves
+previous complete rows. This script never starts the model server.
+
+### Pre-registered protocol (version 1)
+
+1. Sort unique **manifest** groups, shuffle using NumPy's seeded generator
+   (`--seed 7` by default), and hold out `ceil(0.30 * groups)` groups. Split
+   membership is independent of which labels are usable. Test groups never
+   enter fitting or selection. At least five development groups are required
+   for grouped 5-fold CV (at least eight total groups); fail clearly otherwise.
+2. Ground truth is the photo **condition**, never the model relevance answer.
+   Human `relevant: false` counts as `condition: false`, including when its
+   condition is null. Human `relevant: null` is excluded; for a relevant photo,
+   `condition: null` is excluded. Missing unscored/unlabeled images do not become
+   negatives. Metrics use the remaining image-item labels. Calibration example counts use
+   distinct photos contributing at least one usable label, consistent with the
+   importer's labeled-photo display; report counts also include total usable labels.
+3. Partition shuffled development groups into five folds. Select the lowest
+   pooled out-of-fold Brier among **raw**, **global Platt** (shared a,b), and
+   **per-item Platt with fixed L2=1 shrinkage toward the global fit**. Use summed
+   logistic loss, positive slope, and no extra hyperparameter search. Empty
+   item training sets inherit global coefficients. Ties within 1e-12 favor the
+   simpler method in that order. Every fold needs usable train/validation labels.
+4. Refit the selected method on all development data. Report held-out pooled
+   and per-item n, positives, Brier, ECE (10 equal-width bins), tie-aware AUROC
+   and AUPRC (average precision). Exact score ties use a common precision/recall
+   threshold; ECE's last bin includes score 1.
+5. Use **1000 paired bootstrap resamples of held-out groups**, with replacement,
+   preserving all within-group rows. Report percentile 95% CIs for all metrics
+   and the paired Brier difference (calibrated minus raw). Single-class AUROC,
+   zero-positive AUPRC and empty metrics are undefined, not zero. Exclude those
+   draws from that metric's CI and report `definedResamples`. Sparse-group CIs
+   may be unstable; do not interpret them as real-home validation.
+6. Set `adopted: true` only when held-out pooled Brier improves, the paired Brier
+   difference's CI upper endpoint is strictly below zero, and pooled AUROC drops
+   by no more than 0.02. Undefined adoption metrics fail this gate. Raw selection
+   is never adopted; its saved Platt block is identity coefficients (with the
+   contract's endpoint clamp). Flag each item with **fewer than 10 held-out
+   positives** as `insufficientPositives: true`; this is a reporting flag and
+   does not silently change the specified pooled adoption rule.
+
+The fitted file stores the protocol, model, split group IDs, CV scores, selected
+method, per-item coefficients, and held-out raw/calibrated metrics/CIs. No real
+labeled-photo fit is supplied by this implementation. `labelSource` defaults to
+an explicit statement that annotator identity was not provided. Supply the actual
+source with `--label-source`; the tool cannot establish annotation quality.
+
+If `scan/calibration.json` exists and is adopted, `suggest.py` uses it by default.
+`--no-calibration` disables it. An explicit unadopted file is refused unless
+`--force-calibration` is also supplied. Forcing changes neither the adoption
+report nor its evidence limits. Invalid calibration files fail validation;
+non-adopted default files are ignored. Do not check in sensitive group IDs,
+label provenance or reports without reviewing their contents.
+
+## Current implementation evidence (2026-10-18)
+
+V2 production and full v1/v2 validation are exercised using generated COLMAP
+scans in temporary directories, including calibrated output. Regression tests
+cover relevance-only best-frame selection, minimum-frame counts, contradictory
+summaries, optional legacy viewpoint, prompt drift, and runtime serve hints.
+Numerical/dataset tests cover exact tiny-array metrics, grouped splits,
+known-parameter Platt recovery, bootstrap/adoption rules, append rollback,
+resumable scoring/provenance, and an actual fit CLI on synthetic data.
+Final checks on 2026-10-18: `scan/venv-python -m unittest discover -s scan/tests`
+ran **92 tests, all passed, zero skips**. Both `scan/venv-python -m unittest
+scan/tests/test_suggest.py` and `scan/venv-python scan/tests/test_suggest.py -v`
+ran **38 tests, all passed**, including `CameraViewpointTests`. The evaluation
+module contributes **16 tests**, including the positive-slope boundary regression.
+The older counts below are preserved as historical evidence.
+
+The optional existing model server at `127.0.0.1:8090` refused the connection in
+this implementation session. No server was started and no real-model scoring or
+empirical calibration was claimed. The real `viennese-v2` suggestions were not
+regenerated; dry-run tests use synthetic temporary scans.
 
 ## Privacy and license
 
-All files stay in gitignored `private-captures/`. Nothing is copied into `public/`
-or Git. The runner sends resized frames only to an HTTP loopback address
+Scan media and suggestions stay in gitignored `private-captures/`. Keep evaluation
+images, manifests, labels and raw scores there too. Calibration report destinations
+are explicit; review their group IDs/provenance before tracking or sharing them.
+Nothing is automatically copied into `public/` or Git. The runner sends resized frames only to an HTTP loopback address
 (`127.0.0.1`, `localhost`, or `::1`), ignores proxy environment variables, and
 rejects credentials, redirects and remote URLs. It makes no external upload.
 Keep the server bound locally as well. Never add private source frames, output
@@ -183,7 +323,12 @@ StartLux-Decision code is Apache-2.0; the requested model weights are
 **CC BY-NC 4.0 (non-commercial)**. Using a local engine does not remove that
 restriction. This step does not establish permission for commercial model use.
 
-## Executed checks and remaining gates
+## Historical worker reports and measured runs (2026-10-17–18)
+
+The following reports describe the earlier v1 implementation and its separate
+execution environments. They do not describe current v2 coverage or schema.
+
+### Historical worker checks (2026-10-17)
 
 ```sh
 scan/venv-python -m unittest discover -s scan/tests -v
@@ -219,6 +364,8 @@ skipped**, including both socket-based fake HTTP server tests.
 
 ### Real MLX run: `viennese-v2`
 
+Historical v1 run, documented 2026-10-18; preserved without rerunning it.
+
 One real inference run used StartLux-Decision-v1.1-9B-AutoThink-MLX-4bit served
 locally on the Mac. It covered **60 of 225 registered frames** of the 131,386-splat
 `viennese-v2` scan (a photoreal render, not a real home) with thresholds 0.6
@@ -226,7 +373,7 @@ suggestion / 0.5 location / 0.5 relevance / 0.2 none. It made **69 requests,
 zero retries, in 1,108 seconds**. Three of eight items crossed the suggestion
 threshold:
 
-| Item | Max P(yes) | Frames ≥ 0.6 | Manual look at the best frame |
+| Item | Max experimental score | Frames ≥ 0.6 | Manual look at the best frame |
 | --- | ---: | ---: | --- |
 | Bathroom support | 0.92 | 3 | Tub visible through an open door; no grab bar in view. Plausible. |
 | Rug | 0.77 | 2 | Small dark mat at a doorway; no raised or curled edge visible. Weak. |
@@ -239,7 +386,7 @@ the older 65,102-splat `viennese-baseline` scan suggested only bathroom support
 the max-over-correlated-frames sensitivity described above. One run on rendered
 imagery, judged by one person, is not a calibration or accuracy result.
 
-Implementation checklist:
+Historical implementation checklist (v1):
 
 - [x] Define eight photo questions with scope questions and explicit proxy limits.
 - [x] Implement documented transport, keyframes, grid/depth placement,

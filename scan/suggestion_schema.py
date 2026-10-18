@@ -1,4 +1,4 @@
-"""Strict v1 validator for private photo-review suggestions (no model imports)."""
+"""Strict v1/v2 validator for private photo-review suggestions (no model imports)."""
 import base64
 from datetime import datetime
 from io import BytesIO
@@ -71,18 +71,56 @@ def validate_thumbnail(value):
         raise SuggestionError('Invalid JPEG thumbnail.') from error
 
 
-def validate_suggestions(data, catalog):
-    exact(data, ['format', 'version', 'createdAt', 'model', 'scan', 'thresholds', 'notice', 'items', 'timing'], 'root')
-    require(data['format'] == 'fixlist-scan-suggestions', 'Wrong suggestions format.')
-    require(type(data['version']) is int and data['version'] == 1, 'Unsupported suggestions version.')
-    require(data['notice'] == NOTICE, 'Required human-confirmation notice is missing.')
-    bounded_text(data['createdAt'], 'createdAt', 40)
-    require(bool(re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', data['createdAt'])),
-            'createdAt must be a UTC ISO timestamp with milliseconds.')
+def utc_timestamp(value, label, milliseconds=False):
+    bounded_text(value, label, 40)
+    fraction = r"\.\d{3}" if milliseconds else r"(?:\.\d{1,6})?"
+    require(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}" + fraction + 'Z', value)),
+            f'{label} must be a UTC ISO timestamp.')
     try:
-        datetime.fromisoformat(data['createdAt'].replace('Z', '+00:00'))
+        datetime.fromisoformat(value.replace('Z', '+00:00'))
     except ValueError as error:
-        raise SuggestionError('Invalid createdAt date.') from error
+        raise SuggestionError(f'Invalid {label} date.') from error
+
+
+def platt_probability(raw, a, b):
+    raw = min(max(raw, 1e-6), 1 - 1e-6)
+    value = a * (math.log(raw) - math.log1p(-raw)) + b
+    # Stable even for large, finite coefficients.
+    if value >= 0:
+        return 1 / (1 + math.exp(-value))
+    exp_value = math.exp(value)
+    return exp_value / (1 + exp_value)
+
+
+def validate_calibration(value, catalog):
+    exact(value, ['method', 'parameters', 'fittedAt', 'labelSource', 'trainExamples',
+                  'heldOutExamples', 'heldOutBrierRaw', 'heldOutBrierCalibrated'], 'calibration')
+    require(value['method'] == 'platt', 'Unsupported calibration method.')
+    exact(value['parameters'], [q['checklistItemId'] for q in catalog], 'calibration parameters')
+    for parameters in value['parameters'].values():
+        exact(parameters, ['a', 'b'], 'Platt parameters')
+        for key in ['a', 'b']:
+            require(type(parameters[key]) in (int, float) and math.isfinite(parameters[key]),
+                    'Platt parameters must be finite numbers.')
+        require(parameters['a'] > 0, 'Platt slope must be positive.')
+    utc_timestamp(value['fittedAt'], 'fittedAt')
+    bounded_text(value['labelSource'], 'labelSource', 200)
+    for key in ['trainExamples', 'heldOutExamples']:
+        integer(value[key], key)
+    for key in ['heldOutBrierRaw', 'heldOutBrierCalibrated']:
+        probability(value[key], key)
+    return value
+
+
+def validate_suggestions(data, catalog):
+    require(type(data) is dict and type(data.get('version')) is int and data['version'] in (1, 2),
+            'Unsupported suggestions version.')
+    version = data['version']
+    exact(data, ['format', 'version', 'createdAt', 'model', 'scan', 'thresholds', 'notice', 'items', 'timing']
+          + (['calibration'] if version == 2 else []), 'root')
+    require(data['format'] == 'fixlist-scan-suggestions', 'Wrong suggestions format.')
+    require(data['notice'] == NOTICE, 'Required human-confirmation notice is missing.')
+    utc_timestamp(data['createdAt'], 'createdAt', milliseconds=True)
     model = data['model']
     exact(model, ['name', 'backend', 'engine', 'license'], 'model')
     bounded_text(model['name'], 'model name', 200)
@@ -98,53 +136,79 @@ def validate_suggestions(data, catalog):
         frame_name(name)
     require(len(set(scan['keyframes'])) == len(scan['keyframes']), 'Duplicate keyframes.')
     thresholds = data['thresholds']
-    exact(thresholds, ['suggestion', 'location', 'relevance', 'noneProbability'], 'thresholds')
-    for key, value in thresholds.items():
-        probability(value, f'thresholds.{key}')
-    require(thresholds['relevance'] == .5 and thresholds['noneProbability'] == .2,
-            'Unsupported relevance/none thresholds in v1.')
+    exact(thresholds, ['suggestion', 'location', 'relevance', 'noneProbability']
+          + (['minFrames'] if version == 2 else []), 'thresholds')
+    for key in ['suggestion', 'location', 'relevance', 'noneProbability']:
+        probability(thresholds[key], f'thresholds.{key}')
+    if version == 1:
+        require(thresholds['relevance'] == .5 and thresholds['noneProbability'] == .2,
+                'Unsupported relevance/none thresholds in v1.')
+    else:
+        integer(thresholds['minFrames'], 'minFrames', 1, scan['framesAnalyzed'])
+    calibration = data.get('calibration')
+    if calibration is not None:
+        validate_calibration(calibration, catalog)
     require(type(data['items']) is list and len(data['items']) == len(catalog), 'Incorrect checklist item count.')
-    for item, question in zip(data['items'], catalog):
-        exact(item, ['checklistItemId', 'concernId', 'question', 'maxProbability',
-                     'meanProbability', 'framesAboveThreshold', 'suggested', 'bestFrame', 'position',
-                     'viewpoint', 'thumbnail', 'perFrame'], 'item')
-        for key in ['checklistItemId', 'concernId', 'question']:
+    for original, question in zip(data['items'], catalog):
+        # Normalize the one optional legacy field without changing the caller's document.
+        item = dict(original, viewpoint=original.get('viewpoint')) if version == 1 and type(original) is dict else original
+        common = ['checklistItemId', 'concernId', 'question', 'meanProbability', 'framesAboveThreshold',
+                  'bestFrame', 'position', 'viewpoint', 'thumbnail', 'perFrame']
+        exact(item, common + (['maxProbability', 'suggested'] if version == 1 else
+                             ['relevanceQuestion', 'limitation', 'status', 'score', 'relevantFrames']), 'item')
+        for key in ['checklistItemId', 'concernId', 'question'] + ([] if version == 1 else ['relevanceQuestion', 'limitation']):
             require(item[key] == question[key], f'Item does not match the trusted question catalog: {key}.')
-        probability(item['maxProbability'], 'maxProbability')
         probability(item['meanProbability'], 'meanProbability')
-        require(type(item['suggested']) is bool, 'suggested must be a boolean.')
         integer(item['framesAboveThreshold'], 'framesAboveThreshold', 0, scan['framesAnalyzed'])
         require(type(item['perFrame']) is list and len(item['perFrame']) == scan['framesAnalyzed'],
                 'Incorrect perFrame length.')
         for row, name in zip(item['perFrame'], scan['keyframes']):
-            exact(row, ['frame', 'probability'], 'perFrame')
+            exact(row, ['frame', 'probability'] + ([] if version == 1 else ['rawProbability', 'relevanceProbability']), 'perFrame')
             require(row['frame'] == name, 'perFrame order does not match keyframes.')
             probability(row['probability'], 'perFrame.probability')
+            if version == 2:
+                probability(row['rawProbability'], 'perFrame.rawProbability')
+                probability(row['relevanceProbability'], 'perFrame.relevanceProbability')
+                expected = row['rawProbability'] if calibration is None else platt_probability(
+                    row['rawProbability'], **calibration['parameters'][item['checklistItemId']])
+                require((row['probability'] == expected if calibration is None else
+                         math.isclose(row['probability'], expected, rel_tol=0, abs_tol=1e-9)),
+                        'Per-frame calibration is inconsistent.')
         rows = item['perFrame']
-        best = max(rows, key=lambda row: row['probability'])
-        require(item['bestFrame'] == best['frame'], 'bestFrame is inconsistent.')
-        require(item['maxProbability'] == best['probability'], 'Maximum probability is inconsistent.')
+        relevant = rows if version == 1 else [r for r in rows if r['relevanceProbability'] >= thresholds['relevance']]
+        best = max(relevant, key=lambda row: row['probability']) if relevant else None
+        score = best['probability'] if best else None
+        require(item['bestFrame'] == (best['frame'] if best else None), 'bestFrame is inconsistent.')
         require(math.isclose(item['meanProbability'], math.fsum(row['probability'] for row in rows) / len(rows),
-                             rel_tol=1e-12, abs_tol=1e-12), 'Mean probability is inconsistent.')
-        require(item['framesAboveThreshold'] == sum(row['probability'] >= thresholds['suggestion'] for row in rows),
-                'Frame count above threshold is inconsistent.')
-        # Relevance answers stay internal to aggregation; this interchange
-        # schema contains only checklist P(yes), not the scope-answer trace.
-        require(not item['suggested'] or best['probability'] >= thresholds['suggestion'],
-                'Suggestion is below the probability threshold.')
+                             rel_tol=0, abs_tol=1e-9), 'Mean probability is inconsistent.')
+        count = sum(row['probability'] >= thresholds['suggestion'] for row in relevant)
+        require(item['framesAboveThreshold'] == count, 'Frame count above threshold is inconsistent.')
+        if version == 1:
+            probability(item['maxProbability'], 'maxProbability')
+            require(item['maxProbability'] == score, 'Maximum probability is inconsistent.')
+            require(type(item['suggested']) is bool, 'suggested must be a boolean.')
+            require(not item['suggested'] or score >= thresholds['suggestion'], 'Suggestion is below threshold.')
+            suggested = item['suggested']
+        else:
+            if item['score'] is not None:
+                probability(item['score'], 'score')
+            require(item['score'] == score, 'Score is inconsistent.')
+            integer(item['relevantFrames'], 'relevantFrames', 0, scan['framesAnalyzed'])
+            require(item['relevantFrames'] == len(relevant), 'Relevant frame count is inconsistent.')
+            status = ('suggested' if count >= thresholds['minFrames'] else
+                      'not-visible' if not relevant else 'below-threshold')
+            require(item['status'] == status, 'Status is inconsistent.')
+            suggested = status == 'suggested'
         position = item['position']
         if position is not None:
-            require(type(position) is list and len(position) == 3, 'position must be null or a length-three list.')
-            for coordinate in position:
-                number(coordinate, 'position coordinate', -1e8, 1e8)
-            require(best['probability'] >= thresholds['location'], 'Position below localization threshold.')
-        viewpoint = item['viewpoint']
-        if viewpoint is not None:
-            require(position is not None, 'A viewpoint requires a position.')
-            require(type(viewpoint) is list and len(viewpoint) == 3, 'viewpoint must be null or a length-three list.')
-            for coordinate in viewpoint:
-                number(coordinate, 'viewpoint coordinate', -1e8, 1e8)
-        if item['suggested']:
+            require(best is not None and score >= thresholds['location'], 'Position below localization threshold.')
+        for key in ['position', 'viewpoint']:
+            if item[key] is not None:
+                require(type(item[key]) is list and len(item[key]) == 3, f'{key} must be null or a length-three list.')
+                for coordinate in item[key]:
+                    number(coordinate, f'{key} coordinate', -1e8, 1e8)
+        require(item['viewpoint'] is None or position is not None, 'A viewpoint requires a position.')
+        if suggested:
             validate_thumbnail(item['thumbnail'])
         else:
             require(item['thumbnail'] is None, 'Only suggested items may carry a thumbnail.')

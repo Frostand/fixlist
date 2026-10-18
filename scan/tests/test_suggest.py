@@ -4,6 +4,7 @@ import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -62,6 +63,25 @@ class RequestTests(unittest.TestCase):
             self.assertTrue(q['question'].endswith('?'))
             self.assertTrue(q['relevanceQuestion'])
             self.assertTrue(q['limitation'])
+
+    def test_original_prompts_match_the_app_catalog(self):
+        source = (Path(s.__file__).parents[1] / 'src/data/demo-scenario.ts').read_text()
+        prompts = dict(re.findall(r"checklistId: '([^']+)'.*?prompt: '([^']+)'", source, re.S))
+        self.assertEqual(len(prompts), len(self.catalog))
+        for item in self.catalog:
+            self.assertEqual(item['originalQuestion'], prompts[item['checklistItemId']])
+
+    def test_serve_hint_expands_environment_at_runtime_and_quotes_paths(self):
+        import shlex
+        with patch.dict(s.os.environ, {'FIXLIST_DECIDE_BIN': '~/custom tools/decide', 'FIXLIST_MODEL_DIR': '~/models/test model'}):
+            command = s.serve_command()
+            self.assertEqual(shlex.split(command)[:4], [str(Path('~/custom tools/decide').expanduser()),
+                             'serve', '--model', str(Path('~/models/test model').expanduser())])
+            client = s.DecisionClient(retries=0)
+            with patch.object(client.opener, 'open', side_effect=URLError('refused')):
+                with self.assertRaises(s.SuggestionError) as error:
+                    client.decide(s.build_review_request(self.catalog, 'x', 'never'))
+            self.assertIn(command, str(error.exception))
 
     def test_documented_request_uses_one_marker_and_all_noul_questions(self):
         req = s.build_review_request(self.catalog, 'data:image/jpeg;base64,eA==', 'never')
@@ -161,26 +181,30 @@ class GeometryTests(unittest.TestCase):
 
 
 class AggregationTests(unittest.TestCase):
-    def test_relevance_must_be_likely_in_the_same_best_frame(self):
+    def test_best_frame_is_selected_only_among_relevant_frames(self):
         catalog = s.load_questions()
         observations = {q['checklistItemId']: [
-            {'frame': 'a.jpg', 'probability': .8, 'relevanceProbability': .1, 'position': None},
-            {'frame': 'b.jpg', 'probability': .4, 'relevanceProbability': .9, 'position': [0, 0, 1]},
+            {'frame': 'a.jpg', 'rawProbability': .95, 'probability': .95, 'relevanceProbability': .1, 'position': None},
+            {'frame': 'b.jpg', 'rawProbability': .80, 'probability': .80, 'relevanceProbability': .9, 'position': [0, 0, 1]},
         ] for q in catalog}
-        items = s.aggregate_items(catalog, observations, .6, lambda name: 'thumbnail:' + name)
-        self.assertEqual(items[0]['maxProbability'], .8)
-        self.assertAlmostEqual(items[0]['meanProbability'], .6)
-        self.assertEqual(items[0]['framesAboveThreshold'], 1)
-        self.assertFalse(items[0]['suggested'])
-        self.assertIsNone(items[0]['thumbnail'])
-        self.assertIsNone(items[0]['position'])
+        item = s.aggregate_items(catalog, observations, .6, lambda name: 'thumbnail:' + name)[0]
+        self.assertEqual(item['score'], .8)
+        self.assertAlmostEqual(item['meanProbability'], .875)
+        self.assertEqual(item['relevantFrames'], 1)
+        self.assertEqual(item['framesAboveThreshold'], 1)
+        self.assertEqual(item['status'], 'suggested')
+        self.assertEqual(item['bestFrame'], 'b.jpg')
+        self.assertEqual(item['thumbnail'], 'thumbnail:b.jpg')
+        item = s.aggregate_items(catalog, observations, .6, lambda name: 'thumbnail:' + name, 2)[0]
+        self.assertEqual(item['status'], 'below-threshold')
+        self.assertIsNone(item['thumbnail'])
         for rows in observations.values():
-            rows[0]['probability'] = .6
-            rows[0]['relevanceProbability'] = .5
-        items = s.aggregate_items(catalog, observations, .6, lambda name: 'thumbnail:' + name)
-        self.assertTrue(items[0]['suggested'])
-        self.assertEqual(items[0]['bestFrame'], 'a.jpg')
-        self.assertEqual(items[0]['thumbnail'], 'thumbnail:a.jpg')
+            rows[1]['relevanceProbability'] = .1
+        item = s.aggregate_items(catalog, observations, .6, lambda _: None)[0]
+        self.assertEqual(item['status'], 'not-visible')
+        self.assertIsNone(item['score'])
+        self.assertIsNone(item['bestFrame'])
+
 
 
 class PipelineTests(unittest.TestCase):
@@ -211,6 +235,9 @@ class PipelineTests(unittest.TestCase):
         with patch.object(s.DecisionClient, 'decide', side_effect=AssertionError('HTTP forbidden in dry run')):
             result = self.run_dry()
         self.assertEqual(result['format'], 'fixlist-scan-suggestions')
+        self.assertEqual(result['version'], 2)
+        self.assertIsNone(result['calibration'])
+        s.validate_output(result)
         self.assertTrue(result['timing']['dryRun'])
         self.assertIn('DRY-RUN', result['model']['name'])
         self.assertEqual(result['scan']['framesAnalyzed'], 2)
@@ -218,7 +245,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(result['items']), 8)
         self.assertEqual(json.loads((self.root / 'suggestions.json').read_text()), result)
         self.assertEqual(result['timing']['attempts'], 0)
-        suggested = [item for item in result['items'] if item['suggested']]
+        suggested = [item for item in result['items'] if (item['status'] == 'suggested')]
         self.assertTrue(suggested)
         for item in suggested:
             with Image.open(BytesIO(base64.b64decode(item['thumbnail'].split(',')[1]))) as image:
@@ -234,9 +261,9 @@ class PipelineTests(unittest.TestCase):
             lambda r: r.update(createdAt='yesterday'),
             lambda r: r['scan'].update(framesAnalyzed=3),
             lambda r: r['scan'].update(splatCount=True),
-            lambda r: r['items'][0].update(maxProbability=float('nan')),
+            lambda r: r['items'][0].update(score=float('nan')),
             lambda r: r['items'][0].update(meanProbability=.999),
-            lambda r: r['items'][0].update(suggested=1),
+            lambda r: r['items'][0].update(status='invented'),
             lambda r: r['items'][0].update(concernId='unknown'),
             lambda r: r['items'][0].update(position=[0, float('inf'), 2]),
             lambda r: r['items'][0].update(position=[1, 2]),
@@ -295,14 +322,14 @@ class PipelineTests(unittest.TestCase):
         url, seen = self.serve(lambda body, count: (200, fixture_response(body)))
         result = s.run_scan(self.root, url=url, keyframes=2, think_mode='never', timeout=2,
                             retries=0, progress=lambda line: None)
-        self.assertEqual(len(seen), 18)  # two initial calls and sixteen localizations
+        self.assertEqual(len(seen), 10)  # two review calls and eight best-frame localizations
         self.assertTrue(all(path == '/v1/systemone' for path, _ in seen))
         self.assertTrue(all(len(body['images']) == 1 for _, body in seen))
         self.assertEqual(result['model']['name'], 'fake-http-model')
         self.assertFalse(result['timing']['dryRun'])
-        self.assertEqual(result['timing']['requests'], 18)
+        self.assertEqual(result['timing']['requests'], 10)
         for item in result['items']:
-            self.assertTrue(item['suggested'])
+            self.assertTrue((item['status'] == 'suggested'))
             self.assertEqual(item['position'], [-1, -2, 3])
             self.assertEqual(item['framesAboveThreshold'], 2)
         s.validate_output(result)
@@ -311,9 +338,9 @@ class PipelineTests(unittest.TestCase):
         client, seen = self.mock_client(fixture_response)
         with patch.object(s, 'DecisionClient', return_value=client):
             result = s.run_scan(self.root, keyframes=2, progress=lambda line: None)
-        self.assertEqual(len(seen), 18)
-        self.assertEqual(result['timing']['attempts'], 18)
-        self.assertTrue(all(item['position'] == [-1, -2, 3] and item['suggested'] for item in result['items']))
+        self.assertEqual(len(seen), 10)
+        self.assertEqual(result['timing']['attempts'], 10)
+        self.assertTrue(all(item['position'] == [-1, -2, 3] and (item['status'] == 'suggested') for item in result['items']))
         s.validate_output(result)
 
     def test_none_probability_prevents_placement_in_end_to_end_run(self):
@@ -325,25 +352,137 @@ class PipelineTests(unittest.TestCase):
         client, _ = self.mock_client(lambda request: fixture_response(request, none=.2))
         with patch.object(s, 'DecisionClient', return_value=client):
             result = s.run_scan(self.root, keyframes=1, progress=lambda line: None)
-        self.assertTrue(all(item['position'] is None and item['suggested'] for item in result['items']))
+        self.assertTrue(all(item['position'] is None and (item['status'] == 'suggested') for item in result['items']))
 
     def test_location_and_suggestion_thresholds_are_independent(self):
         client, seen = self.mock_client(lambda request: fixture_response(request, probability=.55))
         with patch.object(s, 'DecisionClient', return_value=client):
             result = s.run_scan(self.root, keyframes=1, threshold=.6, location_threshold=.5, progress=lambda line: None)
         self.assertEqual(len(seen), 9)
-        self.assertTrue(all(not item['suggested'] and item['position'] is not None for item in result['items']))
+        self.assertTrue(all(not (item['status'] == 'suggested') and item['position'] is not None for item in result['items']))
         client, seen = self.mock_client(lambda request: fixture_response(request, probability=.65))
         with patch.object(s, 'DecisionClient', return_value=client):
             result = s.run_scan(self.root, keyframes=1, threshold=.6, location_threshold=.7, progress=lambda line: None)
         self.assertEqual(len(seen), 1)
-        self.assertTrue(all(item['suggested'] and item['position'] is None for item in result['items']))
+        self.assertTrue(all((item['status'] == 'suggested') and item['position'] is None for item in result['items']))
 
     def test_irrelevant_frames_do_not_make_suggestions(self):
         client, _ = self.mock_client(lambda request: fixture_response(request, relevance=.1))
         with patch.object(s, 'DecisionClient', return_value=client):
             result = s.run_scan(self.root, keyframes=1, progress=lambda line: None)
-        self.assertTrue(all(not item['suggested'] and item['thumbnail'] is None for item in result['items']))
+        self.assertTrue(all(not (item['status'] == 'suggested') and item['thumbnail'] is None for item in result['items']))
+
+    def calibration_document(self, adopted=True):
+        return {'adopted': adopted, 'calibration': {
+            'method': 'platt', 'parameters': {key: {'a': .8, 'b': -.2} for key in s.ITEM_LINKS},
+            'fittedAt': '2026-10-18T00:00:00.000Z', 'labelSource': 'Synthetic unit-test labels only',
+            'trainExamples': 80, 'heldOutExamples': 40,
+            'heldOutBrierRaw': .2, 'heldOutBrierCalibrated': .18}}
+
+    def test_v2_with_calibration_passes_and_parameters_are_recomputed(self):
+        path = self.root / 'test-calibration.json'
+        path.write_text(json.dumps(self.calibration_document()))
+        result = s.run_scan(self.root, keyframes=2, dry_run=True, calibration=path, progress=lambda _: None)
+        self.assertEqual(result['calibration'], self.calibration_document()['calibration'])
+        s.validate_output(result)
+        for item in result['items']:
+            for row in item['perFrame']:
+                self.assertAlmostEqual(row['probability'], s.platt_probability(row['rawProbability'], .8, -.2))
+        result['calibration']['parameters']['rug-check']['b'] += 1
+        with self.assertRaisesRegex(s.SuggestionError, 'calibration is inconsistent'):
+            s.validate_output(result)
+
+    def test_calibration_adoption_default_disable_and_force(self):
+        path = self.root / 'test-calibration.json'
+        doc = self.calibration_document(False)
+        path.write_text(json.dumps(doc))
+        with patch.object(s, 'DEFAULT_CALIBRATION', path):
+            self.assertIsNone(s.load_calibration())
+            with self.assertRaisesRegex(s.SuggestionError, 'did not pass adoption'):
+                s.load_calibration(path)
+            self.assertEqual(s.load_calibration(path, force=True), doc['calibration'])
+            doc['adopted'] = True
+            path.write_text(json.dumps(doc))
+            self.assertEqual(s.load_calibration(), doc['calibration'])
+            self.assertIsNone(s.load_calibration(disabled=True))
+        with self.assertRaises(s.SuggestionError):
+            s.load_calibration(force=True)
+        with self.assertRaises(s.SuggestionError):
+            s.load_calibration(path, disabled=True)
+
+    def test_legacy_v1_without_viewpoint_and_full_consistency_checks(self):
+        result = self.run_dry()
+        result['version'] = 1
+        del result['calibration']
+        del result['thresholds']['minFrames']
+        for item in result['items']:
+            item['maxProbability'] = item.pop('score')
+            item['suggested'] = item.pop('status') == 'suggested'
+            for key in ['relevantFrames', 'relevanceQuestion', 'limitation', 'viewpoint']:
+                del item[key]
+            for row in item['perFrame']:
+                del row['rawProbability'], row['relevanceProbability']
+        before = copy.deepcopy(result)
+        s.validate_output(result)
+        self.assertEqual(result, before)  # optional legacy normalization is read-only
+        mutations = [
+            lambda r: r['items'][0].update(maxProbability=.99),
+            lambda r: r['items'][0].update(meanProbability=.01),
+            lambda r: r['items'][0].update(framesAboveThreshold=0),
+            lambda r: r['items'][0].update(bestFrame='000002.jpg'),
+            lambda r: r['items'][0].update(suggested=False),  # retains a forbidden thumbnail
+            lambda r: r['items'][0].update(viewpoint=[0, 0, 0], position=None),
+            lambda r: r['items'][0]['perFrame'][0].update(probability=.01),
+        ]
+        for mutate in mutations:
+            bad = copy.deepcopy(result)
+            mutate(bad)
+            with self.subTest(mutate=mutate), self.assertRaises(s.SuggestionError):
+                s.validate_output(bad)
+        # A legacy relevance-gated false item can exceed the review threshold.
+        result['items'][0]['suggested'] = False
+        result['items'][0]['thumbnail'] = None
+        s.validate_output(result)
+
+    def test_v2_rejects_contradictory_status_counts_and_null_scores(self):
+        result = self.run_dry()
+        mutations = [
+            lambda r: r['items'][0].update(score=.99),
+            lambda r: r['items'][0].update(relevantFrames=0),
+            lambda r: r['items'][0].update(framesAboveThreshold=0),
+            lambda r: r['items'][0].update(status='below-threshold'),
+            lambda r: r['items'][0].update(score=None),
+            lambda r: r['thresholds'].update(minFrames=0),
+            lambda r: r['thresholds'].update(minFrames=3),
+            lambda r: r['thresholds'].update(minFrames=True),
+            lambda r: r['items'][0]['perFrame'][0].update(rawProbability=.01),
+            lambda r: r['items'][0]['perFrame'][0].update(relevanceProbability=0),
+            lambda r: r['items'][0]['perFrame'][0].update(probability=.01, rawProbability=.01),
+        ]
+        for mutate in mutations:
+            bad = copy.deepcopy(result)
+            mutate(bad)
+            with self.subTest(mutate=mutate), self.assertRaises(s.SuggestionError):
+                s.validate_output(bad)
+
+    def test_pipeline_localizes_only_the_best_relevant_frame(self):
+        Image.new('RGB', (90, 90), (150, 180, 100)).save(self.root / 'work/dataset/images/000002.jpg')
+        reviews = 0
+        def response(request):
+            nonlocal reviews
+            if next(iter(request['questions'].values()))['type'] == 'noul':
+                reviews += 1
+                return fixture_response(request, probability=.95 if reviews == 1 else .8,
+                                        relevance=.1 if reviews == 1 else .9)
+            return fixture_response(request)
+        client, seen = self.mock_client(response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            result = s.run_scan(self.root, keyframes=2, progress=lambda _: None)
+        self.assertEqual(len(seen), 10)
+        self.assertTrue(all(item['bestFrame'] == '000002.jpg' and item['score'] == .8
+                            and item['relevantFrames'] == 1 and item['status'] == 'suggested' for item in result['items']))
+        self.assertTrue(all(req['images'] == seen[1]['images'] for req in seen[2:]))
+        s.validate_output(result)
 
     def test_dimension_mismatch_fails_without_writing(self):
         Image.new('RGB', (100, 90)).save(self.root / 'work/dataset/images/000002.jpg')
@@ -436,10 +575,6 @@ class PipelineTests(unittest.TestCase):
             self.assertNotIn('Traceback', result.stderr)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class CameraViewpointTests(unittest.TestCase):
     def test_viewpoint_is_aligned_camera_centre(self):
         import numpy as np
@@ -450,3 +585,7 @@ class CameraViewpointTests(unittest.TestCase):
         self.assertEqual(module.camera_viewpoint(frame, rotation, np.array([0., 0., 1.])), [0.0, -1.0, 0.0])
         frame.translation = np.array([np.nan, 0., 0.])
         self.assertIsNone(module.camera_viewpoint(frame, rotation, np.zeros(3)))
+
+
+if __name__ == '__main__':
+    unittest.main()

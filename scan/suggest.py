@@ -16,6 +16,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shlex
 import sys
 import tempfile
 import time
@@ -28,14 +29,21 @@ from PIL import Image
 
 from suggestion_schema import (
     ITEM_LINKS, NOTICE, SuggestionError, bounded_text, exact, frame_name,
-    integer, number, probability, require, validate_suggestions,
+    integer, number, probability, require, validate_suggestions, validate_calibration, platt_probability,
 )
 
-SERVE_COMMAND = (
-    '/Users/al1234/.local/share/fixlist-scan/decide-venv/bin/startlux-decide serve '
-    '--model /Users/al1234/.local/share/fixlist-scan/models/StartLux-Decision-v1.1-9B-AutoThink-MLX-4bit '
-    '--backend mlx --port 8090'
-)
+
+def serve_command():
+    """Build a shell-safe hint at runtime, including environment overrides."""
+    root = Path('~/.local/share/fixlist-scan').expanduser()
+    executable = Path(os.environ.get('FIXLIST_DECIDE_BIN', str(root / 'decide-venv/bin/startlux-decide'))).expanduser()
+    model = Path(os.environ.get('FIXLIST_MODEL_DIR', str(root / 'models/StartLux-Decision-v1.1-9B-AutoThink-MLX-4bit'))).expanduser()
+    return shlex.join([str(executable), 'serve', '--model', str(model), '--backend', 'mlx', '--port', '8090'])
+
+
+# Compatibility for callers inspecting the default hint; errors rebuild it at runtime.
+SERVE_COMMAND = serve_command()
+DEFAULT_CALIBRATION = Path(__file__).with_name('calibration.json')
 DEFAULT_URL = 'http://127.0.0.1:8090'
 SCAN_ROOT = Path(__file__).resolve().parents[1] / 'private-captures/scans'
 QUESTIONS_PATH = Path(__file__).with_name('hazard-questions.json')
@@ -183,7 +191,7 @@ class DecisionClient:
             except (URLError, TimeoutError, ConnectionError, OSError, HTTPException) as error:
                 if attempt == self.retries:
                     raise SuggestionError('Cannot reach the local StartLux server, or the request timed out. '
-                                          f'Start it with:\n{SERVE_COMMAND}') from error
+                                          f'Start it with:\n{serve_command()}') from error
             time.sleep(min(.25 * 2**attempt, 1))
         raise AssertionError('Unreachable retry state')
 
@@ -337,29 +345,54 @@ def image_data(frame, limit):
         raise SuggestionError(f'Cannot read registered image: {frame.name}.') from error
 
 
-def aggregate_items(catalog, observations, threshold, thumbnailer):
+def best_relevant(rows, relevance_threshold=RELEVANCE_THRESHOLD):
+    relevant = [row for row in rows if row['relevanceProbability'] >= relevance_threshold]
+    return max(relevant, key=lambda row: row['probability']) if relevant else None
+
+
+def aggregate_items(catalog, observations, threshold, thumbnailer, min_frames=1):
     probability(threshold, 'suggestion threshold')
     items = []
     for question in catalog:
         rows = observations[question['checklistItemId']]
         require(bool(rows), 'Cannot aggregate an item without frames.')
+        integer(min_frames, 'minFrames', 1, len(rows))
         for row in rows:
-            probability(row['probability'], 'observed probability')
-            probability(row['relevanceProbability'], 'observed relevance probability')
-        best = max(rows, key=lambda row: row['probability'])
-        suggested = best['probability'] >= threshold and best['relevanceProbability'] >= RELEVANCE_THRESHOLD
+            for key in ['rawProbability', 'probability', 'relevanceProbability']:
+                probability(row[key], 'observed ' + key)
+        relevant = [row for row in rows if row['relevanceProbability'] >= RELEVANCE_THRESHOLD]
+        best = best_relevant(rows)
+        count = sum(row['probability'] >= threshold for row in relevant)
+        status = 'suggested' if count >= min_frames else 'not-visible' if not relevant else 'below-threshold'
+        position = best.get('position') if best else None
         items.append({
-            'checklistItemId': question['checklistItemId'], 'concernId': question['concernId'],
-            'question': question['question'],
-            'maxProbability': best['probability'],
+            **{key: question[key] for key in ['checklistItemId', 'concernId', 'question', 'relevanceQuestion', 'limitation']},
+            'status': status, 'score': best['probability'] if best else None,
             'meanProbability': math.fsum(row['probability'] for row in rows) / len(rows),
-            'framesAboveThreshold': sum(row['probability'] >= threshold for row in rows),
-            'suggested': bool(suggested), 'bestFrame': best['frame'], 'position': best['position'],
-            'viewpoint': best.get('viewpoint') if best['position'] is not None else None,
-            'thumbnail': thumbnailer(best['frame']) if suggested else None,
-            'perFrame': [{key: row[key] for key in ['frame', 'probability']} for row in rows],
+            'relevantFrames': len(relevant), 'framesAboveThreshold': count,
+            'bestFrame': best['frame'] if best else None, 'position': position,
+            'viewpoint': best.get('viewpoint') if position is not None else None,
+            'thumbnail': thumbnailer(best['frame']) if status == 'suggested' else None,
+            'perFrame': [{key: row[key] for key in ['frame', 'rawProbability', 'probability', 'relevanceProbability']} for row in rows],
         })
     return items
+
+
+def load_calibration(path=None, *, disabled=False, force=False, catalog=None):
+    require(not (disabled and (path is not None or force)), '--no-calibration cannot be combined with calibration/force.')
+    require(not force or path is not None, '--force-calibration requires --calibration FILE.')
+    if disabled:
+        return None
+    selected = DEFAULT_CALIBRATION if path is None else Path(path)
+    if path is None and not selected.exists():
+        return None
+    document = read_json(selected)
+    require(type(document) is dict and type(document.get('adopted')) is bool, 'Calibration file requires adopted: boolean.')
+    block = validate_calibration(document.get('calibration'), catalog or load_questions())
+    if not document['adopted'] and not force:
+        require(path is None, 'Calibration did not pass adoption; use --force-calibration to apply it explicitly.')
+        return None
+    return block
 
 
 def validate_output(data):
@@ -386,7 +419,8 @@ def save_output(path, data, catalog):
 
 
 def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_threshold=.5,
-             think_mode='auto', timeout=120, retries=2, dry_run=False, progress=print):
+             think_mode='auto', timeout=120, retries=2, dry_run=False, min_frames=1,
+             calibration=None, no_calibration=False, force_calibration=False, progress=print):
     started = time.perf_counter()
     probability(threshold, 'suggestion threshold')
     probability(location_threshold, 'location threshold')
@@ -402,7 +436,9 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
                 and type(prior['timing'].get('dryRun')) in (int, bool) and prior['timing']['dryRun'] == 1,
                 'Dry run will not replace an existing real/unknown suggestions.json; use a separate private scan copy.')
     catalog = load_questions()
+    calibration_block = load_calibration(calibration, disabled=no_calibration, force=force_calibration, catalog=catalog)
     splat_count, frames, align_rotation, center = load_scan(scan_dir, keyframes)
+    integer(min_frames, 'minFrames', 1, len(frames))
     if dry_run:
         progress('DRY RUN: deterministic fake answers; no model or HTTP. Results are not observations.')
     progress(f'Analyzing {len(frames)} evenly selected registered frames.')
@@ -428,18 +464,24 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
         for item in catalog:
             key = item['checklistItemId']
             value, relevance = answers[key]['noul'], answers['relevance.' + key]['noul']
-            position = None
-            if value >= location_threshold:
-                progress(f'  {key}: P(yes)={value:.3f}, locating in 3x3 grid')
-                location = ask(build_location_request(item, uri, think_mode))['location']
-                cell = parse_grid_choice(location)
-                if cell is not None:
-                    position = locate_in_frame(frame, cell, align_rotation, center)
-            viewpoint = camera_viewpoint(frame, align_rotation, center) if position is not None else None
-            observations[key].append({'frame': frame.name, 'probability': value,
-                                      'relevanceProbability': relevance, 'position': position,
-                                      'viewpoint': viewpoint})
+            calibrated = value if calibration_block is None else platt_probability(
+                value, **calibration_block['parameters'][key])
+            observations[key].append({'frame': frame.name, 'rawProbability': value,
+                                      'probability': calibrated, 'relevanceProbability': relevance,
+                                      'position': None, 'viewpoint': None})
     frames_by_name = {frame.name: frame for frame in frames}
+    # Review all frames first. Never localize an irrelevant or non-best frame.
+    for item in catalog:
+        best = best_relevant(observations[item['checklistItemId']])
+        if best is not None and best['probability'] >= location_threshold:
+            frame = frames_by_name[best['frame']]
+            progress(f"  {item['checklistItemId']}: score={best['probability']:.3f}, locating best relevant frame")
+            location = ask(build_location_request(item, image_data(frame, 1024), think_mode))['location']
+            cell = parse_grid_choice(location)
+            if cell is not None:
+                best['position'] = locate_in_frame(frame, cell, align_rotation, center)
+                if best['position'] is not None:
+                    best['viewpoint'] = camera_viewpoint(frame, align_rotation, center)
     thumbnails = {}
 
     def thumbnail(name):
@@ -447,15 +489,15 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
             thumbnails[name] = image_data(frames_by_name[name], 320)
         return thumbnails[name]
 
-    items = aggregate_items(catalog, observations, threshold, thumbnail)
+    items = aggregate_items(catalog, observations, threshold, thumbnail, min_frames)
     data = {
-        'format': 'fixlist-scan-suggestions', 'version': 1,
+        'format': 'fixlist-scan-suggestions', 'version': 2,
         'createdAt': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
         'model': {'name': model_name, 'backend': 'mlx', 'engine': 'startlux-decision', 'license': 'CC BY-NC 4.0 weights'},
         'scan': {'splatCount': splat_count, 'framesAnalyzed': len(frames), 'keyframes': [frame.name for frame in frames]},
         'thresholds': {'suggestion': threshold, 'location': location_threshold,
-                       'relevance': RELEVANCE_THRESHOLD, 'noneProbability': NONE_THRESHOLD},
-        'notice': NOTICE, 'items': items,
+                       'relevance': RELEVANCE_THRESHOLD, 'noneProbability': NONE_THRESHOLD, 'minFrames': min_frames},
+        'calibration': calibration_block, 'notice': NOTICE, 'items': items,
         'timing': {'totalSeconds': round(time.perf_counter() - started, 6),
                    'requestSeconds': round(request_seconds, 6), 'requests': requests,
                    'attempts': client.attempts, 'retries': 0 if dry_run else client.attempts - requests,
@@ -463,7 +505,7 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
     }
     save_output(output, data, catalog)
     progress(f'Wrote {output.name}: {output.stat().st_size:,} bytes in {time.perf_counter() - started:.3f}s; '
-             f'{sum(item["suggested"] for item in items)} areas to review. '
+             f'{sum(item["status"] == "suggested" for item in items)} areas to review. '
              + ('FAKE dry-run output.' if dry_run else 'Family answers and confirmation are still required.'))
     return data
 
@@ -475,6 +517,11 @@ def main(argv=None):
     parser.add_argument('--keyframes', type=int, default=32, help='Evenly selected frames (1-200, default 32)')
     parser.add_argument('--threshold', type=float, default=.6, help='Suggestion threshold (default 0.6)')
     parser.add_argument('--location-threshold', type=float, default=.5)
+    parser.add_argument('--min-frames', type=int, default=1, help='Minimum relevant frames above suggestion threshold')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--calibration', type=Path)
+    group.add_argument('--no-calibration', action='store_true')
+    parser.add_argument('--force-calibration', action='store_true')
     parser.add_argument('--think-mode', choices=['auto', 'never'], default='auto')
     parser.add_argument('--timeout', type=float, default=120, help='Seconds per HTTP attempt (default 120)')
     parser.add_argument('--retries', type=int, default=2, help='Retries per transient request failure (default 2)')
@@ -484,13 +531,15 @@ def main(argv=None):
         require(bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,79}', args.scan_name)),
                 'Use a simple scan name (letters, numbers, hyphens, underscores), not a path.')
         integer(args.keyframes, 'keyframes', 1, 200)
+        integer(args.min_frames, 'minFrames', 1, 200)
         probability(args.threshold, 'suggestion threshold')
         probability(args.location_threshold, 'location threshold')
         scan_dir = (SCAN_ROOT / args.scan_name).resolve()
         require(scan_dir.is_relative_to(SCAN_ROOT.resolve()), 'Scan directory escapes private-captures/scans.')
         run_scan(scan_dir, url=args.url, keyframes=args.keyframes, threshold=args.threshold,
                  location_threshold=args.location_threshold, think_mode=args.think_mode,
-                 timeout=args.timeout, retries=args.retries, dry_run=args.dry_run)
+                 timeout=args.timeout, retries=args.retries, dry_run=args.dry_run, min_frames=args.min_frames,
+                 calibration=args.calibration, no_calibration=args.no_calibration, force_calibration=args.force_calibration)
     except (SuggestionError, OSError, ValueError) as error:
         print(f'Error: {error}', file=sys.stderr)
         return 2
