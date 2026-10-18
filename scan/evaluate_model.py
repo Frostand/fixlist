@@ -8,7 +8,6 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
-import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -64,8 +63,7 @@ def manifest(dataset, *, require_images=True):
 
 
 def request_signature(catalog, think_mode):
-    request = s.build_review_request(catalog, '<local-photo>', think_mode)
-    return hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
+    return s.request_signature(catalog, think_mode)
 
 
 @contextmanager
@@ -150,7 +148,7 @@ def score_dataset(dataset, *, url=s.DEFAULT_URL, think_mode='never', limit=None,
                     frame = SimpleNamespace(path=image_path, width=image.width, height=image.height, name=row['file'])
             except (OSError, Image.DecompressionBombError) as error:
                 raise s.SuggestionError(f"Cannot read dataset image {row['file']}.") from error
-            request = s.build_review_request(catalog, s.image_data(frame, 1024), think_mode)
+            request = s.build_review_request(catalog, s.image_data(frame, s.REVIEW_IMAGE_MAX_EDGE), think_mode)
             started = time.perf_counter()
             payload = client.decide(request)
             name, _ = s.parse_response(payload, request['questions'])
@@ -199,7 +197,10 @@ def labeled_rows(dataset, labels_path):
     s.require(bool(rows), 'No usable scored labels.')
     # Split all manifest groups, including those without usable labels. This
     # fixes membership independently of label availability and class outcomes.
-    return rows, sorted({entry['group'] for entry in entries}), ids, model
+    signature = next(iter(scores.values()))['scoring']['requestSignature']
+    conditions = next(s.scoring_conditions(catalog, mode) for mode in ('auto', 'never')
+                      if request_signature(catalog, mode) == signature)
+    return rows, sorted({entry['group'] for entry in entries}), ids, model, conditions
 
 
 def atomic_json(path, document):
@@ -220,7 +221,7 @@ def atomic_json(path, document):
 
 
 def fit_dataset(dataset, labels_path, output, *, seed=7, label_source=None):
-    rows, groups, ids, model = labeled_rows(dataset, labels_path)
+    rows, groups, ids, model, conditions = labeled_rows(dataset, labels_path)
     dev_groups, test_groups = group_holdout(groups, seed)
     dev = [r for r in rows if r['group'] in dev_groups]
     test = [r for r in rows if r['group'] in test_groups]
@@ -245,11 +246,12 @@ def fit_dataset(dataset, labels_path, output, *, seed=7, label_source=None):
              'heldOutBrierRaw': raw_metrics['brier'], 'heldOutBrierCalibrated': cal_metrics['brier']}
     s.validate_calibration(block, s.load_questions())
     document = {'format': 'fixlist-photo-calibration', 'version': 1, 'adopted': bool(adopted),
-                'model': model, 'calibration': block, 'protocol': PROTOCOL,
+                'model': model, 'scoringConditions': conditions, 'calibration': block, 'protocol': PROTOCOL,
                 'split': {'seed': seed, 'devGroups': dev_groups, 'heldOutGroups': test_groups, 'cvValidationGroups': folds},
                 'selection': {'method': method, 'cvBrier': cv_scores},
                 'report': {'developmentImageItemLabels': len(dev), 'heldOutImageItemLabels': len(test),
                            'pooled': pooled, 'items': items}}
+    s.validate_calibration_document(document, s.load_questions())
     atomic_json(output, document)
     return document
 
@@ -289,7 +291,7 @@ def main(argv=None):
             result = fit_dataset(args.dataset, args.labels, args.out, seed=args.seed, label_source=args.label_source)
             print(f"Selected {result['selection']['method']}; adopted={result['adopted']}. Wrote {args.out}.")
         else:
-            rows, _, ids, _ = labeled_rows(args.dataset, args.labels)
+            rows, _, ids, _, _ = labeled_rows(args.dataset, args.labels)
             print_table(rows, ids)
     except (s.SuggestionError, OSError, ValueError) as error:
         print(f'Error: {error}', file=sys.stderr)

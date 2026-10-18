@@ -19,6 +19,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import suggest as s
+import evaluate_model as e
 
 
 def make_scan(root):
@@ -372,12 +373,75 @@ class PipelineTests(unittest.TestCase):
             result = s.run_scan(self.root, keyframes=1, progress=lambda line: None)
         self.assertTrue(all(not (item['status'] == 'suggested') and item['thumbnail'] is None for item in result['items']))
 
-    def calibration_document(self, adopted=True):
-        return {'adopted': adopted, 'calibration': {
+    def calibration_document(self, adopted=True, model=s.DRY_MODEL, think_mode='auto'):
+        return {'format': 'fixlist-photo-calibration', 'version': 1, 'model': model,
+                'scoringConditions': {'thinkMode': think_mode, 'imageMaxEdge': 1024,
+                                      'requestSignature': e.request_signature(s.load_questions(), think_mode)},
+                'adopted': adopted, 'calibration': {
             'method': 'platt', 'parameters': {key: {'a': .8, 'b': -.2} for key in s.ITEM_LINKS},
             'fittedAt': '2026-10-18T00:00:00.000Z', 'labelSource': 'Synthetic unit-test labels only',
             'trainExamples': 80, 'heldOutExamples': 40,
             'heldOutBrierRaw': .2, 'heldOutBrierCalibrated': .18}}
+
+    def test_calibration_model_mismatch_on_first_response_aborts_without_output(self):
+        path = self.root / 'test-calibration.json'
+        path.write_text(json.dumps(self.calibration_document(model='model-A')))
+        client, seen = self.mock_client(fixture_response)  # returns fake-http-model
+        with patch.object(s, 'DecisionClient', return_value=client):
+            with self.assertRaisesRegex(s.SuggestionError, 'Calibration model.*no output written'):
+                s.run_scan(self.root, keyframes=2, calibration=path, progress=lambda _: None)
+        self.assertEqual(len(seen), 1)
+        self.assertFalse((self.root / 'suggestions.json').exists())
+
+    def test_calibration_mismatch_preserves_existing_output(self):
+        output = self.root / 'suggestions.json'
+        output.write_bytes(b'Previous result must remain unchanged.')
+        path = self.root / 'test-calibration.json'
+        path.write_text(json.dumps(self.calibration_document(model='model-A')))
+        client, _ = self.mock_client(fixture_response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            with self.assertRaisesRegex(s.SuggestionError, 'Calibration model'):
+                s.run_scan(self.root, keyframes=1, calibration=path, progress=lambda _: None)
+        self.assertEqual(output.read_bytes(), b'Previous result must remain unchanged.')
+
+    def test_calibration_think_mode_mismatch_aborts_before_model_and_no_calibration_works(self):
+        path = self.root / 'test-calibration.json'
+        path.write_text(json.dumps(self.calibration_document(model='fake-http-model', think_mode='never')))
+        client, seen = self.mock_client(fixture_response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            with self.assertRaisesRegex(s.SuggestionError, 'Calibration request conditions'):
+                s.run_scan(self.root, keyframes=1, calibration=path, think_mode='auto', progress=lambda _: None)
+            self.assertEqual(len(seen), 0)
+            self.assertFalse((self.root / 'suggestions.json').exists())
+            with patch.object(s, 'DEFAULT_CALIBRATION', path):
+                result = s.run_scan(self.root, keyframes=1, no_calibration=True, progress=lambda _: None)
+        self.assertIsNone(result['calibration'])
+
+    def test_matching_calibration_model_and_conditions_apply(self):
+        path = self.root / 'test-calibration.json'
+        document = self.calibration_document(model='fake-http-model', think_mode='never')
+        path.write_text(json.dumps(document))
+        client, _ = self.mock_client(fixture_response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            result = s.run_scan(self.root, keyframes=1, calibration=path, think_mode='never', progress=lambda _: None)
+        self.assertEqual(result['calibration'], document['calibration'])
+        for item in result['items']:
+            self.assertAlmostEqual(item['perFrame'][0]['probability'], s.platt_probability(.8, .8, -.2))
+        s.validate_output(result)
+
+    def test_calibration_conditions_and_missing_provenance_fail_closed_even_with_force(self):
+        for mutate in [lambda d: d.pop('model'), lambda d: d.pop('scoringConditions'),
+                       lambda d: d['scoringConditions'].update(imageMaxEdge=512),
+                       lambda d: d['scoringConditions'].update(requestSignature='0' * 64)]:
+            with self.subTest(mutation=mutate):
+                document = self.calibration_document(False)
+                mutate(document)
+                path = self.root / 'test-calibration.json'
+                path.write_text(json.dumps(document))
+                with self.assertRaises(s.SuggestionError):
+                    s.run_scan(self.root, keyframes=1, dry_run=True, calibration=path,
+                               force_calibration=True, progress=lambda _: None)
+                self.assertFalse((self.root / 'suggestions.json').exists())
 
     def test_v2_with_calibration_passes_and_parameters_are_recomputed(self):
         path = self.root / 'test-calibration.json'
@@ -400,10 +464,10 @@ class PipelineTests(unittest.TestCase):
             self.assertIsNone(s.load_calibration())
             with self.assertRaisesRegex(s.SuggestionError, 'did not pass adoption'):
                 s.load_calibration(path)
-            self.assertEqual(s.load_calibration(path, force=True), doc['calibration'])
+            self.assertEqual(s.load_calibration(path, force=True), doc)
             doc['adopted'] = True
             path.write_text(json.dumps(doc))
-            self.assertEqual(s.load_calibration(), doc['calibration'])
+            self.assertEqual(s.load_calibration(), doc)
             self.assertIsNone(s.load_calibration(disabled=True))
         with self.assertRaises(s.SuggestionError):
             s.load_calibration(force=True)

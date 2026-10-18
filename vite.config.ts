@@ -24,7 +24,9 @@ export function parseLocalScanRequest(url: string): { kind: 'index' } | { kind: 
 export function isPrivateCaptureRequest(url: string): boolean {
   let path = url.split('?')[0] ?? '';
   for (let attempt = 0; attempt < 12; attempt++) {
-    if (path.toLowerCase().includes('private-captures')) return true;
+    // Offline iOS builds contain the same private files in generated web
+    // assets. Refuse those paths before root static serving or /@fs, too.
+    if (path.toLowerCase().includes('private-captures') || /(?:^|[\\/])ios(?:[\\/]|$)/i.test(path)) return true;
     try {
       const decoded = decodeURIComponent(path);
       if (decoded === path) return false;
@@ -115,7 +117,7 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
-    fs: { deny: ['.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**'] },
+    fs: { deny: ['.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**', '**/ios/**'] },
   },
   preview: {
     host: '127.0.0.1',

@@ -223,7 +223,7 @@ Use a **private, local** dataset directory outside tracked files, for example
 scan/venv-python scan/evaluate_model.py score --dataset private-captures/evaluation/my-dataset --url http://127.0.0.1:8090 --think-mode never --limit 3
 scan/venv-python scan/evaluate_model.py report --dataset private-captures/evaluation/my-dataset --labels private-captures/evaluation/my-dataset/labels.jsonl
 scan/venv-python scan/evaluate_model.py fit --dataset private-captures/evaluation/my-dataset --labels private-captures/evaluation/my-dataset/labels.jsonl --out scan/calibration.json --seed 7 --label-source 'Describe actual annotator and labeling protocol'
-scan/venv-python scan/suggest.py my-scan --calibration scan/calibration.json
+scan/venv-python scan/suggest.py my-scan --calibration scan/calibration.json --think-mode never
 scan/venv-python scan/suggest.py my-scan --no-calibration
 ```
 
@@ -235,6 +235,11 @@ rejected for explicit recovery, never silently discarded. Changed provenance,
 mixed model names or changed prompts/think mode are rejected on resume; use a
 separate dataset for a new scoring configuration. Failed inference preserves
 previous complete rows. This script never starts the model server.
+
+The request signature now hashes the 1024-pixel image limit together with the
+review request, including think mode and all photo/relevance questions. Scores
+using the earlier request-only signature require rescoring in a separate dataset;
+the tool rejects them rather than assuming preprocessing provenance.
 
 ### Pre-registered protocol (version 1)
 
@@ -274,7 +279,8 @@ previous complete rows. This script never starts the model server.
    positives** as `insufficientPositives: true`; this is a reporting flag and
    does not silently change the specified pooled adoption rule.
 
-The fitted file stores the protocol, model, split group IDs, CV scores, selected
+The fitted file stores the protocol, model, `scoringConditions` (exact keys
+`thinkMode`, `imageMaxEdge`, `requestSignature`), split group IDs, CV scores, selected
 method, per-item coefficients, and held-out raw/calibrated metrics/CIs. No real
 labeled-photo fit is supplied by this implementation. `labelSource` defaults to
 an explicit statement that annotator identity was not provided. Supply the actual
@@ -286,6 +292,14 @@ If `scan/calibration.json` exists and is adopted, `suggest.py` uses it by defaul
 report nor its evidence limits. Invalid calibration files fail validation;
 non-adopted default files are ignored. Do not check in sensitive group IDs,
 label provenance or reports without reviewing their contents.
+
+Before applying a fit, `suggest.py` checks its request conditions against this
+run. It checks the fitted model name against every actual response, including
+the first response when the model name becomes known. A mismatch or missing
+provenance fails without writing output; an existing output remains unchanged.
+`--force-calibration` only overrides adoption, never provenance checks.
+`--no-calibration` bypasses the fitted file and uses raw scores. Fit-file
+provenance does not change the `suggestions.json` v2 calibration block.
 
 ## Current implementation evidence (2026-10-18)
 

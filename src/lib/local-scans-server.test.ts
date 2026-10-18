@@ -112,7 +112,7 @@ describe('dev/preview local scans middleware path boundary', () => {
 describe('ordinary Vite file serving cannot bypass the local-scans allowlist', () => {
   it('retains all installed Vite defaults and denies capture files', () => {
     expect(config.default.server.fs.deny).toEqual(expect.arrayContaining([
-      '.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**',
+      '.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**', '**/ios/**',
     ]));
   });
   it.each([
@@ -132,5 +132,31 @@ describe('ordinary Vite file serving cannot bypass the local-scans allowlist', (
   it('leaves the allowlisted local index and catalog import accessible', () => {
     expect(config.isPrivateCaptureRequest('/local-scans/index.json')).toBe(false);
     expect(config.isPrivateCaptureRequest('/scan/hazard-questions.json?import')).toBe(false);
+  });
+  it.each([
+    '/ios/App/App/public/local-scans/room-1/scene.splat',
+    '/ios/App/App/public/local-scans/room-1/scene.json',
+    '/%69os/App/App/public/local-scans/room-1/suggestions.json',
+    '/%2569os%252fApp%252fApp%252fpublic/local-scans/room-1/scene.splat',
+    '/IOS/App/App/public/local-scans/index.json',
+    '/ios%5cApp%5cApp%5cpublic%5clocal-scans%5croom-1%5cscene.splat',
+    '/%E0%A4%A/%69os/App/App/public/local-scans/room-1/scene.splat',
+  ])('blocks generated iOS assets before static serving, including cross-site: %s', async (url) => {
+    // Only synthetic files in the test temp tree; never inspect the real iOS bundle.
+    const generated = join(temporary, 'ios/App/App/public/local-scans/room-1');
+    await mkdir(generated, { recursive: true });
+    await writeFile(join(generated, 'scene.splat'), 'Synthetic private bundle');
+    const absolute = `/@fs/${join(generated, 'scene.splat')}`;
+    for (const path of [url, absolute, absolute.replace('/ios/', '/%2569os%252f')]) {
+      for (const headers of [{}, { origin: 'https://external.example', 'sec-fetch-site': 'cross-site' }]) {
+        const result = await request(path, 'GET', headers);
+        expect(result.status).toBe(404);
+        expect(result.passed).toBe(false);
+        expect(result.body.toString()).toBe('Not found.');
+        expect(result.headers.get('cache-control')).toBe('no-store');
+      }
+    }
+    expect((await request('/local-scans/index.json')).status).toBe(200);
+    expect((await request('/local-scans/room-1/scene.splat')).status).toBe(200);
   });
 });

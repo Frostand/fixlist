@@ -112,6 +112,24 @@ def validate_calibration(value, catalog):
     return value
 
 
+def validate_calibration_document(document, catalog):
+    """Fit-file provenance is required; the suggestions v2 block stays unchanged."""
+    require(type(document) is dict and document.get('format') == 'fixlist-photo-calibration'
+            and type(document.get('version')) is int and document['version'] == 1,
+            'Unsupported calibration file; refit with scoring provenance or use --no-calibration.')
+    require(type(document.get('adopted')) is bool, 'Calibration file requires adopted: boolean.')
+    bounded_text(document.get('model'), 'calibration model', 200)
+    conditions = document.get('scoringConditions')
+    exact(conditions, ['thinkMode', 'imageMaxEdge', 'requestSignature'], 'calibration scoringConditions')
+    require(conditions['thinkMode'] in ('auto', 'never'), 'Invalid calibration think mode.')
+    integer(conditions['imageMaxEdge'], 'calibration imageMaxEdge', 1, 8192)
+    require(type(conditions['requestSignature']) is str
+            and re.fullmatch(r'[0-9a-f]{64}', conditions['requestSignature']),
+            'Invalid calibration request signature.')
+    validate_calibration(document.get('calibration'), catalog)
+    return document
+
+
 def validate_suggestions(data, catalog):
     require(type(data) is dict and type(data.get('version')) is int and data['version'] in (1, 2),
             'Unsupported suggestions version.')

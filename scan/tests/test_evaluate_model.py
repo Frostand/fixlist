@@ -25,6 +25,16 @@ def response(request, value=.8):
 
 
 class MetricTests(unittest.TestCase):
+    def test_request_signature_binds_think_mode_image_limit_and_photo_questions(self):
+        catalog = s.load_questions()
+        signature = e.request_signature(catalog, 'never')
+        self.assertNotEqual(signature, e.request_signature(catalog, 'auto'))
+        with patch.object(s, 'REVIEW_IMAGE_MAX_EDGE', 512):
+            self.assertNotEqual(signature, e.request_signature(catalog, 'never'))
+        changed = copy.deepcopy(catalog)
+        changed[0]['question'] += ' Changed visible proxy.'
+        self.assertNotEqual(signature, e.request_signature(changed, 'never'))
+
     def test_hand_computed_brier_ece_auroc_auprc(self):
         m = stats.metric_values([0, 0, 1, 1], [.1, .2, .8, .9])
         self.assertEqual(m['n'], 4)
@@ -230,7 +240,7 @@ class DatasetTests(unittest.TestCase):
             labels.append(row)
         path = self.root / 'labels.jsonl'
         path.write_text(''.join(json.dumps(r) + '\n' for r in labels))
-        rows, _, _, _ = e.labeled_rows(self.root, path)
+        rows, _, _, _, _ = e.labeled_rows(self.root, path)
         self.assertEqual([r['label'] for r in rows], [0, 1])
         with patch('sys.stdout', new_callable=StringIO) as output:
             self.assertEqual(e.main(['report', '--dataset', str(self.root), '--labels', str(path)]), 0)
@@ -279,6 +289,10 @@ class DatasetTests(unittest.TestCase):
         result = subprocess.run(command, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         doc = json.loads(output.read_text())
+        self.assertEqual(doc['model'], 'fake-evaluation-model')
+        self.assertEqual(doc['scoringConditions'], {
+            'thinkMode': 'never', 'imageMaxEdge': 1024,
+            'requestSignature': e.request_signature(s.load_questions(), 'never')})
         self.assertEqual(set(doc['selection']['cvBrier']), set(stats.METHODS))
         self.assertFalse(set(doc['split']['devGroups']) & set(doc['split']['heldOutGroups']))
         self.assertEqual(doc['calibration']['trainExamples'], 56)
@@ -289,7 +303,7 @@ class DatasetTests(unittest.TestCase):
             for metric in stats.METRICS:
                 self.assertEqual(doc['report']['items'][item]['raw'][metric]['definedResamples'], 1000)
         s.validate_calibration(doc['calibration'], s.load_questions())
-        self.assertEqual(s.load_calibration(output, force=True), doc['calibration'])
+        self.assertEqual(s.load_calibration(output, force=True, think_mode='never'), doc)
         self.assertEqual(doc['calibration']['heldOutBrierRaw'], doc['report']['pooled']['raw']['brier']['value'])
         self.assertEqual(doc['calibration']['heldOutBrierCalibrated'], doc['report']['pooled']['calibrated']['brier']['value'])
 

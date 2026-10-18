@@ -35,7 +35,16 @@ export const sharingFields = ['roomName', 'photos', 'scanLocation', 'visitTimes'
 export type SharingField = typeof sharingFields[number];
 export type RequestSharing = Record<SharingField, boolean>;
 export const noSharing = (): RequestSharing => ({ roomName: false, photos: false, scanLocation: false, visitTimes: false, areaLabel: false });
+export const REQUEST_HISTORY_LIMIT = 120;
+// After ordinary edits stop: five field revocations, release the assignment,
+// then close the draft. No events need to be discarded or compacted.
+export const MAX_REQUEST_HISTORY = REQUEST_HISTORY_LIMIT + sharingFields.length + 2;
 export type HelpRequestStatus = 'draft' | 'invited' | 'declined' | 'accepted' | 'scheduled' | 'in_progress' | 'volunteer_reported_done' | 'resident_confirmed_done' | 'cancelled';
+export function remainingPrivacyEvents(request: { status: HelpRequestStatus; sharing: RequestSharing }): number {
+  const closures = ['draft', 'declined'].includes(request.status) ? 1
+    : ['cancelled', 'resident_confirmed_done'].includes(request.status) ? 0 : 2;
+  return sharingFields.filter((field) => request.sharing[field]).length + closures;
+}
 export interface RequestEvent extends Attribution { type: string; text: string | null }
 export interface LegacyRequestHistory {
   label: 'Family record (before roles)';

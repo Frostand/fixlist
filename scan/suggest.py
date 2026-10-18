@@ -29,7 +29,8 @@ from PIL import Image
 
 from suggestion_schema import (
     ITEM_LINKS, NOTICE, SuggestionError, bounded_text, exact, frame_name,
-    integer, number, probability, require, validate_suggestions, validate_calibration, platt_probability,
+    integer, number, probability, require, validate_suggestions, validate_calibration,
+    validate_calibration_document, platt_probability,
 )
 
 
@@ -52,6 +53,7 @@ GRID = {f'{row}-{col}': (ri, ci) for ri, row in enumerate(['top', 'middle', 'bot
 RELEVANCE_THRESHOLD = .5
 NONE_THRESHOLD = .2
 DRY_MODEL = 'DRY-RUN deterministic fake answers (no model invoked)'
+REVIEW_IMAGE_MAX_EDGE = 1024
 
 
 def read_json(path, maximum=16_000_000):
@@ -97,6 +99,18 @@ def build_review_request(catalog, image_uri, think_mode):
                  'These are photo-based areas for family review, never safety findings or checklist answers.',
         'questions': questions, 'images': [image_uri], 'think_mode': think_mode,
     }
+
+
+def request_signature(catalog, think_mode):
+    # Bind preprocessing as well as every review question and request option.
+    conditions = {'request': build_review_request(catalog, '<local-photo>', think_mode),
+                  'imageMaxEdge': REVIEW_IMAGE_MAX_EDGE}
+    return hashlib.sha256(json.dumps(conditions, sort_keys=True).encode()).hexdigest()
+
+
+def scoring_conditions(catalog, think_mode):
+    return {'thinkMode': think_mode, 'imageMaxEdge': REVIEW_IMAGE_MAX_EDGE,
+            'requestSignature': request_signature(catalog, think_mode)}
 
 
 def build_location_request(item, image_uri, think_mode):
@@ -378,7 +392,8 @@ def aggregate_items(catalog, observations, threshold, thumbnailer, min_frames=1)
     return items
 
 
-def load_calibration(path=None, *, disabled=False, force=False, catalog=None):
+def load_calibration(path=None, *, disabled=False, force=False, catalog=None, think_mode='auto'):
+    """Return an applicable fit document, retaining provenance for response checks."""
     require(not (disabled and (path is not None or force)), '--no-calibration cannot be combined with calibration/force.')
     require(not force or path is not None, '--force-calibration requires --calibration FILE.')
     if disabled:
@@ -386,13 +401,15 @@ def load_calibration(path=None, *, disabled=False, force=False, catalog=None):
     selected = DEFAULT_CALIBRATION if path is None else Path(path)
     if path is None and not selected.exists():
         return None
-    document = read_json(selected)
-    require(type(document) is dict and type(document.get('adopted')) is bool, 'Calibration file requires adopted: boolean.')
-    block = validate_calibration(document.get('calibration'), catalog or load_questions())
+    catalog = catalog or load_questions()
+    document = validate_calibration_document(read_json(selected), catalog)
     if not document['adopted'] and not force:
         require(path is None, 'Calibration did not pass adoption; use --force-calibration to apply it explicitly.')
         return None
-    return block
+    require(document['scoringConditions'] == scoring_conditions(catalog, think_mode),
+            'Calibration request conditions differ (think mode, image limit or request signature); '
+            'refit for this run or use --no-calibration. No output written.')
+    return document
 
 
 def validate_output(data):
@@ -436,7 +453,9 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
                 and type(prior['timing'].get('dryRun')) in (int, bool) and prior['timing']['dryRun'] == 1,
                 'Dry run will not replace an existing real/unknown suggestions.json; use a separate private scan copy.')
     catalog = load_questions()
-    calibration_block = load_calibration(calibration, disabled=no_calibration, force=force_calibration, catalog=catalog)
+    calibration_document = load_calibration(calibration, disabled=no_calibration, force=force_calibration,
+                                            catalog=catalog, think_mode=think_mode)
+    calibration_block = None if calibration_document is None else calibration_document['calibration']
     splat_count, frames, align_rotation, center = load_scan(scan_dir, keyframes)
     integer(min_frames, 'minFrames', 1, len(frames))
     if dry_run:
@@ -454,12 +473,16 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
         name, answers = parse_response(payload, request['questions'])
         request_seconds += time.perf_counter() - request_started
         require(model_name is None or model_name == name, 'The server model changed during this scan; no output written.')
+        if calibration_document is not None:
+            require(calibration_document['model'] == name,
+                    f'Calibration model {calibration_document["model"]!r} differs from response model {name!r}; '
+                    'use a matching calibration or --no-calibration; no output written.')
         model_name = name
         return answers
 
     for index, frame in enumerate(frames):
         progress(f'[{index + 1}/{len(frames)}] {frame.name}: photo questions')
-        uri = image_data(frame, 1024)
+        uri = image_data(frame, REVIEW_IMAGE_MAX_EDGE)
         answers = ask(build_review_request(catalog, uri, think_mode))
         for item in catalog:
             key = item['checklistItemId']
@@ -476,7 +499,7 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
         if best is not None and best['probability'] >= location_threshold:
             frame = frames_by_name[best['frame']]
             progress(f"  {item['checklistItemId']}: score={best['probability']:.3f}, locating best relevant frame")
-            location = ask(build_location_request(item, image_data(frame, 1024), think_mode))['location']
+            location = ask(build_location_request(item, image_data(frame, REVIEW_IMAGE_MAX_EDGE), think_mode))['location']
             cell = parse_grid_choice(location)
             if cell is not None:
                 best['position'] = locate_in_frame(frame, cell, align_rotation, center)

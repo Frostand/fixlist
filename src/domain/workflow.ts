@@ -1,6 +1,6 @@
 import type { DemoScenario, FictionalProfile, HumanConfirmation } from './types';
 import type { Attribution, Delegation, DelegationScope, HelpRequest, Household, HouseholdPhoto, Language, Person, PersonRole, RequestSharing, SharingField } from './roles';
-import { noSharing, sharingFields } from './roles';
+import { noSharing, REQUEST_HISTORY_LIMIT, sharingFields } from './roles';
 import { demoPeople, RESIDENT_ID } from '../data/demo-people';
 import { computePlan } from './plan';
 import { canConfirmConcern, isChecklistAnswer, isIsoTimestamp, REQUEST_HISTORY_NOTICE, requestIdForAction } from './rules';
@@ -180,14 +180,19 @@ export function applyCommand(scenario: DemoScenario, state: DemoState, c: DemoCo
   const inStatus = (...statuses: HelpRequest['status'][]) => statuses.includes(r.status);
   let patch: Partial<HelpRequest> = {};
   let text: string | null = null;
+  let privacyReduction = false;
   const clearAssignment = { volunteerId: null, sharing: noSharing(), proposedTime: null, agreedTime: null, updates: [], reportedDone: null, confirmedDone: null };
   switch (c.type) {
     case 'set_sharing':
       if (!inStatus('draft', 'declined', 'invited', 'accepted', 'scheduled', 'in_progress', 'volunteer_reported_done')) return fail('Sharing cannot be edited at this stage.');
       if (!c.sharing || Object.keys(c.sharing).length !== sharingFields.length || sharingFields.some((f) => typeof c.sharing[f] !== 'boolean') || !validText(c.visitTimes, 280, true) || !validText(c.areaLabel, 80, true) || c.scanLocation !== null && !validId(c.scanLocation)) return fail('Choose supported sharing fields and short fictional visit and area notes.');
+      if (sharingFields.every((f) => c.sharing[f] === r.sharing[f]) && c.visitTimes === r.visitTimes && c.areaLabel === r.areaLabel && c.scanLocation === r.scanLocation) return ok(state);
+      privacyReduction = sharingFields.every((f) => !c.sharing[f] || r.sharing[f]) && sharingFields.some((f) => r.sharing[f] && !c.sharing[f]);
       patch = { sharing: { ...c.sharing }, visitTimes: c.visitTimes, areaLabel: c.areaLabel, scanLocation: c.scanLocation }; break;
     case 'revoke_shared_field':
       if (!sharingFields.includes(c.field)) return fail('Unknown shared field.');
+      if (!r.sharing[c.field]) return ok(state);
+      privacyReduction = true;
       patch = { sharing: { ...r.sharing, [c.field]: false } }; break;
     case 'invite_volunteer': {
       if (!inStatus('draft', 'declined') || r.volunteerId !== null) return fail('Cancel the existing invitation before inviting someone else.');
@@ -204,12 +209,14 @@ export function applyCommand(scenario: DemoScenario, state: DemoState, c: DemoCo
       text = c.reason; patch = { ...clearAssignment, status: 'declined' }; break;
     case 'propose_time':
       if (!inStatus('accepted') || !validText(c.text, 280)) return fail('Accept the invitation before proposing a short visit time.');
+      if (r.proposedTime?.text === c.text) return ok(state);
       text = c.text; patch = { proposedTime: { ...by, text } }; break;
     case 'agree_time':
       if (!inStatus('accepted') || !r.proposedTime) return fail('A volunteer must propose a time before you agree.');
       patch = { status: 'scheduled', agreedTime: { ...by, text: r.proposedTime.text } }; break;
     case 'post_update':
       if (!inStatus('scheduled', 'in_progress') || !validText(c.text, 280)) return fail('Agree a visit time first; updates must be 1–280 characters.');
+      if (r.updates.at(-1)?.text === c.text) return ok(state);
       if (r.updates.length >= 40) return fail('This demo request has reached its 40-update limit.');
       text = c.text; patch = { status: 'in_progress', updates: [...r.updates, { ...by, text }] }; break;
     case 'report_done':
@@ -230,7 +237,11 @@ export function applyCommand(scenario: DemoScenario, state: DemoState, c: DemoCo
       patch = { ...clearAssignment, status: 'cancelled' }; break;
     default: return fail('Unknown workflow command.');
   }
-  if (r.history.length >= 120) return fail('This demo request has reached its history limit.');
+  // These transitions only reduce sharing or close an assignment/request. They
+  // consume the bounded reserve that ordinary edits cannot use. Identical
+  // revocations return above, so the reserve cannot be filled with no-ops.
+  const exit = ['decline_invitation', 'withdraw', 'cancel_invitation', 'cancel_request', 'confirm_done'].includes(c.type);
+  if (r.history.length >= REQUEST_HISTORY_LIMIT && !privacyReduction && !exit) return fail('This demo request has reached its history limit.');
   const updated: HelpRequest = { ...r, ...patch, revision: r.revision + 1, updatedBy: by, history: [...r.history, { ...by, type: c.type, text }] };
   return ok({ ...state, requests: state.requests.map((item) => item.id === r.id ? updated : item) });
 }

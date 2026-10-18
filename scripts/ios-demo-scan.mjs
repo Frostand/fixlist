@@ -1,6 +1,8 @@
 // Copies one private local scan into the iOS app's gitignored web assets so the
 // native demo build can load it offline, mirroring the dev server's /local-scans
 // route. Run after `npx cap sync ios`; never copies into dist/, public/ or Git.
+// These copies remain private: Vite's early dev/preview middleware blocks
+// decoded ios path segments, backed by server.fs.deny for the native tree.
 import { copyFile, lstat, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 

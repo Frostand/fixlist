@@ -1,6 +1,6 @@
 import type { DemoScenario, HumanConfirmation } from '../domain/types';
 import type { Attribution, HelpRequest, Person } from '../domain/roles';
-import { sharingFields } from '../domain/roles';
+import { MAX_REQUEST_HISTORY, remainingPrivacyEvents, sharingFields } from '../domain/roles';
 import { attributionLabel, canConfirmConcern, createInitialState, isChecklistAnswer, isIsoTimestamp, requestIdForAction, validId, validText, type DemoState } from '../domain/workflow';
 import { demoPeople, LEGACY_ACTOR_ID, LEGACY_LABEL } from '../data/demo-people';
 
@@ -139,7 +139,7 @@ export function reconstructState(value: unknown, scenario: DemoScenario): DemoSt
     const updatedBy = r.updatedBy && typeof r.updatedBy === 'object' && Object.getOwnPropertyDescriptor(r.updatedBy, 'actorId')?.value === LEGACY_ACTOR_ID ? requestAttribution(r.updatedBy) : attribution(r.updatedBy);
     const residentEvents = ['set_sharing', 'revoke_shared_field', 'invite_volunteer', 'agree_time', 'confirm_done', 'not_done_yet', 'cancel_invitation', 'cancel_request'];
     const volunteerEvents = ['accept_invitation', 'decline_invitation', 'propose_time', 'post_update', 'report_done', 'withdraw'];
-    const history = arr(r.history, 120).map((v) => {
+    const history = arr(r.history, MAX_REQUEST_HISTORY).map((v) => {
       const h = obj(v, ['actorId', 'at', 'type', 'text']);
       const type = one(h.type, ['create_request', ...residentEvents, ...volunteerEvents]);
       const a = attribution({ actorId: h.actorId, at: h.at }, residentEvents.includes(type) ? ['resident'] : volunteerEvents.includes(type) ? ['volunteer'] : ['resident', 'family_helper']);
@@ -168,7 +168,10 @@ export function reconstructState(value: unknown, scenario: DemoScenario): DemoSt
       if (['withdraw', 'cancel_invitation', 'decline_invitation', 'cancel_request'].includes(event.type)) { currentVolunteer = null; hasProposal = false; stage = event.type === 'decline_invitation' ? 'declined' : event.type === 'cancel_request' ? 'cancelled' : 'draft'; }
     }
     if (stage !== status || currentVolunteer !== volunteerId) reject('Request status or volunteer disagrees with history.');
-    const revision = int(r.revision, 1, 121);
+    // Even a loaded state must retain capacity for all remaining revocations
+    // and exits; a full live request with shared fields is not valid state.
+    if (history.length + remainingPrivacyEvents({ status, sharing }) > MAX_REQUEST_HISTORY) reject('Request history lacks its privacy reserve.');
+    const revision = int(r.revision, 1, MAX_REQUEST_HISTORY + 1);
     if (revision !== history.length + (legacyHistory ? 1 : 0) || !legacyHistory && history[0]?.type !== 'create_request') reject('Request revision/history mismatch.');
     const last = history.at(-1);
     if (last && (last.actorId !== updatedBy.actorId || last.at !== updatedBy.at)) reject('Latest request attribution is inconsistent.');
