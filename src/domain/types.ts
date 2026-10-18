@@ -1,7 +1,9 @@
+import type { FactDefinition, FactRule, FactValues } from './fact-screening';
+
 /** Missing information must stay unknown until it is supplied. */
 export type CriterionStatus = 'met' | 'not_met' | 'unknown';
 
-/** Planned screening results; no screening engine is implemented yet. */
+/** Recorded-criteria screening never establishes approval or funding. */
 export type ScreeningStatus =
   | 'criteria_matched'
   | 'needs_information'
@@ -35,6 +37,7 @@ export interface Room {
 
 export interface ChecklistItem {
   id: string;
+  roomId: string;
   prompt: string;
   referenceActionId: string;
 }
@@ -67,29 +70,44 @@ export interface Concern {
   confirmation: HumanConfirmation;
 }
 
-/** Reference content only. A generated repair plan is a later milestone. */
+export type FundingTag = 'general_repair' | 'railing' | 'bathroom_support' | 'lighting';
+
+export interface GuidanceReference {
+  title: string;
+  url: string;
+  section: string;
+  reviewedOn: string;
+}
+
+/** Authored reference content; the workflow selects it only from confirmed concerns. */
 export interface ReferenceAction {
   id: string;
   title: string;
   description: string;
   source: SourceRecord;
+  guidance: GuidanceReference;
+  fundingTags: readonly FundingTag[];
+  helpRouting: { kind: 'family_review' | 'professional_review'; explanation: string };
+  cost: { status: 'unknown'; explanation: string };
 }
 
-export interface ProgramCriterion {
+export interface FictionalProfile {
   id: string;
-  description: string;
-  status: CriterionStatus;
-  answerNote: string;
+  label: string;
+  fictional: true;
+  facts: FactValues;
 }
 
 export interface AssistanceProgram {
   id: string;
   name: string;
-  fictional: boolean;
+  fictional: true;
   description: string;
   source: SourceRecord;
-  contact: string | null;
-  criteria: readonly ProgramCriterion[];
+  contact: null;
+  rule: FactRule;
+  coverageTags: readonly FundingTag[];
+  unmodeledRequirements: readonly string[];
 }
 
 export type CompletionRecord =
@@ -118,7 +136,7 @@ export interface FamilyRequest {
 
 export interface DemoScenario {
   id: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
   title: string;
   synthetic: true;
   disclosure: string;
@@ -127,6 +145,8 @@ export interface DemoScenario {
   evidence: readonly ConcernEvidence[];
   concerns: readonly Concern[];
   referenceActions: readonly ReferenceAction[];
+  factDefinitions: readonly FactDefinition[];
+  profiles: readonly FictionalProfile[];
   programs: readonly AssistanceProgram[];
   requests: readonly FamilyRequest[];
 }

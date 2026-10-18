@@ -5,27 +5,97 @@
   line-height: 1.6;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --border: #c8ced6;
+  --accent: #174c84;
 }
-
-body {
-  margin: 0;
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 66rem; margin-inline: auto; padding: 2rem 1.25rem 4rem; }
+h1, h2, h3, h4 { line-height: 1.25; }
+h1 { margin-block: 0.5rem; font-size: clamp(2.25rem, 8vw, 3rem); }
+h2 { font-size: 1.5rem; }
+h3 { font-size: 1.2rem; }
+h4 { font-size: 1rem; }
+section { margin-block-start: 2.5rem; scroll-margin-top: 1.25rem; }
+article + article { margin-block-start: 1.25rem; }
+p { max-width: 75ch; }
+li + li { margin-block-start: 0.6rem; }
+a { color: #164c85; text-underline-offset: 0.2em; }
+button, select { font: inherit; max-width: 100%; min-height: 2.75rem; }
+button { border: 1px solid var(--accent); border-radius: 0.3rem; padding: 0.6rem 0.9rem; background: var(--accent); color: #fff; cursor: pointer; text-align: center; line-height: 1.4; }
+button.secondary { background: #fff; color: var(--accent); }
+button:hover:not(:disabled) { background: #0e3763; color: #fff; }
+button:disabled { color: #515a66; border-color: #aeb7c3; background: #edf0f4; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid #a14d00; outline-offset: 4px; }
+select { display: block; width: 100%; border: 1px solid #758293; border-radius: 0.25rem; padding: 0.55rem; background: #fff; color: #202124; }
+label { display: block; font-weight: 650; margin-block-end: 0.5rem; }
+nav { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-block: 1.5rem; }
+nav a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+footer { margin-block-start: 2.5rem; border-top: 1px solid var(--border); padding-top: 1rem; font-size: 0.9rem; }
+time, dd, .source-note, .small-text { overflow-wrap: anywhere; }
+dt { font-weight: 650; }
+dd { margin-inline-start: 0; margin-block-end: 0.75rem; }
+.intro { font-size: 1.15rem; }
+.eyebrow { color: #3d526a; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.035em; }
+.notice { padding: 0.9rem 1rem; border-left: 4px solid #976900; background: #fff8e8; color: #463c25; }
+.session-status { border-block: 1px solid var(--border); padding-block: 1rem; }
+.room-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; align-items: start; }
+.card { padding: 1.25rem; border: 1px solid var(--border); border-radius: 0.4rem; min-width: 0; }
+.card > :first-child { margin-block-start: 0; }
+.card > :last-child { margin-block-end: 0; }
+.room-grid .card { margin-block-start: 0; }
+.field { margin-block: 1.25rem; }
+.confirmation { border-top: 1px solid var(--border); margin-block-start: 1.25rem; }
+.small-text, .source-note { font-size: 0.9rem; color: #485261; }
+.button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-block: 1rem; }
+.empty-state { padding: 1rem; background: #f3f5f8; border: 1px dashed #8796a8; }
+.plan-list { padding-inline-start: 1.75rem; }
+.plan-list > li + li { margin-block-start: 1.25rem; }
+.plan-list > li::marker { font-weight: 700; }
+.screening-result { padding: 0.1rem 1rem; border-left: 4px solid var(--accent); background: #f0f5fb; }
+.coverage-summary, .profile-facts, .work-relevance { margin-block: 1.25rem; padding: 0.75rem 1rem; border: 1px solid var(--border); }
+.rule-tree { padding-inline-start: 1.1rem; overflow-wrap: anywhere; }
+.rule-tree p { margin-block: 0.35rem 0.75rem; }
+.rule-label { display: block; }
+.action-metadata, .request-work-context { border-top: 1px solid var(--border); margin-block-start: 1rem; }
+.inactive-record { border-style: dashed; background: #f7f8fa; }
+.error-message { color: #8e1e17; padding: 0.8rem; border: 1px solid currentColor; }
+.print-preview-shell { border-top: 2px solid var(--border); padding-top: 1rem; }
+.print-report { margin-block-start: 1.5rem; padding: 1.5rem; border: 1px solid #8c98a7; background: #fafbfc; }
+.print-report article { padding-block-end: 0.75rem; border-bottom: 1px solid var(--border); }
+.print-report section { margin-block-start: 1.5rem; }
+.print-report h2 { margin-block-start: 0.5rem; }
+.skip-link { position: absolute; left: 1rem; top: -6rem; z-index: 10; background: #fff; padding: 0.75rem; border: 2px solid var(--accent); }
+.skip-link:focus { top: 0.5rem; }
+@media (max-width: 40rem) {
+  main { padding: 1.25rem 1rem 3rem; }
+  .room-grid { grid-template-columns: minmax(0, 1fr); }
+  .card, .print-report { padding: 1rem; }
+  .button-row { align-items: stretch; flex-direction: column; }
+  .button-row button { width: 100%; }
+  .plan-list { padding-inline-start: 1.25rem; }
 }
-
-main {
-  max-width: 48rem;
-  margin-inline: auto;
-  padding: 2rem 1.25rem 4rem;
-}
-
-h1,
-h2 {
-  line-height: 1.2;
-}
-
-section {
-  margin-block-start: 2rem;
-}
-
-li + li {
-  margin-block-start: 0.5rem;
+@page { size: auto; margin: 16mm; }
+@media print {
+  :root { color: #000; background: #fff; font-size: 10pt; line-height: 1.35; }
+  .app-screen, .screen-only { display: none !important; }
+  main { max-width: none; margin: 0; padding: 0; }
+  .print-preview-shell, .print-report { padding: 0; margin: 0; border: 0; background: #fff; }
+  .print-report p { max-width: none; margin-block: 0.35rem; orphans: 3; widows: 3; }
+  .print-report section { margin-block-start: 0.8rem; }
+  .print-report article { padding-block-end: 0.4rem; break-inside: auto; }
+  .print-report article + article { margin-block-start: 0.6rem; }
+  .print-report ul, .print-report ol, .print-report dl { margin-block: 0.4rem; }
+  .print-report ul, .print-report ol { padding-inline-start: 1.2rem; }
+  .print-report dd { margin-block-end: 0.35rem; }
+  .print-report li { break-inside: auto; }
+  .print-report li + li, .print-report .plan-list > li + li { margin-block-start: 0.3rem; }
+  .print-report .coverage-summary, .print-report .profile-facts, .print-report .work-relevance { margin-block: 0.5rem; padding: 0.45rem 0.6rem; }
+  .print-report .coverage-summary, .print-report .profile-facts, .print-report .profile-facts dl > div { break-inside: avoid; }
+  .print-report .action-metadata, .print-report .request-work-context { margin-block-start: 0.5rem; }
+  .print-report .rule-tree p { margin-block: 0.2rem 0.35rem; }
+  .print-report .rule-label { break-after: avoid; }
+  .print-report h2, .print-report h3, .print-report h4 { margin-block: 0.65rem 0.3rem; break-after: avoid; }
+  .print-report .source-note, .print-report .small-text, .print-report .eyebrow, .print-report footer { font-size: 1rem; color: #222; }
+  .print-report footer { margin-block-start: 0.5rem; padding-top: 0.4rem; break-inside: avoid; break-before: avoid; }
 }
