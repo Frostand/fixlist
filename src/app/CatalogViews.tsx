@@ -14,10 +14,12 @@ const relevanceLabels = { relevant: 'Work categories overlap', not_relevant: 'Wo
 
 export function CoverageSummary({ scenario, state }: { scenario: DemoScenario; state: DemoState }) {
   const coverage = computeCoverage(scenario, state);
+  const cells = scenario.checklist.map((item) => state.checklistAnswers[item.id] ?? 'unknown');
   return <div className="coverage-summary">
-    <p><strong>Sample checklist: {coverage.answered} of {coverage.total} answered; {coverage.unknown} unknown.</strong> {coverage.yes} yes; {coverage.no} no.</p>
+    <p className="coverage-headline"><strong>Sample checklist: {coverage.answered} of {coverage.total} answered; {coverage.unknown} unknown.</strong> {coverage.yes} yes; {coverage.no} no.</p>
+    <ol className="coverage-bar" aria-hidden="true">{cells.map((answer, index) => <li key={index} data-answer={answer} />)}</ol>
     {coverage.unknown > 0 ? <p>The sample checklist is incomplete. Unanswered questions remain unknown even when the plan is empty.</p> : <p>All sample questions have an answer. Confirmation remains a separate step.</p>}
-    <ul>{coverage.rooms.map((room) => <li key={room.roomId}>{room.roomName}: {room.answered} of {room.total} answered; {room.unknown} unknown.</li>)}</ul>
+    <ul className="coverage-rooms">{coverage.rooms.map((room) => <li key={room.roomId} data-complete={room.unknown === 0}>{room.roomName}: {room.answered} of {room.total} answered; {room.unknown} unknown.</li>)}</ul>
     <p className="small-text">{coverage.disclaimer}</p>
   </div>;
 }
@@ -27,18 +29,19 @@ export function ProfileFacts({ scenario, state }: { scenario: DemoScenario; stat
   return <div className="profile-facts">
     <p><strong>Selected profile:</strong> {profile?.label ?? 'Unavailable fictional profile'}</p>
     <p className="small-text">These fixed fictional facts are sample data, not household information.</p>
-    <dl>{scenario.factDefinitions.map((definition) => {
+    <dl className="fact-grid">{scenario.factDefinitions.map((definition) => {
       const value = profile?.facts[definition.id];
-      const shown = value === undefined || value === null ? 'Unknown / not supplied'
+      const missing = value === undefined || value === null;
+      const shown = missing ? 'Unknown / not supplied'
         : typeof value === 'boolean' ? value ? 'Yes' : 'No'
           : definition.type === 'number' ? `${value} ${definition.unit}` : value;
-      return <div key={definition.id}><dt>{definition.label}</dt><dd>{shown}</dd></div>;
+      return <div key={definition.id} className="fact" data-missing={missing}><dt>{definition.label}</dt><dd>{shown}</dd></div>;
     })}</dl>
   </div>;
 }
 
 export function RuleExplanation({ result }: { result: RuleResult }) {
-  return <li>
+  return <li className="rule" data-status={result.status}>
     <strong className="rule-label">{result.label}: {resultLabels[result.status]}</strong>
     <p>{result.explanation.replace(' Every child result is retained.', '')}</p>
     {result.children.length ? <ul className="rule-tree">{result.children.map((child) => <RuleExplanation key={child.id} result={child} />)}</ul> : null}
@@ -46,11 +49,14 @@ export function RuleExplanation({ result }: { result: RuleResult }) {
 }
 
 export function ActionMetadata({ action, roomNames = [] }: { action: ReferenceAction; roomNames?: readonly string[] }) {
+  const professional = action.helpRouting.kind === 'professional_review';
   return <div className="action-metadata">
-    {roomNames.length ? <p><strong>Sample room{roomNames.length === 1 ? '' : 's'}:</strong> {roomNames.join(', ')}</p> : null}
-    <p><strong>{action.helpRouting.kind === 'professional_review' ? 'Professional review' : 'Family review'}:</strong> {action.helpRouting.explanation}</p>
-    <p><strong>Cost estimate: Unknown.</strong> {action.cost.explanation}</p>
-    <p><strong>Fictional work categories:</strong> {action.fundingTags.map((tag) => tagLabels[tag]).join(', ')}.</p>
+    <dl className="meta-grid">
+      {roomNames.length ? <div><dt>Sample room{roomNames.length === 1 ? '' : 's'}</dt><dd>{roomNames.join(', ')}</dd></div> : null}
+      <div><dt>Who reviews</dt><dd><span className="routing" data-kind={action.helpRouting.kind}>{professional ? 'Professional review' : 'Family review'}</span> {action.helpRouting.explanation}</dd></div>
+      <div><dt>Cost</dt><dd><strong>Cost estimate: Unknown.</strong> {action.cost.explanation}</dd></div>
+      <div><dt>Fictional work categories</dt><dd><ul className="chips">{action.fundingTags.map((tag) => <li key={tag}>{tagLabels[tag]}</li>)}</ul></dd></div>
+    </dl>
     <SourceNote source={action.source} />
     <p className="source-note"><strong>Reference guidance:</strong> <a href={action.guidance.url}>{action.guidance.title}</a>, {action.guidance.section}; read {action.guidance.reviewedOn}. The checklist is reference material; it does not validate this fictional observation, routing, cost, ordering or program category.</p>
   </div>;
@@ -68,17 +74,19 @@ export function ProgramDetails({ program, scenario, state, plan, live = false }:
   const screened = screenProgram(program, scenario.factDefinitions, profile?.facts ?? null);
   const relevance = computeWorkRelevance(program, plan);
   return <>
-    <div className="screening-result" role={live ? 'status' : undefined} aria-live={live ? 'polite' : undefined}>
+    <div className="screening-result" data-status={screened.error ? 'error' : screened.status} role={live ? 'status' : undefined} aria-live={live ? 'polite' : undefined}>
       <h4>{screened.error ? 'Screening unavailable — invalid definition or facts' : screeningStatusLabels[screened.status]}</h4>
       <p>{screened.explanation}</p>
     </div>
-    {screened.ruleResult ? <ul className="rule-tree"><RuleExplanation result={screened.ruleResult} /></ul> : null}
-    <div className="work-relevance">
+    {screened.ruleResult ? <ul className="rule-tree rule-root"><RuleExplanation result={screened.ruleResult} /></ul> : null}
+    <div className="work-relevance" data-status={relevance.status}>
       <h4>Relation to confirmed work: {relevanceLabels[relevance.status]}</h4><p>{relevance.explanation}</p>
       <p><strong>Fictional program work categories:</strong> {program.coverageTags.map((tag) => tagLabels[tag]).join(', ')}.</p>
       {relevance.matchedActionIds.length ? <><p>Overlapping actions:</p><ul>{relevance.matchedActionIds.map((id) => <li key={id}>{actionTitle(scenario, id)}</li>)}</ul><p>Overlapping categories: {relevance.matchedTags.map((tag) => tagLabels[tag]).join(', ')}.</p></> : null}
     </div>
-    <h4>Requirements this demo does not evaluate</h4><ul>{screened.unmodeledRequirements.map((requirement) => <li key={requirement}>{requirement}</li>)}</ul>
-    <p>{screened.disclaimer}</p><SourceNote source={program.source} />
+    <div className="unmodeled">
+      <h4>Requirements this demo does not evaluate</h4><ul>{screened.unmodeledRequirements.map((requirement) => <li key={requirement}>{requirement}</li>)}</ul>
+    </div>
+    <p className="small-text">{screened.disclaimer}</p><SourceNote source={program.source} />
   </>;
 }

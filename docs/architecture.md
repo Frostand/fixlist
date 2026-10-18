@@ -24,12 +24,12 @@ Following Andrew's request to retain useful parts of the larger proposal, this l
 | `src/domain/screening.ts` | Program status and independent work-category relevance. |
 | `src/domain/catalog.ts`, `coverage.ts` | Authored catalog integrity and per-room sample answer coverage. |
 | `src/lib/demo-storage.ts` | Runtime validation, trusted reconstruction, origin-local storage, reset and explicit failures. |
-| `src/app/` | React controls and printable view; business rules remain in the domain. |
-| `src/styles/` | Plain screen/print CSS, native controls and visible focus. |
+| `src/app/` | React controls, the coverage floor plan and the printable view; business rules remain in the domain. |
+| `src/styles/` | Plain screen/print CSS tokens, native controls and visible focus. Design rules are in `frontend-design-2026-10-17.md`. |
 | `docs/` | Decisions, source review, evidence, recording plan and factual assistance log. |
 | `recordings/` | Ignored local screenshot/video/PDF evidence; only its README is tracked. |
 
-React/React DOM **19.3.1**, TypeScript **7.0.2**, Vite **8.3.4**, Vite React plugin **6.1.2**, and Vitest **5.0.5** remain exact versions. Node **24.18.0** and npm **11** are required. `package-lock.json` fixes the resolved graph. No dependencies were added for this work. There is no router, component kit, state library, backend, database, PDF library, analytics or external API.
+React/React DOM **19.3.1**, TypeScript **7.0.2**, Vite **8.3.4**, Vite React plugin **6.1.2**, and Vitest **5.0.5** remain exact versions. Node **24.18.0** and npm **11** are required. `package-lock.json` fixes the resolved graph. The only additions since the core build are three self-hosted SIL OFL font packages at exact versions (`@fontsource-variable/atkinson-hyperlegible-next`, `@fontsource/atkinson-hyperlegible-mono`, `@fontsource/zilla-slab`, all **5.3.0**); they ship local woff2 files, not a font CDN. There is no router, component kit, state library, backend, database, PDF library, analytics or external API.
 
 The initial JavaScript budget remains **250 KiB gzip**. Report Vite's measured output separately from this budget; it does not establish latency. Add dependencies only for a demonstrated need.
 
