@@ -214,11 +214,36 @@ backend. Real MLX inference, empirical photo calibration, location accuracy and
 family review remain unvalidated. This worker made no app changes or commits;
 the parent owns integration and final acceptance.
 
+Parent follow-up on the host, October 18, 2026: **69 tests ran, all passed, none
+skipped**, including both socket-based fake HTTP server tests.
+
+### Real MLX run: `viennese-v2`
+
+One real inference run used StartLux-Decision-v1.1-9B-AutoThink-MLX-4bit served
+locally on the Mac. It covered **60 of 225 registered frames** of the 131,386-splat
+`viennese-v2` scan (a photoreal render, not a real home) with thresholds 0.6
+suggestion / 0.5 location / 0.5 relevance / 0.2 none. It made **69 requests,
+zero retries, in 1,108 seconds**. Three of eight items crossed the suggestion
+threshold:
+
+| Item | Max P(yes) | Frames ≥ 0.6 | Manual look at the best frame |
+| --- | ---: | ---: | --- |
+| Bathroom support | 0.92 | 3 | Tub visible through an open door; no grab bar in view. Plausible. |
+| Rug | 0.77 | 2 | Small dark mat at a doorway; no raised or curled edge visible. Weak. |
+| Night lighting | 0.61 | 1 | Dim corner by bedroom doors. Plausible but subjective. |
+
+The cord item peaked at 0.44 and was not suggested, although an earlier, smaller
+run on this scan (output since overwritten) had suggested it. A 32-frame run on
+the older 65,102-splat `viennese-baseline` scan suggested only bathroom support
+(0.93; rug 0.54, night lighting 0.52). Item sets shifting with frame sampling is
+the max-over-correlated-frames sensitivity described above. One run on rendered
+imagery, judged by one person, is not a calibration or accuracy result.
+
 Implementation checklist:
 
 - [x] Define eight photo questions with scope questions and explicit proxy limits.
 - [x] Implement documented transport, keyframes, grid/depth placement,
   aggregation, thumbnails, strict output validation and atomic saving.
 - [x] Execute deterministic tests and mocked HTTP-byte pipeline checks.
-- [ ] Parent: execute the two socket-based fake HTTP server tests outside this sandbox.
+- [x] Parent: execute the two socket-based fake HTTP server tests outside this sandbox.
 - [x] Measure the real-scan deterministic dry run and document its limits.
