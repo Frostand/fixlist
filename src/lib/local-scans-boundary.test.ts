@@ -54,6 +54,9 @@ beforeAll(async () => {
   await writeFile(join(project, 'public/public-asset.txt'), 'Synthetic public asset');
   await writeFile(join(project, 'public/favicon.svg'), '<svg><title>Synthetic favicon</title></svg>');
   await writeFile(join(project, 'src/main.tsx'), 'export const synthetic = "Synthetic source";');
+  await mkdir(join(project, 'scan'));
+  await writeFile(join(project, 'scan/hazard-questions.json'), '{"synthetic":"photo catalog"}');
+  await writeFile(join(project, 'scan/suggest.py'), 'synthetic = "pipeline source"');
   await writeFile(join(project, 'node_modules/.vite/deps/synthetic.js'), 'export const dependency = "Synthetic dependency";');
   await writeFile(join(allowed, 'ordinary.json'), 'Synthetic allowed asset');
   await writeFile(join(outside, 'secret.json'), 'Synthetic outside asset');
@@ -75,6 +78,10 @@ beforeAll(async () => {
   }
   await mkdir(join(project, 'dist/assets'));
   await writeFile(join(project, 'dist/assets/synthetic.js'), 'console.log("Synthetic built asset");');
+  // A build copies a public/ symlink target into dist as a regular file.
+  await mkdir(join(project, 'public/assets'), { recursive: true });
+  await symlink(join(native, 'room/scene.json'), join(project, 'public/assets/copied-private.txt'));
+  await writeFile(join(project, 'dist/assets/copied-private.txt'), nativeBody);
   await writeFile(join(project, 'dist/favicon.svg'), '<svg><title>Synthetic favicon</title></svg>');
   await writeFile(join(project, 'dist/public-asset.txt'), 'Synthetic public asset');
   // A copied dist file cannot make an unsafe source symlink an allowed public URL.
@@ -280,5 +287,22 @@ describe('real Vite preview assets', () => {
 
   it.each(['/src/main.tsx', '/@vite/client', '/@id/synthetic', '/@react-refresh', '/node_modules/.vite/deps/synthetic.js'])('refuses development-only routes: %s', async (path) => {
     expect((await fetch(urls.preview + path)).status).toBe(404);
+  });
+});
+
+describe('photo catalog import and copied public assets', () => {
+  it('serves the trusted photo-question catalog to the dev module graph only', async () => {
+    const catalog = await fetch(urls.dev + '/scan/hazard-questions.json?import');
+    expect(catalog.status).toBe(200);
+    expect(await catalog.text()).toContain('photo catalog');
+    for (const path of ['/scan/suggest.py', '/scan/', '/scan']) expect((await rawRequest(urls.dev, path)).status).toBe(404);
+    expect((await fetch(urls.preview + '/scan/hazard-questions.json')).status).toBe(404);
+  });
+
+  it('refuses a preview asset copied from an unsafe public symlink', async () => {
+    const copied = await fetch(urls.preview + '/assets/copied-private.txt');
+    expect(copied.status).toBe(404);
+    expect(await copied.text()).not.toContain(nativeBody);
+    expect((await fetch(urls.preview + '/assets/synthetic.js')).status).toBe(200);
   });
 });

@@ -101,10 +101,12 @@ describe('dev/preview local scans middleware path boundary', () => {
     root = join(temporary, 'symlinked-scans'); await symlink(original, root);
     expect((await request('/local-scans/index.json')).status).toBe(404);
   });
-  it('registers only server and preview hooks, with no production build asset hook', () => {
+  it('registers server and preview hooks and a validation-only build hook, never an asset-emitting one', () => {
     const plugin = config.localScansPlugin();
     expect(typeof plugin.configureServer).toBe('function'); expect(typeof plugin.configurePreviewServer).toBe('function');
-    expect(plugin.generateBundle).toBeUndefined(); expect(plugin.buildStart).toBeUndefined(); expect(plugin.writeBundle).toBeUndefined();
+    // buildStart only refuses unsafe public/ symlinks; nothing may emit or copy scan files into a build.
+    expect(typeof plugin.buildStart).toBe('function');
+    expect(plugin.generateBundle).toBeUndefined(); expect(plugin.writeBundle).toBeUndefined(); expect(plugin.renderChunk).toBeUndefined(); expect(plugin.resolveId).toBeUndefined(); expect(plugin.load).toBeUndefined();
   });
 });
 

@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -126,6 +126,9 @@ async function createRouteAllowlist(projectRoot: string, publicDir: string, dist
       } else if (publicFiles.has(path)) {
         const root = distRoot ?? publicDir;
         file = join(root, path); roots = [root];
+      } else if (development && path === '/scan/hazard-questions.json') {
+        // The app imports the trusted photo-question catalog directly (single source of truth).
+        file = join(projectRoot, 'scan', 'hazard-questions.json'); roots = [join(projectRoot, 'scan')];
       } else if (development && path.startsWith('/src/')) {
         file = join(projectRoot, path); roots = [join(projectRoot, 'src')];
       } else if (development && path.startsWith('/node_modules/')) {
@@ -133,6 +136,12 @@ async function createRouteAllowlist(projectRoot: string, publicDir: string, dist
       } else if (development && path.startsWith('/@fs/')) {
         file = resolve('/', path.slice('/@fs/'.length)); roots = [join(projectRoot, 'src'), join(projectRoot, 'node_modules')];
       } else if (distRoot && path.startsWith('/assets/')) {
+        // A build copies public/ symlink targets into dist as regular files; refuse
+        // an asset whose public source resolves somewhere unsafe.
+        if (publicDir) {
+          const source = await safeTarget(join(publicDir, path));
+          if (existsSync(join(publicDir, path)) && !isInside(source, publicRoot)) { notFound(response); return; }
+        }
         file = join(distRoot, path); roots = [join(distRoot, 'assets')];
       } else if (!(development && (path.startsWith('/@vite/') || path.startsWith('/@id/') || path === '/@react-refresh' || (path === hmrPath && request.headers.upgrade?.toLowerCase() === 'websocket')))) {
         notFound(response); return;
@@ -215,13 +224,32 @@ export function createLocalScansHandler(capturesRoot: string) {
     } catch { finish(404, 'Local scan unavailable.'); }
   };
 }
+/** Refuse to build when public/ links outside itself or into private folders; a build would copy the target into dist. */
+export async function assertSafePublicDir(projectRoot: string, publicDir: string): Promise<void> {
+  if (!publicDir || !existsSync(publicDir)) return;
+  const publicRoot = (await canonicalFilePath(publicDir)).target;
+  const privateRoots = await Promise.all([join(projectRoot, 'private-captures'), join(projectRoot, 'ios')].map(async (path) => (await canonicalFilePath(path)).target));
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        const { target, ancestors } = await canonicalFilePath(path);
+        if (!isInside(target, publicRoot) || [target, ...ancestors].some((item) => privateRoots.some((root) => isInside(item, root)))) {
+          throw new Error(`Refusing to build: ${path} links outside public/ or into a private folder.`);
+        }
+      } else if (entry.isDirectory()) await walk(path);
+    }
+  };
+  await walk(publicDir);
+}
 export function localScansPlugin(): Plugin {
-  let root = '';
+  let root = '', projectRoot = '', publicDir = '', command = '';
   return {
     name: 'fixlist-local-scans',
     enforce: 'pre',
-    configResolved(config) { root = join(config.root, 'private-captures', 'scans'); },
-    // There is deliberately no generateBundle, copy or production-build asset hook.
+    configResolved(config) { root = join(config.root, 'private-captures', 'scans'); projectRoot = config.root; publicDir = config.publicDir; command = config.command; },
+    async buildStart() { if (command === 'build') await assertSafePublicDir(projectRoot, publicDir); },
+    // There is deliberately no generateBundle or copy hook; buildStart only refuses unsafe public/ links.
     async configureServer(server) {
       const ws = server.config.server.ws;
       const boundary = await createRouteAllowlist(server.config.root, server.config.publicDir, undefined, join(server.config.base, typeof ws === 'object' ? ws.path ?? '' : ''));
