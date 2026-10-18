@@ -1,0 +1,290 @@
+import { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { SparkRenderer, SplatFileType, SplatMesh } from '@sparkjsdev/spark';
+import { MAX_SPLATS, point3, scanExtension, type Point3, type ScanAsset, type ScanPin } from '../lib/scan-model';
+import { createPickIndex, pickAlongRay, type PickIndex } from '../lib/scan-pick';
+import type { ScanConcern } from './ScanPanel';
+
+interface Props {
+  asset: ScanAsset; flipUpright: boolean; pins: readonly ScanPin[]; concerns: readonly ScanConcern[];
+  placing: boolean; focus: { pin: ScanPin; sequence: number } | null;
+  onPlace: (position: Point3) => void; onReady: (count: number) => void; onError: (message: string) => void;
+}
+type CameraMove = 'left' | 'right' | 'up' | 'down' | 'in' | 'out';
+interface Runtime { reset(): void; orient(flip: boolean): void; focus(pin: ScanPin): void; move(direction: CameraMove): void; hit(x: number, y: number): void; schedule(): void }
+const fileTypes = { splat: SplatFileType.SPLAT, ply: SplatFileType.PLY, spz: SplatFileType.SPZ, ksplat: SplatFileType.KSPLAT };
+
+/** This is the only app module importing Three/Spark; it is loaded by explicit user action. */
+export default function ScanViewer(props: Props) {
+  const host = useRef<HTMLDivElement>(null), markerNodes = useRef(new Map<string, HTMLSpanElement>());
+  const latest = useRef(props), runtime = useRef<Runtime | null>(null);
+  const [loaded, setLoaded] = useState(false), [hitMessage, setHitMessage] = useState('');
+  useEffect(() => { latest.current = props; });
+
+  useEffect(() => {
+    const element = host.current;
+    if (!element) return;
+    let cancelled = false, failed = false, frame = 0, initializing = false;
+    let renderer: THREE.WebGLRenderer | undefined, spark: SparkRenderer | undefined, mesh: SplatMesh | undefined;
+    let controls: OrbitControls | undefined, observer: ResizeObserver | undefined;
+    const canvas = document.createElement('canvas');
+    canvas.tabIndex = 0;
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', 'Interactive room reference. Arrow keys orbit, plus and minus zoom, Home resets.');
+    canvas.setAttribute('aria-describedby', 'scan-controls-help');
+    canvas.textContent = 'Interactive 3D room. The pin list and room checklist remain available below.';
+    element.append(canvas);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#eef1ec');
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1000);
+    const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+    const projected = new THREE.Vector3();
+    let extent = 1, sourceBounds: THREE.Box3 | undefined, pickIndex: PickIndex | undefined;
+    let pointerStart: { x: number; y: number; time: number } | null = null;
+    setLoaded(false);
+    setHitMessage('');
+
+    function release() {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      observer?.disconnect();
+      controls?.dispose();
+      controls = undefined;
+      spark?.dispose();
+      spark = undefined;
+      // Spark's byte decoder is asynchronous. Disposing before it resolves can orphan its buffers.
+      if (!initializing) { mesh?.dispose(); mesh = undefined; }
+      renderer?.dispose();
+      renderer?.forceContextLoss();
+      renderer = undefined;
+      scene.clear();
+      canvas.remove();
+    }
+    function fail(message: string) {
+      if (cancelled || failed) return;
+      failed = true;
+      runtime.current = null;
+      setLoaded(false);
+      latest.current.onError(message);
+      release();
+    }
+    function draw() {
+      frame = 0;
+      if (cancelled || failed || !renderer || !mesh) return;
+      try {
+        renderer.render(scene, camera);
+        for (const pin of latest.current.pins) {
+          const node = markerNodes.current.get(pin.id);
+          if (!node) continue;
+          projected.fromArray(pin.position);
+          mesh.localToWorld(projected);
+          projected.project(camera);
+          node.hidden = projected.z < -1 || projected.z > 1 || Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1;
+          node.style.left = `${(projected.x + 1) * 50}%`;
+          node.style.top = `${(1 - projected.y) * 50}%`;
+        }
+      } catch {
+        fail('The room could not be rendered on this device. Try a smaller scan or a browser with WebGL2 support. The checklist is still available.');
+      }
+    }
+    function schedule() { if (!cancelled && !failed && !frame) frame = requestAnimationFrame(draw); }
+    function reset() {
+      if (!mesh || !controls || !sourceBounds) return;
+      const metadataCamera = props.asset.metadata?.initialCamera;
+      const bounds = sourceBounds.clone().applyMatrix4(mesh.matrixWorld);
+      const target = metadataCamera ? mesh.localToWorld(new THREE.Vector3(...metadataCamera.target)) : bounds.getCenter(new THREE.Vector3());
+      let position: THREE.Vector3;
+      if (metadataCamera) position = mesh.localToWorld(new THREE.Vector3(...metadataCamera.position));
+      else {
+        const radius = Math.max(bounds.getSize(new THREE.Vector3()).length() / 2, 0.0001);
+        const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+        const limitingFov = Math.min(halfFov, Math.atan(Math.tan(halfFov) * camera.aspect));
+        const distance = radius / Math.sin(limitingFov) * 1.15;
+        position = target.clone().add(new THREE.Vector3(1, 0.75, 1).normalize().multiplyScalar(distance));
+      }
+      const distance = position.distanceTo(target);
+      camera.near = Math.max(Math.min(extent, distance) / 10000, 1e-7);
+      camera.far = Math.max(extent * 100, distance + extent * 20);
+      camera.updateProjectionMatrix();
+      camera.position.copy(position);
+      controls.target.copy(target);
+      controls.minDistance = Math.max(extent * 0.001, 1e-6);
+      controls.maxDistance = Math.max(extent * 30, distance * 2);
+      controls.update();
+      schedule();
+    }
+    function orient(flip: boolean) {
+      if (!mesh) return;
+      mesh.rotation.set(flip ? Math.PI : 0, 0, 0);
+      mesh.updateMatrixWorld(true);
+      reset();
+    }
+    function move(direction: CameraMove) {
+      if (!controls) return;
+      const offset = camera.position.clone().sub(controls.target), spherical = new THREE.Spherical().setFromVector3(offset);
+      if (direction === 'left') spherical.theta -= 0.12;
+      if (direction === 'right') spherical.theta += 0.12;
+      if (direction === 'up') spherical.phi -= 0.12;
+      if (direction === 'down') spherical.phi += 0.12;
+      if (direction === 'in') spherical.radius *= 0.85;
+      if (direction === 'out') spherical.radius /= 0.85;
+      spherical.makeSafe();
+      spherical.radius = THREE.MathUtils.clamp(spherical.radius, controls.minDistance, controls.maxDistance);
+      camera.position.copy(controls.target).add(offset.setFromSpherical(spherical));
+      controls.update();
+      schedule();
+    }
+    function focus(pin: ScanPin) {
+      if (!mesh || !controls) return;
+      const target = mesh.localToWorld(new THREE.Vector3(...pin.position));
+      const offset = camera.position.clone().sub(controls.target).normalize().multiplyScalar(Math.max(extent * 0.45, controls.minDistance * 2));
+      controls.target.copy(target);
+      camera.position.copy(target).add(offset);
+      controls.update();
+      schedule();
+      canvas.focus();
+    }
+    function hit(x: number, y: number) {
+      if (!mesh || !latest.current.placing) return;
+      raycaster.setFromCamera(pointer.set(x, y), camera);
+      try {
+        // Pick in the scan's local frame; the pin sits on the click ray at the nearest opaque splat.
+        if (!pickIndex) {
+          const index = createPickIndex(mesh.numSplats, (add) => mesh!.forEachSplat((_, center, scales, __, opacity) => add(center.x, center.y, center.z, Math.max(scales.x, scales.y, scales.z) * 2, opacity)));
+          pickIndex = index;
+        }
+        const inverse = mesh.matrixWorld.clone().invert();
+        const origin = raycaster.ray.origin.clone().applyMatrix4(inverse);
+        const direction = raycaster.ray.direction.clone().transformDirection(inverse);
+        const height = Math.max(canvas.clientHeight, 1);
+        const angularTolerance = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / height * 6;
+        const depth = pickAlongRay(pickIndex, origin.toArray(), direction.toArray(), angularTolerance, extent * 0.02, camera.near);
+        if (depth === null) { setHitMessage('No visible splat surface at that point. Aim at the floor, wall or an object and try again.'); return; }
+        const local = origin.add(direction.multiplyScalar(depth));
+        const position = point3(local.toArray());
+        if (!position) { setHitMessage('That location is outside the supported coordinate range. Try another point.'); return; }
+        setHitMessage('');
+        latest.current.onPlace(position);
+      } catch {
+        setHitMessage('A pin could not be placed on this scan. Try another surface or re-import a supported Gaussian-splat file.');
+      }
+    }
+    function keydown(event: KeyboardEvent) {
+      const moves: Record<string, CameraMove> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', '+': 'in', '=': 'in', '-': 'out', _: 'out' };
+      const direction = moves[event.key];
+      if (direction) { event.preventDefault(); move(direction); }
+      else if (event.key === 'Home') { event.preventDefault(); reset(); }
+    }
+    function down(event: PointerEvent) {
+      if (event.button === 0 && event.isPrimary) pointerStart = { x: event.clientX, y: event.clientY, time: event.timeStamp };
+      else pointerStart = null;
+    }
+    function up(event: PointerEvent) {
+      const start = pointerStart;
+      pointerStart = null;
+      if (!start || !event.isPrimary || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6 || event.timeStamp - start.time > 600) return;
+      const bounds = canvas.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) return;
+      hit((event.clientX - bounds.left) / bounds.width * 2 - 1, -(event.clientY - bounds.top) / bounds.height * 2 + 1);
+    }
+    function drag(event: PointerEvent) {
+      if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 6) pointerStart = null;
+    }
+    function cancelPointer() { pointerStart = null; }
+    function contextLost(event: Event) { event.preventDefault(); fail('WebGL2 lost its graphics context. Import a smaller scan or reload to retry. Unsaved changes remain in memory.'); }
+    canvas.addEventListener('keydown', keydown);
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointermove', drag);
+    canvas.addEventListener('pointercancel', cancelPointer);
+    canvas.addEventListener('webglcontextlost', contextLost);
+
+    void (async () => {
+      try {
+        const context = canvas.getContext('webgl2', { antialias: false, alpha: false });
+        if (!context) { fail('3D viewing requires WebGL2, which is unavailable in this browser. Try a browser with WebGL2 enabled. You can still use the checklist and existing pin list.'); return; }
+        renderer = new THREE.WebGLRenderer({ canvas, context, antialias: false, alpha: false });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        const bytes = await props.asset.blob.arrayBuffer();
+        if (cancelled || failed) return;
+        const extension = scanExtension(props.asset.name);
+        if (!extension) throw new Error('Unsupported filename extension.');
+        mesh = new SplatMesh({ fileBytes: bytes, fileName: props.asset.name, fileType: fileTypes[extension], raycastable: false, lod: false });
+        initializing = true;
+        try { await mesh.initialized; }
+        finally {
+          initializing = false;
+          if (cancelled || failed) { mesh.dispose(); mesh = undefined; }
+        }
+        if (cancelled || failed || !mesh) return;
+        if (mesh.numSplats < 1 || mesh.numSplats > MAX_SPLATS) throw new Error(`Scan must contain 1–${MAX_SPLATS.toLocaleString()} splats.`);
+        if (props.asset.metadata && props.asset.metadata.splatCount !== mesh.numSplats) throw new Error('Decoded splat count does not match scene.json.');
+        sourceBounds = mesh.getBoundingBox();
+        if (!point3(sourceBounds.min.toArray()) || !point3(sourceBounds.max.toArray()) || sourceBounds.isEmpty()) throw new Error('Scan bounds are empty, non-finite or outside the supported coordinate range.');
+        extent = Math.max(sourceBounds.getSize(new THREE.Vector3()).length(), 0.001);
+        spark = new SparkRenderer({ renderer, onDirty: schedule });
+        scene.add(spark, mesh);
+        controls = new OrbitControls(camera, canvas);
+        controls.enableDamping = false;
+        // All camera changes are user initiated; reduced-motion users get the same static view.
+        controls.autoRotate = false;
+        controls.addEventListener('change', schedule);
+        function resize() {
+          if (!renderer) return;
+          const width = Math.max(element?.clientWidth ?? 1, 1), height = Math.max(element?.clientHeight ?? 1, 1);
+          renderer.setSize(width, height, false);
+          camera.aspect = width / height;
+          camera.updateProjectionMatrix();
+          schedule();
+        }
+        observer = new ResizeObserver(resize);
+        observer.observe(element);
+        resize();
+        runtime.current = { reset, orient, focus, move, hit, schedule };
+        orient(latest.current.flipUpright);
+        setLoaded(true);
+        latest.current.onReady(mesh.numSplats);
+        schedule();
+      } catch (error) {
+        const detail = error instanceof Error ? error.message.slice(0, 240) : 'Unknown decoding error.';
+        fail(`The scan could not be opened: ${detail} Select a supported Gaussian-splat export and try again. A regular point-cloud PLY may not contain Gaussian-splat data.`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      runtime.current = null;
+      canvas.removeEventListener('keydown', keydown);
+      canvas.removeEventListener('pointerdown', down);
+      canvas.removeEventListener('pointerup', up);
+      canvas.removeEventListener('pointermove', drag);
+      canvas.removeEventListener('pointercancel', cancelPointer);
+      canvas.removeEventListener('webglcontextlost', contextLost);
+      release();
+    };
+  }, [props.asset]);
+
+  useEffect(() => { runtime.current?.orient(props.flipUpright); }, [props.flipUpright]);
+  useEffect(() => { if (props.focus) runtime.current?.focus(props.focus.pin); }, [props.focus]);
+  useEffect(() => { runtime.current?.schedule(); }, [props.pins, props.concerns]);
+
+  return <div className="scan-viewer">
+    <div className="scan-scene" data-placing={props.placing}>
+      <div className="scan-canvas-host" ref={host} />
+      <div className="scan-markers" aria-hidden="true">{props.pins.map((pin, index) => <span key={pin.id} className="scan-marker" hidden
+        data-confirmed={props.concerns.find((concern) => concern.id === pin.concernId)?.confirmed === true}
+        ref={(node) => { if (node) markerNodes.current.set(pin.id, node); else markerNodes.current.delete(pin.id); }}>{index + 1}</span>)}</div>
+      {props.placing && loaded ? <span className="scan-crosshair" aria-hidden="true">+</span> : null}
+    </div>
+    <div className="button-row scan-camera-controls" role="group" aria-label="Room camera controls">
+      {(['left', 'right', 'up', 'down', 'in', 'out'] as const).map((direction) => <button key={direction} className="secondary compact" disabled={!loaded}
+        aria-label={direction === 'in' || direction === 'out' ? `Zoom ${direction}` : `Orbit ${direction}`} onClick={() => runtime.current?.move(direction)}>
+        {{ left: '←', right: '→', up: '↑', down: '↓', in: '+', out: '−' }[direction]}
+      </button>)}
+      <button className="secondary compact" disabled={!loaded} onClick={() => runtime.current?.reset()}>Reset view</button>
+      <button disabled={!loaded || !props.placing} onClick={() => runtime.current?.hit(0, 0)}>Place pin at center of view</button>
+    </div>
+    {!loaded ? <p className="small-text">The room has not finished loading. Camera controls become available when it is ready.</p> : null}
+    {hitMessage ? <p role="status" className="notice">{hitMessage}</p> : null}
+  </div>;
+}

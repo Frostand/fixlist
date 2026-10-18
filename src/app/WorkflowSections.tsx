@@ -6,6 +6,7 @@ import {
 } from '../domain/workflow';
 import { actionTitle, LocalTime, requestStatusLabels, SourceNote } from './display';
 import { ActionMetadata, CoverageSummary, ProfileFacts, ProgramDetails, RequestWorkContext } from './CatalogViews';
+import { ScanPanel } from './ScanPanel';
 
 interface WorkflowProps { scenario: DemoScenario; state: DemoState; onCommand: (command: DemoCommand) => void }
 
@@ -17,7 +18,7 @@ export function StepHead({ step, id, title, children }: { step: number; id: stri
   return <header className="step-head"><p className="step-index">Step {step} of 5</p><h2 id={id}>{title}</h2>{children}</header>;
 }
 
-export function ChecklistSection({ scenario, state, onCommand }: WorkflowProps) {
+export function ChecklistSection({ scenario, state, onCommand, scanResetVersion = 0, scanResetting = false }: WorkflowProps & { scanResetVersion?: number; scanResetting?: boolean }) {
   const coverage = computeCoverage(scenario, state);
   return (
     <section id="checklist" className="step" aria-labelledby="checklist-heading">
@@ -26,6 +27,8 @@ export function ChecklistSection({ scenario, state, onCommand }: WorkflowProps) 
         <p className="small-text"><strong>{scenario.title}</strong> · Text-only sample rooms. Observations are authored examples, with no live detection or room photos.</p>
       </StepHead>
       <CoverageSummary scenario={scenario} state={state} />
+      {scanResetting ? <p className="screen-only" role="status">Clearing the saved room scan and pins…</p>
+        : <ScanPanel key={scanResetVersion} scenario={scenario} state={state} restoreSaved={scanResetVersion === 0} />}
       <div className="rooms">
         {scenario.rooms.map((room) => {
           const evidence = scenario.evidence.filter((item) => item.roomId === room.id);

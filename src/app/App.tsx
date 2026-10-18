@@ -4,6 +4,7 @@ import { demoScenario } from '../data/demo-scenario';
 import { applyCommand, computeCoverage, computePlan, getRequestViews, validateCatalog, type DemoCommand } from '../domain/workflow';
 import { getBrowserStorage, loadDemoState, resetDemoState, saveDemoState } from '../lib/demo-storage';
 import { createPrintSnapshot } from '../lib/print';
+import { resetScanStorage } from '../lib/scan-storage';
 import { FloorPlan } from './FloorPlan';
 import { PrintReport } from './PrintReport';
 import { AssistanceSection, ChecklistSection, PlanSection, RequestsSection, StepHead } from './WorkflowSections';
@@ -64,6 +65,8 @@ function DemoApp() {
   const [persistence, setPersistence] = useState({ status: initial.status as string, message: initial.message });
   const [feedback, setFeedback] = useState({ id: 0, text: 'Start with a sample checklist answer, then explicitly confirm a concern.' });
   const [error, setError] = useState('');
+  const [scanResetVersion, setScanResetVersion] = useState(0);
+  const [scanResetting, setScanResetting] = useState(false);
   const [report, setReport] = useState(() => createPrintSnapshot(initial.state));
   const [reportIsCurrent, setReportIsCurrent] = useState(true);
   const activeSection = useActiveSection();
@@ -94,7 +97,10 @@ function DemoApp() {
     announce(messages[command.type]);
   }
 
-  function resetDemo() {
+  async function resetDemo() {
+    if (scanResetting) return;
+    // Unmount first: a decoder finishing during reset must not enqueue a later save.
+    flushSync(() => setScanResetting(true));
     const result = resetDemoState(initial.storage, demoScenario);
     currentState.current = result.state;
     setState(result.state);
@@ -103,6 +109,11 @@ function DemoApp() {
     announce('Fresh synthetic demo restored: all profile facts and sample answers are unknown, with no confirmations or workflow requests.');
     setReport(createPrintSnapshot(result.state));
     setReportIsCurrent(true);
+    const scanResult = await resetScanStorage();
+    setScanResetVersion((version) => version + 1);
+    setScanResetting(false);
+    if (!scanResult.ok) setError(scanResult.message);
+    announce(`Fresh synthetic demo restored. ${scanResult.message}`);
   }
 
   function refreshReport() {
@@ -159,7 +170,7 @@ function DemoApp() {
           </nav>
           <div className="rail-footer">
             <p role="status" aria-live="polite" aria-atomic="true" className="storage-line" data-healthy={storageHealthy}><strong>Browser storage:</strong> {persistence.message}</p>
-            <button className="secondary compact" onClick={resetDemo}>Reset synthetic demo</button>
+            <button className="secondary compact" disabled={scanResetting} onClick={() => void resetDemo()}>Reset synthetic demo</button>
             <p className="small-text">Reset clears only FixList’s demo data in this browser. No accounts, no external messages.</p>
           </div>
         </aside>
@@ -173,7 +184,7 @@ function DemoApp() {
             </header>
             {error ? <p role="alert" className="error-message">{error}</p> : null}
             <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">{feedback.text}</p>
-            <ChecklistSection scenario={demoScenario} state={state} onCommand={runCommand} />
+            <ChecklistSection scenario={demoScenario} state={state} onCommand={runCommand} scanResetVersion={scanResetVersion} scanResetting={scanResetting} />
             <PlanSection scenario={demoScenario} state={state} onCommand={runCommand} />
             <AssistanceSection scenario={demoScenario} state={state} onCommand={runCommand} />
             <RequestsSection scenario={demoScenario} state={state} onCommand={runCommand} />

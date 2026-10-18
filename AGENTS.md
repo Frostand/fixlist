@@ -27,7 +27,8 @@ Use Node 24.18.0 and npm 11. Run `npm ci`, then `npm run dev` (127.0.0.1:5173). 
 
 ## Constraints
 
-- Keep exact direct dependency versions and the npm lockfile. Add dependencies only for demonstrated needs. No backend, authentication, database, GPU, native capture, reconstruction, 3D, email, analytics, or external service in this demo scope.
+- Keep exact direct dependency versions and the npm lockfile. Add dependencies only for demonstrated needs. No backend, authentication, server database, email, analytics, or external service in this demo scope.
+- 3D room scan (authorized by Andrew, 2026-10-17): an offline local pipeline in `scan/` (ffmpeg + pycolmap + Brush on the developer's Mac) turns a walk-around phone video into a Gaussian-splat file; the app imports it locally into IndexedDB and renders it lazily with three.js + Spark. Scans and source videos stay in gitignored `private-captures/`, are never uploaded, and never go in `public/` or Git. Pins in the scan are user-placed location notes linked to concerns: they are not hazard detection and never confirm a concern. Units are arbitrary unless measured; make no dimension or accuracy claim.
 - Evidence and human confirmation are separate. Only confirmed concerns may enter the computed plan. The app does not certify a home as safe or provide a complete assessment.
 - Fictional programs must say they are fictional, use synthetic source status, and have no invented verification date. Missing answers remain `unknown`; criteria matching never means approval or guaranteed funding.
 - A family request log is a local record. It does not contact, authenticate, vet, or qualify a helper. Completion stays unconfirmed until explicitly recorded as a family report.
