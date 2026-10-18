@@ -54,7 +54,7 @@ export function ScanSuggestions({ layer, catalog, viewerReady, canAddPin, onShow
     <h4 id="scan-suggestions-heading">{t("legacy.scansuggestions.26")}</h4>
     <p>{t("legacy.scansuggestions.27")}</p>
     <p className="small-text">{t("legacy.scansuggestions.28")}{layer.data.model.name}{t("legacy.scansuggestions.29")}{layer.data.model.license}</p>
-    <p className="small-text">{t("check.confirmHelp")}</p>
+    <p className="small-text">{t("scan.notice")}</p>
     {layer.droppedItems > 0 ? <p className="notice" role="status">{layer.droppedItems}{t("legacy.scansuggestions.30")}</p> : null}
     <h5>{t("legacy.scansuggestions.31")}</h5>
     {suggested.length ? <ul className="scan-suggestion-list">{suggested.map((item) => entry(item))}</ul> : <p className="small-text">{emptyMessage}{t("legacy.scansuggestions.32")}</p>}

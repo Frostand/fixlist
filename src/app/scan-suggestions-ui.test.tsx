@@ -33,6 +33,8 @@ describe('accessible suggestion review path with no workflow mutation', () => {
     expect(html).toContain('Suggested by a local AI model (StartLux-Decision). Areas to review — not findings. They never answer or confirm the checklist.');
     expect(html).toContain('Experimental model score 0.86 (uncalibrated; not a probability)');
     expect(html).toContain('1 of 2 frames above threshold');
+    expect(html).toContain('Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.');
+    expect(html).not.toContain('Only confirmed concerns enter your plan');
     expect(html).toContain('Frame the local AI model looked at when suggesting review');
     expect(html).toContain(`<h5>${catalog.get('rug-check')!.question}</h5>`);
     expect(html).toContain(catalog.get('rug-check')!.limitation);
