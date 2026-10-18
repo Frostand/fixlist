@@ -1,41 +1,56 @@
-# Demo video implementation and shot list
 
-The synthetic software journey is implemented and rehearsed; this is the recording plan, not a completed student submission or a recorded video. Target approximately two minutes, within the CAC rules' 1–3 minute public-video requirement. Confirm final requirements against the [2026 official rules](https://www.congressionalappchallenge.us/wp-content/uploads/2026/05/2026-CAC-Rules.pdf).
+# FixList demo video: shot list (target 2:45, hard limit 3:00)
 
-| Time | Screen / action | Evidence needed before filming | Honest narration boundary |
+This replaces the earlier plan. It covers the current iOS app (Capacitor build in the iPhone 17 Pro Simulator or on a phone). No final video has been recorded. CAC rules: 1 to 3 minutes, public on YouTube or Vimeo, deadline 12:00 pm EDT Monday October 26, 2026. Confirm against the [2026 official rules](https://www.congressionalappchallenge.us/wp-content/uploads/2026/05/2026-CAC-Rules.pdf).
+
+**The video must show:** each participant's name, the app name, the purpose in one clear sentence, the target audience, the tools and coding languages used, and a showcase of functionality. Narration below is a draft for Andrew to rewrite in your own words.
+
+## Shot list
+
+| Time | On screen | Draft narration | Honesty notes |
 | --- | --- | --- | --- |
-| 0:00–0:15 | Title and purpose | Participant names, app name, intended audience, accurate one-sentence purpose. | Explain the proposed workflow; make no safety or outcome claim. |
-| 0:15–0:35 | Sample room and checklist | Publishable asset provenance or a clearly labeled text scenario; working checklist input. | Say this is a synthetic home. Describe preprocessed annotations as preprocessed; no live detection claim. |
-| 0:35–1:00 | Confirm concern, generate plan | Unconfirmed concerns excluded; explicit confirmation changes a plan computed by real rules; explain ordering. | Distinguish supplied example observations from the result computed during the recording. No complete hazard-coverage claim. |
-| 1:00–1:25 | Assistance screening | Computed screening from fixed fictional profile facts and nested conditions; source/date for any future real records; visible unknowns. | Fictional records stay labeled fictional. A criteria match is not eligibility, funding, or approval. |
-| 1:25–1:45 | Family request log | Working local draft/status update, family attribution, unconfirmed completion until explicitly reported. | Say “recorded locally.” No invitation sent, vetted helper, independently verified repair, or guaranteed response. |
-| 1:45–2:00 | Print preview and closing | Usable print output, uncertainty/source labels, actual languages/tools and assistance disclosure. | Identify React/TypeScript/Vite and actual AI use. State remaining demo limits and student contributions accurately. |
+| 0:00–0:16 | Title card: FixList. Names: **TODO participant names**. One-line audience and tools list. | "I'm [TODO name]. This is FixList. FixList helps older adults check their home for fall risks, decide what to fix, and ask family or volunteers for help. It's for older adults living at home, their family helpers, and volunteers. It's built with React, TypeScript and Vite, packaged for iPhone with Capacitor." | Edit the purpose sentence so it is one sentence you believe. No outcome claim (not "prevents falls"). |
+| 0:16–0:22 | Language picker, then "Who is using FixList?" Tap Margaret. | "Everyone picks a language, then who they are. These are demo profiles on one phone." | Banner "Demo profiles on this device" should be visible. No real accounts or sign-in. |
+| 0:22–0:38 | Check your home: one question per screen, answer **Yes** to the rug. | "Margaret answers one question at a time. Yes, there's a loose rug." | Fictional household. Saving a Yes puts nothing in the plan. |
+| 0:38–0:52 | Show the plan still empty. Confirm the concern. Open the plan, grouped by who can do it, and one CDC-based next step. | "A Yes isn't enough. Margaret confirms it, and only then does it enter the plan. The plan is grouped by who can do each job, with a next step based on the CDC checklist." | Grouping is a reading aid, not a risk ranking. Do not say it finds every hazard. |
+| 0:52–1:08 | Ask for help. Choose what to share. Invite Alex. | "Margaret asks for help and chooses exactly what to share. Then Margaret invites Alex, a volunteer." | Professional-review jobs (e.g. grab bars) cannot go to volunteers; mention only if shown. |
+| 1:08–1:28 | Tap Switch person, then Alex. Alex accepts and proposes a time. Switch to Margaret, who agrees. | "Alex sees only what Margaret shared. Alex accepts and proposes a time. Margaret agrees." | Volunteer skills are labeled "Self-reported, not verified". Nobody is called vetted. |
+| 1:28–1:46 | Alex posts an update and reports it done. Switch to Margaret: "Yes, it's done". | "Alex posts an update and reports the job done. Margaret confirms it. Completion is reported by people, not independently verified." | Matches the state "Resident confirmed done". No real visit or repair happened. |
+| 1:46–1:56 | Printable report; open the iOS print sheet. | "FixList makes a printable report with what was answered, confirmed and done." | The native iOS print sheet was verified in the iPhone 17 Pro Simulator on 2026-10-18 (commit 5160f50); check it again on the recording device. |
+| 1:56–2:16 | **Optional.** Room scan orbiting, then the model's "areas to review", then **Show in 3D**. | "We turned a walk-through video into a 3D model on a Mac. A local AI model scores a few photo questions and marks areas to review. These are experimental scores, not findings. It can be wrong, and Margaret decides." | Use on-screen wording only: "areas to review", "experimental model score", "not a finding". Never say "detects hazards". Scan is a render of a fictional apartment, units arbitrary, no measurements. |
+| 2:16–2:24 | Find local help: Eldercare Locator, then the fictional programs. | "Find local help lists a real resource, the Eldercare Locator. The two example programs are fictional and say so." | Check the source line and verified date on screen (**TODO**). A match is not approval or funding. |
+| 2:24–2:32 | Switch to Spanish briefly. | "FixList also works in Spanish. That text is machine-translated and hasn't been reviewed by a person yet." | Banner "Traducción automática; aún no revisada…" must be visible. |
+| 2:32–2:45 | Closing card with the 2.0 plan and credits (below). | "Next, FixList 2.0 would add real accounts, server-checked permissions, and a partner volunteer organization. None of that exists yet. AI tools helped build this app; the full disclosure is in my submission." | Say what exists and what does not. **TODO Andrew: add one line on what you built yourself.** |
 
-The screens above now exist. See `validation-facts-catalog-2026-10-17.md` for current checks and `validation-2026-10-17.md` for earlier core evidence. Keep the final footage focused on a single repeatable journey; use one or two of the eight sample concerns; 3D, native capture, authentication and outreach remain outside this recording scope.
+Without the optional scan segment the video runs about 2:25. Do not add time beyond 3:00 for extra scenes.
 
-## 3D scan and AI suggestion segment (optional, about 40 seconds)
+## Credits card (show 8 seconds or more)
 
-Use this in place of part of the 0:15–1:00 window when showing the scan. Load it with `http://127.0.0.1:4173/?localScan=viennese-v2#scan-heading` (dev/preview server only).
+- App: FixList. Participants: **TODO names**.
+- Tools: React 19, TypeScript, Vite, Capacitor, three.js, Spark; Python, ffmpeg, COLMAP (pycolmap), Brush; StartLux-Decision model (weights CC BY-NC 4.0).
+- AI assistance in development: Claude (Opus 5.5, Sonnet 5.5) and OpenAI Codex models (GPT-6.1 Sol, GPT-6 Luna); see the submission's AI disclosure.
+- Next steps text based on the CDC "Check for Safety" checklist. Eldercare Locator: Administration for Community Living.
+- Fonts: Atkinson Hyperlegible, Zilla Slab (SIL OFL).
+- If the scan is shown: *Source footage: "UE4Arch.com – Viennese apartment" by UE4Arch.com, Wikimedia Commons, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/), https://commons.wikimedia.org/wiki/File:UE4Arch.com_-_Viennese_apartment.webm. Trimmed to 58–158 s, frame-sampled and reconstructed into a 3D scan; changes were made.*
 
-| Screen / action | Evidence needed before filming | Honest narration boundary |
-| --- | --- | --- |
-| Short clip of the walkthrough video, then the 3D scan orbiting | Footage source and license on screen or in credits: UE4Arch "Viennese apartment", Wikimedia Commons, CC BY-SA 4.0 (a photoreal render, not a real home). Pipeline ran locally on the Mac. | "We turned a walk-through video into a 3D model on this laptop." Do not call it a measurement or a scan of a real house; units are arbitrary. |
-| Model suggestions list, then **Show in 3D** | StartLux-Decision v1.1 9B (MLX, CC BY-NC 4.0 weights) credited; probabilities come from the recorded `suggestions.json`. | "A local AI model estimates which checklist items might need a look, and shows the frame it looked at." It is a suggestion, not hazard detection, and it can be wrong. |
-| Dismiss the hanging-lamp "cord" suggestion; pin the rug yourself | Show that dismissing and pinning are explicit family actions. | "The family decides." Never imply the model confirmed anything; the pin turns yellow only after explicit confirmation. |
+## Do not show
 
-## Recording gate
+- The playroom scan (Inria/Deep Blending research data, license not established).
+- Evaluation photos or the private manifest.
+- Any real name, address, phone number, face, real home photo or private message. Use only Margaret, Sam and Alex.
+- The Mac desktop, notifications, file paths, browser tabs or account names.
+- Any claim that the app is validated, found hazards, certifies a home, or contacted a real person.
 
-- Preserve the implemented journey and meaningful rules/storage tests; rerun typecheck, build and tests after relevant changes.
-- Verify that reset restores a clean synthetic starting state and the sequence repeats without manual data editing.
-- Check browser console errors, keyboard operation, readable narrow/wide layouts, and actual print preview/PDF.
-- Record which data is synthetic, which assets were preprocessed, which values are computed live, and which statuses are family-reported.
-- Verify real program claims against primary sources or retain disclosed fictional examples; do not invent sources or verification dates.
-- Record actual student technical contributions and AI/tool assistance. Have the student explain the confirmation, plan, screening, storage, and print code being shown.
+## Pre-recording checklist
 
-## Repeatable two-minute rehearsal
-
-Reset, answer yes for the rug, and pause to show the empty plan before separate confirmation. Confirm, then jump to Action plan and show its explanation. Jump to Help programs: all facts start unknown. Select the fictional Maple renter to show the failed support ownership condition and the matched lighting residency alternative. Point out that lighting work categories do not overlap a rug-only plan. Select the incomplete Maple profile to show missing facts without approval claims. Create a local rug request, record requested, and show that completion remains unconfirmed until its separate button is used. Inspect/print the report and close with the actual assistance disclosure. Avoid claiming a real application or contact was sent.
-
-Before filming, Andrew must choose and complete a meaningful technical contribution and be able to explain the relevant implementation. The AI-generated implementation and this rehearsal do not establish student authorship. No final video has been recorded or uploaded.
-
-Keep raw captures and local exports out of Git. Use [`recordings/README.md`](../recordings/README.md) for file handling. Do not upload or publish without explicit authorization.
+- [ ] Run `npm test`, `npm run typecheck`, `npm run build`; record the results.
+- [ ] Run `npm run ios:demo` so the app bundles `viennese-v2`.
+- [ ] Use the iPhone 17 Pro Simulator (or a phone). Note the device and iOS version.
+- [ ] Reset the demo to a clean state and rehearse the whole journey twice from the picker.
+- [ ] Set the text size to a readable default; no Dynamic Type or VoiceOver claims.
+- [ ] Confirm `suggestions.json` is in the bundled `viennese-v2` scan and that the screen shows only what the file contains. Do not script which items appear. The v2 file was regenerated on 2026-10-18 (60 frames; bathroom support 0.92, rug 0.77, night lighting 0.61 suggested).
+- [ ] Confirm the print sheet opens on the recording device.
+- [ ] Turn on Do Not Disturb and hide notifications. Airplane mode is not required.
+- [ ] Review the full frame and audio for private data before upload (`recordings/README.md`).
+- [ ] Time the final cut at 3:00 or less. Upload as public on YouTube or Vimeo, and open it logged out.
+- [ ] Keep raw captures out of Git. Uploading is a separate step that needs Andrew's decision.
