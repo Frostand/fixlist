@@ -1,7 +1,7 @@
 import react from '@vitejs/plugin-react';
 import { createReadStream } from 'node:fs';
 import { lstat, readdir, realpath, stat } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { defineConfig, type Plugin } from 'vite';
 
@@ -20,25 +20,87 @@ export function parseLocalScanRequest(url: string): { kind: 'index' } | { kind: 
   if (parts.length !== 4 || !name || !validName(name) || !allowedFiles.includes(file as LocalScanFile)) return { kind: 'invalid' };
   return { kind: 'file', name, file: file as LocalScanFile };
 }
-/** Decode repeatedly so encoded separators, names and /@fs forms cannot bypass the boundary. */
-export function isPrivateCaptureRequest(url: string): boolean {
+/** Retain every decoding stage so later URL decoders cannot bypass the boundary. */
+function decodedRequestPaths(url: string): string[] | null {
   let path = url.split('?')[0] ?? '';
+  const paths: string[] = [];
   for (let attempt = 0; attempt < 12; attempt++) {
-    // Offline iOS builds contain the same private files in generated web
-    // assets. Refuse those paths before root static serving or /@fs, too.
-    if (path.toLowerCase().includes('private-captures') || /(?:^|[\\/])ios(?:[\\/]|$)/i.test(path)) return true;
+    paths.push(path);
     try {
       const decoded = decodeURIComponent(path);
-      if (decoded === path) return false;
+      if (decoded === path) return paths;
       path = decoded;
     } catch {
       const decoded = path.replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
-      if (decoded === path) return false;
+      if (decoded === path) return paths;
       path = decoded;
     }
   }
   // Reject excessive nesting rather than passing it to another URL decoder.
-  return true;
+  return null;
+}
+export function isPrivateCaptureRequest(url: string): boolean {
+  const paths = decodedRequestPaths(url);
+  // Offline iOS builds also contain private generated web assets.
+  return !paths || paths.some((path) => path.toLowerCase().includes('private-captures') || /(?:^|[\\/])ios(?:[\\/]|$)/i.test(path));
+}
+function notFound(response: ServerResponse) {
+  response.statusCode = 404;
+  response.setHeader('Cache-Control', 'no-store');
+  response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  response.end('Not found.');
+}
+function isInside(path: string, root: string) {
+  const suffix = relative(root, path);
+  return suffix === '' || (suffix !== '..' && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix));
+}
+async function canonicalFilePath(path: string) {
+  let current = resolve(path), target: string | undefined;
+  const suffix: string[] = [], ancestors: string[] = [];
+  for (;;) {
+    try {
+      const canonical = await realpath(current);
+      target ??= resolve(canonical, ...suffix);
+      ancestors.push(canonical);
+    } catch (error) {
+      // A missing leaf must still be checked against its existing symlinked
+      // ancestors, rather than falling through to Vite's SPA fallback.
+      if (!(error && typeof error === 'object' && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR'))) throw error;
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    suffix.unshift(basename(current));
+    current = parent;
+  }
+  if (!target) throw new Error('Unresolvable file path.');
+  return { target, ancestors };
+}
+function createPrivateFilesGuard(projectRoot: string, servingRoots: string[], allowedRoots: string[]) {
+  return async (request: IncomingMessage, response: ServerResponse, next: () => void): Promise<void> => {
+    try {
+      const paths = decodedRequestPaths(request.url ?? '');
+      if (!paths) { notFound(response); return; }
+      const canonicalRoots = async (roots: string[]) => Promise.all(roots.map(async (root) => (await canonicalFilePath(root)).target));
+      const privateRoots = await canonicalRoots([join(projectRoot, 'private-captures'), join(projectRoot, 'ios')]);
+      let allowed: string[] | undefined;
+      for (const path of paths) {
+        // Mirror root/publicDir static serving in dev and dist serving in preview.
+        const candidates = servingRoots.map((root) => ({ path: resolve(root, path.replace(/^\/+/, '')), rawFs: false }));
+        if (path.startsWith('/@fs/')) candidates.push({ path: resolve('/', path.slice('/@fs/'.length)), rawFs: true });
+        for (const candidate of candidates) {
+          const { target, ancestors } = await canonicalFilePath(candidate.path);
+          // Check ancestors too: an alias may enter a private directory and
+          // leave it through another symlink, or end at a nonexistent file.
+          if ([target, ...ancestors].some((entry) => privateRoots.some((root) => isInside(entry, root)))) { notFound(response); return; }
+          if (candidate.rawFs) {
+            allowed ??= await canonicalRoots(allowedRoots);
+            if (!allowed.some((root) => isInside(target, root))) { notFound(response); return; }
+          }
+        }
+      }
+    } catch { notFound(response); return; }
+    next();
+  };
 }
 async function safeRoot(root: string) {
   // Do not follow symlinked private-captures/scans directories outside the project.
@@ -55,16 +117,14 @@ async function safeFile(root: string, name: string, file: LocalScanFile) {
 }
 export function createLocalScansHandler(capturesRoot: string) {
   return async (request: IncomingMessage, response: ServerResponse, next: () => void): Promise<void> => {
-    // Runs before Vite's static and /@fs handlers in both dev and preview.
-    if (isPrivateCaptureRequest(request.url ?? '')) {
-      response.statusCode = 404;
-      response.setHeader('Cache-Control', 'no-store');
-      response.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      response.end('Not found.');
+    // The dedicated route validates its own names/files, origin and symlinks.
+    // Dispatch it first so valid scan names such as "ios" remain loadable.
+    const route = parseLocalScanRequest(request.url ?? '');
+    if (!route) {
+      if (isPrivateCaptureRequest(request.url ?? '')) notFound(response);
+      else next();
       return;
     }
-    const route = parseLocalScanRequest(request.url ?? '');
-    if (!route) { next(); return; }
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
     const finish = (status: number, message: string) => { response.statusCode = status; response.setHeader('Content-Type', 'text/plain; charset=utf-8'); response.end(message); };
@@ -106,8 +166,14 @@ export function localScansPlugin(): Plugin {
     name: 'fixlist-local-scans',
     configResolved(config) { root = join(config.root, 'private-captures', 'scans'); },
     // There is deliberately no generateBundle, copy or production-build asset hook.
-    configureServer(server) { server.middlewares.use(createLocalScansHandler(root)); },
-    configurePreviewServer(server) { server.middlewares.use(createLocalScansHandler(root)); },
+    configureServer(server) {
+      server.middlewares.use(createLocalScansHandler(root));
+      server.middlewares.use(createPrivateFilesGuard(server.config.root, [server.config.root, server.config.publicDir].filter(Boolean), server.config.server.fs.allow));
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(createLocalScansHandler(root));
+      server.middlewares.use(createPrivateFilesGuard(server.config.root, [resolve(server.config.root, server.config.build.outDir)], server.config.server.fs.allow));
+    },
   };
 }
 
