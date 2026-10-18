@@ -48,7 +48,7 @@ Without the optional scan segment the video runs about 2:25. Do not add time bey
 - [ ] Use the iPhone 17 Pro Simulator (or a phone). Note the device and iOS version.
 - [ ] Reset the demo to a clean state and rehearse the whole journey twice from the picker.
 - [ ] Set the text size to a readable default; no Dynamic Type or VoiceOver claims.
-- [ ] Confirm `suggestions.json` is in the bundled `viennese-v2` scan and that the screen shows only what the file contains. Do not script which items appear. The v2 file was regenerated on 2026-10-18 (60 frames; bathroom support 0.92, rug 0.77, night lighting 0.61 suggested).
+- [ ] Confirm `suggestions.json` is in the bundled `viennese-v2` scan and that the screen shows only what the file contains. Do not script which items appear. The v2 file was regenerated on 2026-10-18 with the adopted calibration (60 frames; only bathroom support is suggested, at an adjusted score of 0.99; rug and night lighting fell below the threshold).
 - [ ] Confirm the print sheet opens on the recording device.
 - [ ] Turn on Do Not Disturb and hide notifications. Airplane mode is not required.
 - [ ] Review the full frame and audio for private data before upload (`recordings/README.md`).

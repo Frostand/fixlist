@@ -25,13 +25,14 @@ Passing tests show the code does what the tests say. They do not show that the A
 
 **What it does:** `scan/suggest.py` asks eight narrow photo questions (e.g. "is a cable visible across a path?") about frames from a room scan. It writes `suggestions.json`. The app shows items above a threshold as "AI review suggested · unverified model output", with the question the model answered, an "Experimental model score" and the frame it looked at.
 
-**What it does not do:** It does not answer, confirm or pre-fill the checklist, and it never enters the plan. It is not hazard detection, a safety assessment or a validated tool. Scores are uncalibrated and have not been tested in real homes. A missing suggestion does not mean an area is safe. Real-model runs on the demo scan used rendered imagery and were judged by one person; `scan/SUGGESTIONS.md` records one weak and two plausible results.
+**What it does not do:** It does not answer, confirm or pre-fill the checklist, and it never enters the plan. It is not hazard detection, a safety assessment or a validated tool. Scores are adjusted by a small calibration fitted on AI-labeled example photos and have not been tested in real homes. A missing suggestion does not mean an area is safe. Real-model runs on the demo scan used rendered imagery and were judged by one person; `scan/SUGGESTIONS.md` records one weak and two plausible results.
 
 ## Evaluation data and labels
 
 - Photos came from Wikimedia Commons and Openverse (CC0, public domain mark, CC BY, CC BY-SA). Per-image provenance sits in a private manifest. The images are not redistributed and were used only for local evaluation.
 - Labels were produced by GPT-6 Luna viewing the photos. They are **AI labels, not expert ground truth**.
-- The calibration tooling exists (`scan/evaluate_model.py`). **TODO Andrew: state whether any calibration was fitted or adopted, and its held-out size.** `scan/SUGGESTIONS.md` says no real labeled-photo fit was supplied. Do not claim accuracy.
+- A per-item Platt calibration was fitted on 2026-10-18 with a pre-registered grouped holdout: 102 development photos and 23 held-out photos (182 photo/question pairs, 8 positives). Held-out Brier went from 0.0249 to 0.0129 (paired 95% CI −0.0246 to −0.0006), and AUROC from 0.995 to 0.993. The adoption rule passed and it was adopted (`scan/calibration.json`), but every item has fewer than 10 held-out positives. Details are in `scan/SUGGESTIONS.md`. Do not claim accuracy in real homes.
+- The 9B model was not fine-tuned: with 24 positive pairs a fine-tune could not be checked fairly.
 
 ## Third-party libraries and tools
 

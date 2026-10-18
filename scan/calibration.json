@@ -1,0 +1,1185 @@
+{
+  "format": "fixlist-photo-calibration",
+  "version": 1,
+  "adopted": true,
+  "model": "StartLux-Decision-v1.1-9B-AutoThink-MLX-4bit",
+  "scoringConditions": {
+    "thinkMode": "never",
+    "imageMaxEdge": 1024,
+    "requestSignature": "db7c6ccd5b36665a982625a16f9b2ad0cfe964c2e711a0e952dbe6a10800ec05"
+  },
+  "calibration": {
+    "method": "platt",
+    "parameters": {
+      "rug-check": {
+        "a": 1.4423567971472282,
+        "b": -2.7654025371856097
+      },
+      "cord-check": {
+        "a": 2.018445266399932,
+        "b": -2.81891265217859
+      },
+      "stair-clutter-check": {
+        "a": 1.3164676875510632,
+        "b": -0.8810716904929181
+      },
+      "handrail-check": {
+        "a": 1.6709072661493378,
+        "b": -2.4879552161957315
+      },
+      "stair-lighting-check": {
+        "a": 1.372159960691155,
+        "b": -3.1713958143261176
+      },
+      "night-lighting-check": {
+        "a": 0.9699909243521914,
+        "b": -2.751773640654759
+      },
+      "shower-surface-check": {
+        "a": 1.6371927575712713,
+        "b": -2.271012819779958
+      },
+      "bathroom-support-check": {
+        "a": 2.337479089634641,
+        "b": -1.5887322713909164
+      }
+    },
+    "fittedAt": "2026-10-18T15:05:24.760Z",
+    "labelSource": "GPT-6 Luna (xhigh) labels from viewing each photo; AI labels, not expert ground truth",
+    "trainExamples": 102,
+    "heldOutExamples": 23,
+    "heldOutBrierRaw": 0.02485049357535607,
+    "heldOutBrierCalibrated": 0.012933875261980605
+  },
+  "protocol": {
+    "version": 1,
+    "holdout": "30% of unique groups, rounded up; seeded shuffle; never used in fitting or selection",
+    "selection": "grouped 5-fold CV on dev groups; lowest pooled out-of-fold Brier; ties within 1e-12 prefer simpler method",
+    "methods": [
+      "raw",
+      "global-platt",
+      "per-item-platt"
+    ],
+    "perItemL2": 1.0,
+    "platt": "sigmoid(a * logit(clamp(raw, 1e-6, 1-1e-6)) + b), a > 0",
+    "labels": "relevant=false => condition=false; relevant=null excluded; otherwise condition=null excluded",
+    "metrics": "pooled and per item; Brier; ECE 10 equal-width bins; tie-aware AUROC; AUPRC = average precision",
+    "bootstrap": "1000 paired resamples of held-out groups with replacement; percentile 95% CIs; undefined draws excluded and counted",
+    "adoption": "held-out pooled Brier improves; paired (calibrated-raw) Brier CI upper < 0; pooled AUROC drop <= 0.02",
+    "insufficientPositives": "per-item held-out positives < 10; flag only, does not alter adoption rule",
+    "counts": "trainExamples/heldOutExamples count distinct scored photos with usable labels; pooled metric n counts image-item labels"
+  },
+  "split": {
+    "seed": 7,
+    "devGroups": [
+      "artist:barbara-spengler",
+      "artist:bart-everson",
+      "artist:busterd",
+      "artist:emmonz2000",
+      "artist:fingerwiki",
+      "artist:globetrotter19",
+      "artist:godber-albert-percy-1875-1949",
+      "artist:infrogmation-of-new-orleans",
+      "artist:joanna-wawrzyniak",
+      "artist:kinna2",
+      "artist:marc-lautenbacher",
+      "artist:marsh-davis-indiana-landmarks",
+      "artist:nps",
+      "artist:nps-photo",
+      "artist:stilfehler",
+      "ov:army-arch",
+      "ov:athomenetwork",
+      "ov:barelyfitz",
+      "ov:christopher-barson",
+      "ov:danxoneil",
+      "ov:hotelkursaal-ausonia",
+      "ov:intenteffect",
+      "ov:jeremy-levine-design",
+      "ov:juhansonin",
+      "ov:just-learn",
+      "ov:kb-collection-hotels-resorts",
+      "ov:peapod-labs",
+      "ov:theslowlane",
+      "ov:torrebarolo",
+      "ov:trailers-of-the-east-coast",
+      "playroom",
+      "uploader:slqbot",
+      "viennese-render"
+    ],
+    "heldOutGroups": [
+      "artist:aismallard",
+      "artist:category-government-of-the-united-states-virgin-islands",
+      "artist:federal-bureau-of-investigation",
+      "artist:happy-j",
+      "artist:j-b-van-sciver-co-mbj-collection",
+      "artist:pattayapatrol",
+      "artist:schweinfurth-charles-frederick-1856-1919",
+      "ov:andrechinn",
+      "ov:editor-b",
+      "ov:ken-doerr",
+      "ov:lorda",
+      "ov:mescon",
+      "ov:personalcreations-com",
+      "ov:thelivingroominkenmore",
+      "ov:witches-falls-cottages"
+    ],
+    "cvValidationGroups": [
+      [
+        "artist:globetrotter19",
+        "artist:stilfehler",
+        "ov:army-arch",
+        "ov:barelyfitz",
+        "ov:intenteffect",
+        "ov:theslowlane",
+        "uploader:slqbot"
+      ],
+      [
+        "artist:godber-albert-percy-1875-1949",
+        "artist:kinna2",
+        "artist:marc-lautenbacher",
+        "artist:nps",
+        "ov:kb-collection-hotels-resorts",
+        "playroom",
+        "viennese-render"
+      ],
+      [
+        "artist:joanna-wawrzyniak",
+        "artist:marsh-davis-indiana-landmarks",
+        "artist:nps-photo",
+        "ov:athomenetwork",
+        "ov:danxoneil",
+        "ov:jeremy-levine-design",
+        "ov:trailers-of-the-east-coast"
+      ],
+      [
+        "artist:busterd",
+        "artist:fingerwiki",
+        "artist:infrogmation-of-new-orleans",
+        "ov:christopher-barson",
+        "ov:juhansonin",
+        "ov:just-learn"
+      ],
+      [
+        "artist:barbara-spengler",
+        "artist:bart-everson",
+        "artist:emmonz2000",
+        "ov:hotelkursaal-ausonia",
+        "ov:peapod-labs",
+        "ov:torrebarolo"
+      ]
+    ]
+  },
+  "selection": {
+    "method": "per-item-platt",
+    "cvBrier": {
+      "raw": 0.030380827864619174,
+      "global-platt": 0.01044491879862849,
+      "per-item-platt": 0.009988122157698672
+    }
+  },
+  "report": {
+    "developmentImageItemLabels": 816,
+    "heldOutImageItemLabels": 182,
+    "pooled": {
+      "raw": {
+        "n": {
+          "value": 182,
+          "ci95": [
+            128.0,
+            254.0
+          ],
+          "definedResamples": 1000
+        },
+        "positives": {
+          "value": 8,
+          "ci95": [
+            4.0,
+            13.0
+          ],
+          "definedResamples": 1000
+        },
+        "brier": {
+          "value": 0.02485049357535607,
+          "ci95": [
+            0.013413385104207334,
+            0.04291428049935456
+          ],
+          "definedResamples": 1000
+        },
+        "ece": {
+          "value": 0.06453420658100516,
+          "ci95": [
+            0.04471799044929518,
+            0.08957672873132334
+          ],
+          "definedResamples": 1000
+        },
+        "auroc": {
+          "value": 0.9949712643678161,
+          "ci95": [
+            0.9824522589659991,
+            1.0
+          ],
+          "definedResamples": 1000
+        },
+        "auprc": {
+          "value": 0.8865936147186148,
+          "ci95": [
+            0.6825324675324675,
+            1.0
+          ],
+          "definedResamples": 1000
+        }
+      },
+      "calibrated": {
+        "n": {
+          "value": 182,
+          "ci95": [
+            128.0,
+            254.0
+          ],
+          "definedResamples": 1000
+        },
+        "positives": {
+          "value": 8,
+          "ci95": [
+            4.0,
+            13.0
+          ],
+          "definedResamples": 1000
+        },
+        "brier": {
+          "value": 0.012933875261980605,
+          "ci95": [
+            0.0012124785680630744,
+            0.032895774232293874
+          ],
+          "definedResamples": 1000
+        },
+        "ece": {
+          "value": 0.015101088299659237,
+          "ci95": [
+            0.005128569472943828,
+            0.03923210427282757
+          ],
+          "definedResamples": 1000
+        },
+        "auroc": {
+          "value": 0.992816091954023,
+          "ci95": [
+            0.9759946359568843,
+            1.0
+          ],
+          "definedResamples": 1000
+        },
+        "auprc": {
+          "value": 0.8413576007326007,
+          "ci95": [
+            0.5864828743997599,
+            1.0
+          ],
+          "definedResamples": 1000
+        }
+      },
+      "pairedBrierDifference": {
+        "value": -0.011916618313375465,
+        "ci95": [
+          -0.024642216545681685,
+          -0.0005946992744784511
+        ],
+        "definedResamples": 1000
+      },
+      "insufficientPositives": true
+    },
+    "items": {
+      "rug-check": {
+        "raw": {
+          "n": {
+            "value": 21,
+            "ci95": [
+              14.0,
+              30.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 1,
+            "ci95": [
+              0.0,
+              3.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.0310831269946292,
+            "ci95": [
+              0.011064440033031813,
+              0.06833587490446022
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.12216247591503901,
+            "ci95": [
+              0.07085174626686912,
+              0.20942504093449463
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 1.0,
+            "ci95": [
+              0.9999999999999999,
+              1.0
+            ],
+            "definedResamples": 641
+          },
+          "auprc": {
+            "value": 1.0,
+            "ci95": [
+              1.0,
+              1.0
+            ],
+            "definedResamples": 641
+          }
+        },
+        "calibrated": {
+          "n": {
+            "value": 21,
+            "ci95": [
+              14.0,
+              30.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 1,
+            "ci95": [
+              0.0,
+              3.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.0017433298308380206,
+            "ci95": [
+              7.598244094371018e-05,
+              0.0038314322946331704
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.015398438486631957,
+            "ci95": [
+              0.004706349511559162,
+              0.02573820301444741
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 1.0,
+            "ci95": [
+              0.9999999999999999,
+              1.0
+            ],
+            "definedResamples": 641
+          },
+          "auprc": {
+            "value": 1.0,
+            "ci95": [
+              1.0,
+              1.0
+            ],
+            "definedResamples": 641
+          }
+        },
+        "pairedBrierDifference": {
+          "value": -0.02933979716379118,
+          "ci95": [
+            -0.0679102588629799,
+            -0.008711254968379305
+          ],
+          "definedResamples": 1000
+        },
+        "insufficientPositives": true
+      },
+      "cord-check": {
+        "raw": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 1,
+            "ci95": [
+              0.0,
+              3.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.025163009899117253,
+            "ci95": [
+              0.0002325135921242197,
+              0.05846503675069425
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.07671964179368407,
+            "ci95": [
+              0.010296761259277467,
+              0.1410363152625163
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 1.0,
+            "ci95": [
+              0.9999999999999999,
+              1.0
+            ],
+            "definedResamples": 635
+          },
+          "auprc": {
+            "value": 1.0,
+            "ci95": [
+              1.0,
+              1.0
+            ],
+            "definedResamples": 635
+          }
+        },
+        "calibrated": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 1,
+            "ci95": [
+              0.0,
+              3.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.0003657991145324654,
+            "ci95": [
+              1.0307499687932154e-07,
+              0.0011920685300970603
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.0057322231773709684,
+            "ci95": [
+              9.517322855369366e-05,
+              0.014814080224483916
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 1.0,
+            "ci95": [
+              0.9999999999999999,
+              1.0
+            ],
+            "definedResamples": 635
+          },
+          "auprc": {
+            "value": 1.0,
+            "ci95": [
+              1.0,
+              1.0
+            ],
+            "definedResamples": 635
+          }
+        },
+        "pairedBrierDifference": {
+          "value": -0.024797210784584786,
+          "ci95": [
+            -0.05758183876613614,
+            -0.0002283894139992314
+          ],
+          "definedResamples": 1000
+        },
+        "insufficientPositives": true
+      },
+      "stair-clutter-check": {
+        "raw": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 2,
+            "ci95": [
+              0.0,
+              6.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.01552859095077328,
+            "ci95": [
+              0.001695745836906986,
+              0.04666411409984365
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.05757560478837537,
+            "ci95": [
+              0.02218190369989961,
+              0.11887938069879798
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 1.0,
+            "ci95": [
+              0.9999999999999999,
+              1.0
+            ],
+            "definedResamples": 657
+          },
+          "auprc": {
+            "value": 1.0,
+            "ci95": [
+              1.0,
+              1.0
+            ],
+            "definedResamples": 657
+          }
+        },
+        "calibrated": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 2,
+            "ci95": [
+              0.0,
+              6.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.009751005692872584,
+            "ci95": [
+              0.00010051442796281234,
+              0.02695795590104908
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.03410121188181335,
+            "ci95": [
+              0.004224190779867344,
+              0.08422954283064313
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 1.0,
+            "ci95": [
+              0.9999999999999999,
+              1.0
+            ],
+            "definedResamples": 657
+          },
+          "auprc": {
+            "value": 1.0,
+            "ci95": [
+              1.0,
+              1.0
+            ],
+            "definedResamples": 657
+          }
+        },
+        "pairedBrierDifference": {
+          "value": -0.005777585257900696,
+          "ci95": [
+            -0.025164730579200024,
+            0.007078685784363269
+          ],
+          "definedResamples": 1000
+        },
+        "insufficientPositives": true
+      },
+      "handrail-check": {
+        "raw": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 0,
+            "ci95": [
+              0.0,
+              0.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.00285682477249841,
+            "ci95": [
+              0.0003554795437263595,
+              0.005180449537253354
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.02736846229055386,
+            "ci95": [
+              0.00942304975484865,
+              0.04389179216699136
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": null,
+            "ci95": [
+              null,
+              null
+            ],
+            "definedResamples": 0
+          },
+          "auprc": {
+            "value": null,
+            "ci95": [
+              null,
+              null
+            ],
+            "definedResamples": 0
+          }
+        },
+        "calibrated": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 0,
+            "ci95": [
+              0.0,
+              0.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 2.944096330408951e-06,
+            "ci95": [
+              6.888372361781132e-08,
+              6.349940457031359e-06
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.0006048318877305466,
+            "ci95": [
+              8.915269592557716e-05,
+              0.001084738295924989
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": null,
+            "ci95": [
+              null,
+              null
+            ],
+            "definedResamples": 0
+          },
+          "auprc": {
+            "value": null,
+            "ci95": [
+              null,
+              null
+            ],
+            "definedResamples": 0
+          }
+        },
+        "pairedBrierDifference": {
+          "value": -0.002853880676168001,
+          "ci95": [
+            -0.005174881378703628,
+            -0.0003554183691406553
+          ],
+          "definedResamples": 1000
+        },
+        "insufficientPositives": true
+      },
+      "stair-lighting-check": {
+        "raw": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 0,
+            "ci95": [
+              0.0,
+              0.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.04883343363121906,
+            "ci95": [
+              0.011650795298737691,
+              0.10600259010857296
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.11856797832877641,
+            "ci95": [
+              0.05013403360014999,
+              0.21403751269772348
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": null,
+            "ci95": [
+              null,
+              null
+            ],
+            "definedResamples": 0
+          },
+          "auprc": {
+            "value": null,
+            "ci95": [
+              null,
+              null
+            ],
+            "definedResamples": 0
+          }
+        },
+        "calibrated": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 0,
+            "ci95": [
+              0.0,
+              0.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.0009310734120980234,
+            "ci95": [
+              2.05400604348866e-05,
+              0.0029647563369513317
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.010002178157662984,
+            "ci95": [
+              0.0018932855171720337,
+              0.024290940637464696
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": null,
+            "ci95": [
+              null,
+              null
+            ],
+            "definedResamples": 0
+          },
+          "auprc": {
+            "value": null,
+            "ci95": [
+              null,
+              null
+            ],
+            "definedResamples": 0
+          }
+        },
+        "pairedBrierDifference": {
+          "value": -0.04790236021912103,
+          "ci95": [
+            -0.10292602288262505,
+            -0.011635713144490235
+          ],
+          "definedResamples": 1000
+        },
+        "insufficientPositives": true
+      },
+      "night-lighting-check": {
+        "raw": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 1,
+            "ci95": [
+              0.0,
+              3.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.03374689705313995,
+            "ci95": [
+              0.00920940065320052,
+              0.07055624160516127
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.07004500114281925,
+            "ci95": [
+              0.04681824602633167,
+              0.14508368179924103
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 0.9545454545454545,
+            "ci95": [
+              0.84625,
+              1.0
+            ],
+            "definedResamples": 642
+          },
+          "auprc": {
+            "value": 0.5,
+            "ci95": [
+              0.25,
+              1.0
+            ],
+            "definedResamples": 642
+          }
+        },
+        "calibrated": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 1,
+            "ci95": [
+              0.0,
+              3.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.037432690033417246,
+            "ci95": [
+              6.599016404216575e-05,
+              0.13471328047852557
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.031463640199494734,
+            "ci95": [
+              0.0045878023457934436,
+              0.1393317355493664
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 0.9545454545454545,
+            "ci95": [
+              0.84625,
+              1.0
+            ],
+            "definedResamples": 642
+          },
+          "auprc": {
+            "value": 0.5,
+            "ci95": [
+              0.25,
+              1.0
+            ],
+            "definedResamples": 642
+          }
+        },
+        "pairedBrierDifference": {
+          "value": 0.003685792980277297,
+          "ci95": [
+            -0.05094808866268372,
+            0.08858950592791252
+          ],
+          "definedResamples": 1000
+        },
+        "insufficientPositives": true
+      },
+      "shower-surface-check": {
+        "raw": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 1,
+            "ci95": [
+              0.0,
+              3.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.0034980009630048202,
+            "ci95": [
+              0.00027446827794149956,
+              0.00883852974568873
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.023878478462773457,
+            "ci95": [
+              0.004784625828098391,
+              0.05335003919721285
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 1.0,
+            "ci95": [
+              0.9999999999999999,
+              1.0
+            ],
+            "definedResamples": 662
+          },
+          "auprc": {
+            "value": 1.0,
+            "ci95": [
+              1.0,
+              1.0
+            ],
+            "definedResamples": 662
+          }
+        },
+        "calibrated": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 1,
+            "ci95": [
+              0.0,
+              3.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.009698505264082941,
+            "ci95": [
+              1.5356594656791032e-07,
+              0.03433106792080224
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.021062677384418728,
+            "ci95": [
+              8.29723225261817e-05,
+              0.07315851382941434
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 1.0,
+            "ci95": [
+              0.9999999999999999,
+              1.0
+            ],
+            "definedResamples": 662
+          },
+          "auprc": {
+            "value": 1.0,
+            "ci95": [
+              1.0,
+              1.0
+            ],
+            "definedResamples": 662
+          }
+        },
+        "pairedBrierDifference": {
+          "value": 0.006200504301078121,
+          "ci95": [
+            -0.0045821845177685516,
+            0.026743151379000747
+          ],
+          "definedResamples": 1000
+        },
+        "insufficientPositives": true
+      },
+      "bathroom-support-check": {
+        "raw": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 2,
+            "ci95": [
+              0.0,
+              5.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.038636032461881645,
+            "ci95": [
+              0.0006231208865662325,
+              0.13044082538817056
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.05508317594483561,
+            "ci95": [
+              0.012876173869418762,
+              0.15140497323974447
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 0.9523809523809524,
+            "ci95": [
+              0.8333333333333334,
+              1.0
+            ],
+            "definedResamples": 879
+          },
+          "auprc": {
+            "value": 0.5833333333333333,
+            "ci95": [
+              0.26583333333333337,
+              1.0
+            ],
+            "definedResamples": 879
+          }
+        },
+        "calibrated": {
+          "n": {
+            "value": 23,
+            "ci95": [
+              16.0,
+              32.0
+            ],
+            "definedResamples": 1000
+          },
+          "positives": {
+            "value": 2,
+            "ci95": [
+              0.0,
+              5.0
+            ],
+            "definedResamples": 1000
+          },
+          "brier": {
+            "value": 0.04257256374461726,
+            "ci95": [
+              1.42976757668368e-07,
+              0.14842841585653788
+            ],
+            "definedResamples": 1000
+          },
+          "ece": {
+            "value": 0.047589002109113106,
+            "ci95": [
+              0.0001283865898528862,
+              0.15337850512873993
+            ],
+            "definedResamples": 1000
+          },
+          "auroc": {
+            "value": 0.9523809523809524,
+            "ci95": [
+              0.8333333333333334,
+              1.0
+            ],
+            "definedResamples": 879
+          },
+          "auprc": {
+            "value": 0.5833333333333333,
+            "ci95": [
+              0.26583333333333337,
+              1.0
+            ],
+            "definedResamples": 879
+          }
+        },
+        "pairedBrierDifference": {
+          "value": 0.003936531282735613,
+          "ci95": [
+            -0.0029306170161269313,
+            0.017938492819025587
+          ],
+          "definedResamples": 1000
+        },
+        "insufficientPositives": true
+      }
+    }
+  }
+}

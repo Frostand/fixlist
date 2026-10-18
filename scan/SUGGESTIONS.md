@@ -317,10 +317,83 @@ ran **38 tests, all passed**, including `CameraViewpointTests`. The evaluation
 module contributes **16 tests**, including the positive-slope boundary regression.
 The older counts below are preserved as historical evidence.
 
-The optional existing model server at `127.0.0.1:8090` refused the connection in
-this implementation session. No server was started and no real-model scoring or
-empirical calibration was claimed. The real `viennese-v2` suggestions were not
-regenerated; dry-run tests use synthetic temporary scans.
+The implementation worker could not reach the model server at `127.0.0.1:8090`
+from its sandbox. Real-model scoring, the calibration study and the regenerated
+`viennese-v2` suggestions were then run by the parent session (see the next
+section).
+
+## Calibration study and decision (2026-10-18)
+
+Andrew asked for better model estimates ("fine tuning or something"). With the
+data available before the October 26 deadline, fine-tuning the 9B model was not
+justified: the labeled set has only 24 positive photo/question pairs, so a LoRA
+fit could not be checked fairly and would likely overfit. The step taken instead
+is the pre-registered Platt calibration above, plus the v2 relevance-gated
+best-frame fix.
+
+**Data.** 125 photos in 48 source groups, kept privately in
+`private-captures/test-datasets/hazard-eval/` (never committed): 30 frames from
+the `viennese-v2` render walkthrough (one group), 30 frames from the playroom
+research scan (one group), 39 Wikimedia Commons and 26 Openverse/Flickr photos
+(CC0, public domain, CC BY, CC BY-SA; per-image provenance in the manifest).
+**Labels** were made by GPT-6 Luna viewing each photo against the literal photo
+and relevance questions, blind to model scores. They are AI labels, not expert
+ground truth, and no second annotator measured agreement. Positives per item:
+stair clutter 9, bathroom support 7, cord 3, rug 2, night lighting 2, shower 1,
+handrail 0, stair lighting 0 (998 usable photo/question pairs).
+
+**Scoring.** StartLux-Decision-v1.1-9B-AutoThink-MLX-4bit, think mode `never`,
+1024 px image limit, the same request as `suggest.py` (signature recorded in
+`scan/calibration.json`).
+
+**Raw model, all 125 photos.** Pooled Brier 0.0294, ECE 0.073, AUROC 0.975,
+AUPRC 0.732. The model ranks photos well but is overconfident on negatives,
+for example rug scores of 0.64–0.74 on frames with no raised or curled edge.
+
+**Pre-registered fit (seed 7).** 33 development groups (102 photos) and 15
+held-out groups (23 photos, 182 pairs, 8 positives). Grouped 5-fold CV selected
+per-item Platt (CV Brier: raw 0.0304, global Platt 0.0104, per-item 0.0100).
+Held-out results, raw → calibrated:
+
+| Metric | Raw | Calibrated |
+| --- | ---: | ---: |
+| Brier | 0.0249 | 0.0129 |
+| ECE | 0.065 | 0.015 |
+| AUROC | 0.995 | 0.993 |
+| AUPRC | 0.887 | 0.841 |
+
+The paired Brier difference is −0.0119, with a grouped-bootstrap 95% CI of
+[−0.0246, −0.0006]. The AUROC drop is 0.002, within the 0.02 limit. **The adoption
+rule passed, so the calibration was adopted** (`scan/calibration.json`). The
+evidence is thin. Every item has fewer than 10 held-out positives. Night
+lighting, shower surface and bathroom support had slightly worse held-out Brier
+on 1–2 positives each. Most of the gain comes from correcting overconfidence on
+photos without the condition. An earlier fit on 99 photos (one held-out
+positive) also "passed" and was not used.
+
+**Effect on the demo scan.** `viennese-v2` was regenerated on 2026-10-18 with
+the adopted calibration (60 keyframes, think mode `never`, 748 s). It shows one
+area to review:
+
+| Item | Best relevant raw | Calibrated | Status |
+| --- | ---: | ---: | --- |
+| Bathroom support | 0.924 | 0.986 | suggested (2 frames) |
+| Rug | 0.767 | 0.259 | below threshold |
+| Night lighting | 0.608 | 0.089 | below threshold |
+| Cord | 0.444 | 0.036 | below threshold |
+| Shower surface | 0.054 | 0.001 | below threshold |
+| Stair items (3) | — | — | not visible |
+
+This matches the manual look recorded below: the rug flag was weak and the
+bathroom flag plausible. The high calibrated bathroom score rests on 2 held-out
+positives, so it remains an experimental score, not a finding. The app shows it
+as "adjusted on 102 example photos labeled by AI; still experimental, not
+validated in real homes". Earlier raw outputs are kept privately as
+`suggestions.v1-60frames-auto.json.bak` and `suggestions.v2-raw-60frames.json.bak`.
+
+**What would make this credible.** More labeled real-home photos with positives
+(e.g. Andrew photographing staged conditions at home), a second human
+annotator, and per-item held-out positives of at least 10.
 
 ## Privacy and license
 
