@@ -40,3 +40,18 @@ export function pickAlongRay(index: PickIndex, origin: Vec3, direction: Vec3, an
   }
   return Number.isFinite(best) ? best : null;
 }
+
+/** Splat centers approximate surfaces: allow a scale-relative depth margin at the marker. */
+export function isSurfaceOccludingMarker(surfaceDepth: number | null, markerDepth: number, margin: number): boolean {
+  return surfaceDepth !== null && Number.isFinite(surfaceDepth) && Number.isFinite(markerDepth) && surfaceDepth > 0
+    && markerDepth > 0 && surfaceDepth < markerDepth - Math.max(0, margin);
+}
+
+/** Origin/marker are in the scan-local frame, just like pin picking. */
+export function isMarkerOccluded(index: PickIndex, origin: Vec3, marker: Vec3, angularTolerance: number, extent: number, near = 0): boolean {
+  const dx = marker[0] - origin[0], dy = marker[1] - origin[1], dz = marker[2] - origin[2];
+  const depth = Math.hypot(dx, dy, dz);
+  if (!Number.isFinite(depth) || depth <= near || depth === 0) return false;
+  const surface = pickAlongRay(index, origin, [dx / depth, dy / depth, dz / depth], angularTolerance, extent * 0.02, near);
+  return isSurfaceOccludingMarker(surface, depth, Math.max(extent * 0.005, depth * 0.01));
+}

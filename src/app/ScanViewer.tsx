@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { SparkRenderer, SplatFileType, SplatMesh } from '@sparkjsdev/spark';
 import { MAX_SPLATS, point3, scanExtension, type Point3, type ScanAsset, type ScanPin } from '../lib/scan-model';
-import { createPickIndex, pickAlongRay, type PickIndex } from '../lib/scan-pick';
+import { createPickIndex, isMarkerOccluded, pickAlongRay, type PickIndex } from '../lib/scan-pick';
+import { captureScanImage } from '../lib/scan-image';
 import { createScanTapTracker, scanPixelRatio } from '../lib/scan-device';
 import { suggestionId, type ScanSuggestion } from '../lib/scan-suggestions';
 import type { ScanConcern } from './ScanPanel';
@@ -12,7 +13,7 @@ interface Props {
   asset: ScanAsset; flipUpright: boolean; pins: readonly ScanPin[]; concerns: readonly ScanConcern[];
   suggestions: readonly ScanSuggestion[]; expectedSuggestionCount: number | null;
   placing: boolean; focus: { position: Point3; viewpoint?: Point3 | null; sequence: number } | null;
-  onPlace: (position: Point3) => void; onReady: (count: number) => void; onError: (message: string) => void;
+  onPlace: (position: Point3, image: string | null) => void; onReady: (count: number) => void; onError: (message: string) => void;
 }
 type CameraMove = 'left' | 'right' | 'up' | 'down' | 'in' | 'out';
 interface Runtime { reset(): void; orient(flip: boolean): void; focus(position: Point3, viewpoint?: Point3 | null): void; move(direction: CameraMove): void; hit(x: number, y: number): void; schedule(): void }
@@ -44,11 +45,14 @@ export default function ScanViewer(props: Props) {
     const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
     const projected = new THREE.Vector3();
     let extent = 1, sourceBounds: THREE.Box3 | undefined, pickIndex: PickIndex | undefined;
+    let occlusionTimer: ReturnType<typeof setTimeout> | undefined, visibilityKey = '';
+    const visibility = new Map<string, boolean>();
     const taps = createScanTapTracker();
     setLoaded(false);
     setHitMessage('');
 
     function release() {
+      clearTimeout(occlusionTimer);
       cancelAnimationFrame(frame);
       frame = 0;
       observer?.disconnect();
@@ -81,15 +85,49 @@ export default function ScanViewer(props: Props) {
           ...latest.current.pins.map((pin) => ({ id: `pin:${pin.id}`, position: pin.position })),
           ...latest.current.suggestions.flatMap((item) => item.position ? [{ id: `ai:${suggestionId(item)}`, position: item.position }] : []),
         ];
+        const key = [...camera.matrixWorld.elements, ...camera.projectionMatrix.elements, ...mesh.matrixWorld.elements].join(',')
+          + markers.map((marker) => `${marker.id}:${marker.position.join(',')}`).join(';');
+        const changed = key !== visibilityKey;
+        if (changed) { visibilityKey = key; visibility.clear(); clearTimeout(occlusionTimer); }
+        const candidates: typeof markers = [];
         for (const marker of markers) {
           const node = markerNodes.current.get(marker.id);
           if (!node) continue;
           projected.fromArray(marker.position);
           mesh.localToWorld(projected);
           projected.project(camera);
-          node.hidden = projected.z < -1 || projected.z > 1 || Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1;
+          const outside = projected.z < -1 || projected.z > 1 || Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1;
+          // Hide while a moved camera awaits its visibility check, so no stale through-wall markers appear.
+          node.hidden = outside || visibility.get(marker.id) !== false;
           node.style.left = `${(projected.x + 1) * 50}%`;
           node.style.top = `${(1 - projected.y) * 50}%`;
+          if (!outside) candidates.push(marker);
+        }
+        if (changed && candidates.length) {
+          const origin = mesh.worldToLocal(camera.position.clone()).toArray();
+          const tolerance = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.max(canvas.clientHeight, 1) * 2;
+          const near = camera.near;
+          // Debounce camera movement, reuse one CPU index, and yield between marker rays.
+          // Spark redraws with an unchanged camera do not repeat the O(splats * markers) work.
+          occlusionTimer = setTimeout(() => {
+            let next = 0;
+            function checkNext() {
+              if (cancelled || failed || key !== visibilityKey) return;
+              const marker = candidates[next++];
+              if (!marker) return;
+              try {
+                const occluded = isMarkerOccluded(ensurePickIndex(), origin, marker.position, tolerance, extent, near);
+                visibility.set(marker.id, occluded);
+                const node = markerNodes.current.get(marker.id);
+                if (node) node.hidden = occluded;
+              } catch {
+                setHitMessage('Marker visibility could not be checked. Locations remain available through Show in 3D in the lists below.');
+                return;
+              }
+              if (next < candidates.length) occlusionTimer = setTimeout(checkNext, 0);
+            }
+            checkNext();
+          }, 150);
         }
       } catch {
         fail('The room could not be rendered on this device. Try a smaller scan or a browser with WebGL2 support. The checklist is still available.');
@@ -155,27 +193,32 @@ export default function ScanViewer(props: Props) {
       schedule();
       canvas.focus();
     }
+    function ensurePickIndex(): PickIndex {
+      if (!pickIndex) {
+        if (!mesh) throw new Error('Room is not ready.');
+        pickIndex = createPickIndex(mesh.numSplats, (add) => mesh!.forEachSplat((_, center, scales, __, opacity) => add(center.x, center.y, center.z, Math.max(scales.x, scales.y, scales.z) * 2, opacity)));
+      }
+      return pickIndex;
+    }
     function hit(x: number, y: number) {
       if (!mesh || !latest.current.placing) return;
       raycaster.setFromCamera(pointer.set(x, y), camera);
       try {
         // Pick in the scan's local frame; the pin sits on the click ray at the nearest opaque splat.
-        if (!pickIndex) {
-          const index = createPickIndex(mesh.numSplats, (add) => mesh!.forEachSplat((_, center, scales, __, opacity) => add(center.x, center.y, center.z, Math.max(scales.x, scales.y, scales.z) * 2, opacity)));
-          pickIndex = index;
-        }
         const inverse = mesh.matrixWorld.clone().invert();
         const origin = raycaster.ray.origin.clone().applyMatrix4(inverse);
         const direction = raycaster.ray.direction.clone().transformDirection(inverse);
         const height = Math.max(canvas.clientHeight, 1);
         const angularTolerance = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / height * 6;
-        const depth = pickAlongRay(pickIndex, origin.toArray(), direction.toArray(), angularTolerance, extent * 0.02, camera.near);
+        const depth = pickAlongRay(ensurePickIndex(), origin.toArray(), direction.toArray(), angularTolerance, extent * 0.02, camera.near);
         if (depth === null) { setHitMessage('No visible splat surface at that point. Aim at the floor, wall or an object and try again.'); return; }
         const local = origin.add(direction.multiplyScalar(depth));
         const position = point3(local.toArray());
         if (!position) { setHitMessage('That location is outside the supported coordinate range. Try another point.'); return; }
         setHitMessage('');
-        latest.current.onPlace(position);
+        // Render and copy in this same task; preserveDrawingBuffer is unnecessary.
+        renderer?.render(scene, camera);
+        latest.current.onPlace(position, captureScanImage(canvas));
       } catch {
         setHitMessage('A pin could not be placed on this scan. Try another surface or re-import a supported Gaussian-splat file.');
       }
@@ -287,6 +330,7 @@ export default function ScanViewer(props: Props) {
         ref={(node) => { const id = `ai:${suggestionId(item)}`; if (node) markerNodes.current.set(id, node); else markerNodes.current.delete(id); }}>AI</span>)}</div>
       {props.placing && loaded ? <span className="scan-crosshair" aria-hidden="true">+</span> : null}
     </div>
+    <p className="small-text">Markers behind a nearer scan surface are hidden. Use Show in 3D in either list to reach a hidden location.</p>
     <div className="button-row scan-camera-controls" role="group" aria-label="Room camera controls">
       {(['left', 'right', 'up', 'down', 'in', 'out'] as const).map((direction) => <button key={direction} className="secondary compact" disabled={!loaded}
         aria-label={direction === 'in' || direction === 'out' ? `Zoom ${direction}` : `Orbit ${direction}`} onClick={() => runtime.current?.move(direction)}>

@@ -20,6 +20,24 @@ export function parseLocalScanRequest(url: string): { kind: 'index' } | { kind: 
   if (parts.length !== 4 || !name || !validName(name) || !allowedFiles.includes(file as LocalScanFile)) return { kind: 'invalid' };
   return { kind: 'file', name, file: file as LocalScanFile };
 }
+/** Decode repeatedly so encoded separators, names and /@fs forms cannot bypass the boundary. */
+export function isPrivateCaptureRequest(url: string): boolean {
+  let path = url.split('?')[0] ?? '';
+  for (let attempt = 0; attempt < 12; attempt++) {
+    if (path.toLowerCase().includes('private-captures')) return true;
+    try {
+      const decoded = decodeURIComponent(path);
+      if (decoded === path) return false;
+      path = decoded;
+    } catch {
+      const decoded = path.replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+      if (decoded === path) return false;
+      path = decoded;
+    }
+  }
+  // Reject excessive nesting rather than passing it to another URL decoder.
+  return true;
+}
 async function safeRoot(root: string) {
   // Do not follow symlinked private-captures/scans directories outside the project.
   if ((await lstat(root)).isSymbolicLink() || (await lstat(dirname(root))).isSymbolicLink()) throw new Error('Symlinked capture root.');
@@ -35,6 +53,14 @@ async function safeFile(root: string, name: string, file: LocalScanFile) {
 }
 export function createLocalScansHandler(capturesRoot: string) {
   return async (request: IncomingMessage, response: ServerResponse, next: () => void): Promise<void> => {
+    // Runs before Vite's static and /@fs handlers in both dev and preview.
+    if (isPrivateCaptureRequest(request.url ?? '')) {
+      response.statusCode = 404;
+      response.setHeader('Cache-Control', 'no-store');
+      response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      response.end('Not found.');
+      return;
+    }
     const route = parseLocalScanRequest(request.url ?? '');
     if (!route) { next(); return; }
     response.setHeader('Cache-Control', 'no-store');
@@ -89,6 +115,7 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
+    fs: { deny: ['.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**'] },
   },
   preview: {
     host: '127.0.0.1',

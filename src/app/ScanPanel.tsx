@@ -1,7 +1,7 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { DemoScenario } from '../domain/types';
 import type { DemoState } from '../domain/workflow';
-import { MAX_SCAN_PINS, upgradeScanDocument, type Point3, type ScanAsset, type ScanDocumentV2 } from '../lib/scan-model';
+import { MAX_SCAN_PINS, upgradeScanDocument, type Point3, type ScanAsset, type ScanDocumentV2, type ScanPin } from '../lib/scan-model';
 import { getScanStore, loadScan, saveScan, type ScanStorageResult } from '../lib/scan-storage';
 import { importScanSelection } from '../lib/scan-import';
 import { getLocalDemoScans, loadLocalDemoScan, type LocalDemoScan } from '../lib/local-scan-loader';
@@ -13,7 +13,7 @@ import { ScanSuggestions } from './ScanSuggestions';
 const ScanViewer = lazy(() => import('./ScanViewer'));
 
 export interface ScanConcern { id: string; label: string; roomId: string; confirmed: boolean }
-interface Props { scenario: DemoScenario; state: DemoState; restoreSaved?: boolean; onSuggestionsChange?: (layer: ScanSuggestionLayer | null) => void }
+interface Props { scenario: DemoScenario; state: DemoState; restoreSaved?: boolean; onSuggestionsChange?: (layer: ScanSuggestionLayer | null) => void; onPinsChange?: (pins: readonly ScanPin[]) => void }
 
 class ViewerBoundary extends Component<{ children: ReactNode; onFail: () => void }, { failed: boolean }> {
   state = { failed: false };
@@ -25,7 +25,7 @@ class ViewerBoundary extends Component<{ children: ReactNode; onFail: () => void
 }
 
 /** This shell imports no renderer. Opening a saved scan is also an explicit action. */
-export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsChange }: Props) {
+export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsChange, onPinsChange }: Props) {
   const [document, setDocument] = useState<ScanDocumentV2 | null>(null);
   const current = useRef<ScanDocumentV2 | null>(null);
   const [open, setOpen] = useState(false);
@@ -68,6 +68,7 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
     return () => { cancelled = true; alive.current = false; importSequence.current++; };
   }, [concernIds, restoreSaved, suggestionCatalog]);
 
+  useEffect(() => { onPinsChange?.(document?.pins ?? []); }, [document?.pins, onPinsChange]);
   useEffect(() => { onSuggestionsChange?.(document?.suggestions ?? null); }, [document?.suggestions, onSuggestionsChange]);
   useEffect(() => {
     setRelaxAccept(isIOSDevice(navigator.userAgent, navigator.platform, navigator.maxTouchPoints));
@@ -99,7 +100,7 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
     needsSave.current = true;
     if (canSave.current) { persist(next); needsSave.current = false; }
   }
-  function useDocument(next: ScanDocumentV2) {
+  function openDocument(next: ScanDocumentV2) {
     ready.current = false;
     canSave.current = false;
     needsSave.current = true;
@@ -122,9 +123,9 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
     const result = await importScanSelection(files, suggestionCatalog);
     if (!alive.current || sequence !== importSequence.current) return;
     if (!result.ok) { setError(result.error); setBusy(false); return; }
-    useDocument(result.value);
+    openDocument(result.value);
   }
-  function useAsset(asset: ScanAsset) { useDocument({ version: 2, asset, flipUpright: false, pins: [], suggestions: null }); }
+  function useAsset(asset: ScanAsset) { openDocument({ version: 2, asset, flipUpright: false, pins: [], suggestions: null }); }
   async function loadLocal(entry: LocalDemoScan) {
     if (busy) return;
     const sequence = ++importSequence.current;
@@ -132,7 +133,7 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
     const result = await loadLocalDemoScan(entry, suggestionCatalog);
     if (!alive.current || sequence !== importSequence.current) return;
     if (!result.ok) { setError(result.error); setBusy(false); return; }
-    useDocument(result.value);
+    openDocument(result.value);
   }
   async function sample() {
     if (busy) return;
@@ -146,11 +147,11 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
       if (alive.current && sequence === importSequence.current) { setError('The generated room could not be created. Reload to retry.'); setBusy(false); }
     }
   }
-  function place(position: Point3) {
+  function place(position: Point3, image: string | null) {
     const latest = current.current;
     if (!latest || !placing || !concernIds.has(placing)) return;
     if (latest.pins.length >= MAX_SCAN_PINS) { setError(`This room already has ${MAX_SCAN_PINS} pins. Remove a pin before adding another.`); return; }
-    const pin = { id: crypto.randomUUID(), concernId: placing, position, createdAt: new Date().toISOString() };
+    const pin: ScanPin = { id: crypto.randomUUID(), concernId: placing, position, createdAt: new Date().toISOString(), origin: 'family', image };
     change({ ...latest, pins: [...latest.pins, pin] });
     setPlacing('');
     setError('');
@@ -223,9 +224,9 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
           const concern = concerns.find((entry) => entry.id === pin.concernId);
           return <li key={pin.id} data-confirmed={concern?.confirmed === true}>
             <span className="scan-pin-number" aria-hidden="true">{index + 1}</span>
-            <div><strong>{concern?.label}</strong><p className="small-text">{concern?.confirmed ? 'Concern explicitly confirmed' : 'Concern unconfirmed'} · Family-placed location</p>
+            <div><strong>{concern?.label}</strong><p className="small-text">{concern?.confirmed ? 'Concern explicitly confirmed' : 'Concern unconfirmed'} · {pin.origin === 'ai-suggestion' ? 'Family-placed location added from an AI suggestion' : 'Family-placed location'}</p>
               <div className="button-row">
-                <button className="secondary compact" disabled={!open || busy || !ready.current} onClick={() => setFocus((previous) => ({ position: pin.position, sequence: (previous?.sequence ?? 0) + 1 }))} aria-label={`View pin ${index + 1}: ${concern?.label}`}>View pin {index + 1}</button>
+                <button className="secondary compact" disabled={!open || busy || !ready.current} onClick={() => setFocus((previous) => ({ position: pin.position, sequence: (previous?.sequence ?? 0) + 1 }))} aria-label={`Show in 3D: pin ${index + 1}: ${concern?.label}`}>Show in 3D: pin {index + 1}</button>
                 <a className="text-link" href={`#room-${concern?.roomId}`}>Go to room checklist</a>
                 <button className="secondary compact" aria-label={`Remove pin ${index + 1}: ${concern?.label}`} onClick={() => change({ ...document, pins: document.pins.filter((entry) => entry.id !== pin.id) })}>Remove pin</button>
               </div>

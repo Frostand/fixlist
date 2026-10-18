@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { demoScenario } from '../data/demo-scenario';
 import { applyCommand, computeCoverage, computePlan, getRequestViews, validateCatalog, type DemoCommand } from '../domain/workflow';
 import { getBrowserStorage, loadDemoState, resetDemoState, saveDemoState } from '../lib/demo-storage';
+import { decodeLocationHash } from '../lib/location';
 import { createPrintSnapshot } from '../lib/print';
+import type { ScanPin } from '../lib/scan-model';
 import { resetScanStorage } from '../lib/scan-storage';
 import { FloorPlan } from './FloorPlan';
 import { PrintReport } from './PrintReport';
@@ -67,12 +69,18 @@ function DemoApp() {
   const [error, setError] = useState('');
   const [scanResetVersion, setScanResetVersion] = useState(0);
   const [scanResetting, setScanResetting] = useState(false);
-  const [report, setReport] = useState(() => createPrintSnapshot(initial.state));
+  const [report, setReport] = useState(() => createPrintSnapshot(initial.state, new Date().toISOString()));
   const [reportIsCurrent, setReportIsCurrent] = useState(true);
+  const currentScanPins = useRef<readonly ScanPin[]>([]);
+  const onScanPinsChange = useCallback((pins: readonly ScanPin[]) => {
+    if (pins === currentScanPins.current || (pins.length === 0 && currentScanPins.current.length === 0)) return;
+    currentScanPins.current = pins;
+    setReportIsCurrent(false);
+  }, []);
   const activeSection = useActiveSection();
   // Content renders after the browser's own hash jump, so honour deep links (e.g. #scan-heading) once mounted.
   useEffect(() => {
-    const id = decodeURIComponent(window.location.hash.slice(1));
+    const id = decodeLocationHash(window.location.hash);
     if (!id) return;
     const frame = requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView());
     return () => cancelAnimationFrame(frame);
@@ -114,7 +122,8 @@ function DemoApp() {
     setPersistence(result);
     setError('');
     announce('Fresh synthetic demo restored: all profile facts and sample answers are unknown, with no confirmations or workflow requests.');
-    setReport(createPrintSnapshot(result.state));
+    currentScanPins.current = [];
+    setReport(createPrintSnapshot(result.state, new Date().toISOString()));
     setReportIsCurrent(true);
     const scanResult = await resetScanStorage();
     setScanResetVersion((version) => version + 1);
@@ -124,14 +133,14 @@ function DemoApp() {
   }
 
   function refreshReport() {
-    setReport(createPrintSnapshot(currentState.current));
+    setReport(createPrintSnapshot(currentState.current, new Date().toISOString(), currentScanPins.current));
     setReportIsCurrent(true);
   }
 
   useEffect(() => {
     function beforePrint() {
       flushSync(() => {
-        setReport(createPrintSnapshot(currentState.current));
+        setReport(createPrintSnapshot(currentState.current, new Date().toISOString(), currentScanPins.current));
         setReportIsCurrent(true);
       });
     }
@@ -139,10 +148,13 @@ function DemoApp() {
     return () => window.removeEventListener('beforeprint', beforePrint);
   }, []);
 
-  function printCurrentReport() {
+  async function printCurrentReport() {
     flushSync(refreshReport);
-    try { window.print(); }
-    catch { setError('The browser could not open printing. The inspectable report remains below; no PDF was created by this app.'); }
+    try {
+      // Freshly inserted data-URI images may still be decoding when native printing starts.
+      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>('.print-report img'), (image) => image.decode()));
+      window.print();
+    } catch { setError('The report images or browser printing could not be prepared. The inspectable report remains below; no PDF was created by this app.'); }
   }
 
   const coverage = computeCoverage(demoScenario, state);
@@ -191,7 +203,7 @@ function DemoApp() {
             </header>
             {error ? <p role="alert" className="error-message">{error}</p> : null}
             <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">{feedback.text}</p>
-            <ChecklistSection scenario={demoScenario} state={state} onCommand={runCommand} scanResetVersion={scanResetVersion} scanResetting={scanResetting} />
+            <ChecklistSection scenario={demoScenario} state={state} onCommand={runCommand} scanResetVersion={scanResetVersion} scanResetting={scanResetting} onScanPinsChange={onScanPinsChange} />
             <PlanSection scenario={demoScenario} state={state} onCommand={runCommand} />
             <AssistanceSection scenario={demoScenario} state={state} onCommand={runCommand} />
             <RequestsSection scenario={demoScenario} state={state} onCommand={runCommand} />

@@ -43,7 +43,7 @@ describe('screen and printable catalog content', () => {
 
   it('prints selected facts, every action context, nested conditions, relevance and references', () => {
     const state = command(confirmedState(), { type: 'select_profile', profileId: 'boundary-maple' });
-    const html = renderToStaticMarkup(<PrintReport scenario={demoScenario} snapshot={{ state, generatedAt: at }} />);
+    const html = renderToStaticMarkup(<PrintReport scenario={demoScenario} snapshot={{ state, generatedAt: at, scanPins: [] }} />);
     expect(html).toContain('8 of 8 answered; 0 unknown');
     expect(html).toContain('Fictional: exact age and income boundaries');
     expect(html).toContain('65 years');
@@ -70,7 +70,7 @@ describe('screen and printable catalog content', () => {
     state = command(state, { type: 'complete_request', requestId: requestIdForAction('review-handrail'), at });
     state = command(state, { type: 'unconfirm_concern', concernId: 'handrail-concern' });
     const screen = renderToStaticMarkup(<RequestsSection scenario={demoScenario} state={state} onCommand={noop} />);
-    const printed = renderToStaticMarkup(<PrintReport scenario={demoScenario} snapshot={{ state, generatedAt: at }} />);
+    const printed = renderToStaticMarkup(<PrintReport scenario={demoScenario} snapshot={{ state, generatedAt: at, scanPins: [] }} />);
     for (const html of [screen, printed]) {
       expect(html).toContain('Inactive history');
       expect(html).toContain('Family reported complete (unverified)');

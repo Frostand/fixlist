@@ -33,6 +33,18 @@ export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; sn
           ))}</ol>
         )}
       </section>
+      <section aria-labelledby="report-scan-heading">
+        <h3 id="report-scan-heading">Room scan locations</h3>
+        <p>Pins are family-placed location notes, not detections. A pin does not answer the checklist, confirm a concern, or establish that an area is safe. Images are local visual references, not measurements.</p>
+        {snapshot.scanPins.length === 0 ? <p>No room scan locations in this snapshot.</p> : snapshot.scanPins.map((pin) => {
+          const concern = scenario.concerns.find((entry) => entry.id === pin.concernId);
+          const name = concern ? actionTitle(scenario, concern.referenceActionId) : pin.concernId;
+          return <figure key={pin.id} className="print-scan-location">
+            <figcaption><h4>Room scan location: {name}</h4><p>{pin.origin === 'ai-suggestion' ? 'Family-placed pin added from an AI suggestion (unverified model output).' : 'Pin placed by the family.'}</p></figcaption>
+            {pin.image ? <img src={pin.image} alt={`Room scan location reference for ${name}`} width="320" /> : <p>No image saved</p>}
+          </figure>;
+        })}
+      </section>
       <section aria-labelledby="report-assistance-heading">
         <h3 id="report-assistance-heading">Fictional assistance screening</h3>
         <ProfileFacts scenario={scenario} state={snapshot.state} />

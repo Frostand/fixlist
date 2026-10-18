@@ -1,3 +1,4 @@
+import { isSmallScanImage } from './scan-image';
 import { validateSuggestionLayer, type ScanSuggestionLayer, type SuggestionCatalog } from './scan-suggestions';
 
 /** Local-only scan contracts. These never enter the workflow state or its storage key. */
@@ -20,7 +21,7 @@ export interface ScanMetadata {
   initialCamera: { position: Point3; target: Point3 };
   source: { inputFrames: number; registeredFrames: number; createdAt: string; pipeline: string; trainingSteps: number };
 }
-export interface ScanPin { id: string; concernId: string; position: Point3; createdAt: string }
+export interface ScanPin { id: string; concernId: string; position: Point3; createdAt: string; origin?: 'family' | 'ai-suggestion'; image?: string | null }
 export interface ScanAsset { name: string; blob: Blob; metadata: ScanMetadata | null; kind: 'imported' | 'generated' }
 interface ScanDocumentBase { asset: ScanAsset; flipUpright: boolean; pins: ScanPin[] }
 /** The legacy shape remains accepted at the old API boundary; the app always uses v2. */
@@ -107,12 +108,14 @@ export function validateScanPins(value: unknown, concernIds: ReadonlySet<string>
   const pins: ScanPin[] = [], ids = new Set<string>();
   let dropped = 0;
   for (const entry of value) {
-    if (!record(entry) || !shape(entry, ['id', 'concernId', 'position', 'createdAt']) || !text(entry.id, 100) || !text(entry.concernId, 100) || !timestamp(entry.createdAt)) return fail('A saved pin has invalid fields, IDs or creation time.');
+    if (!record(entry) || !shape(entry, ['id', 'concernId', 'position', 'createdAt', ...('origin' in entry ? ['origin'] : []), ...('image' in entry ? ['image'] : [])]) || !text(entry.id, 100) || !text(entry.concernId, 100) || !timestamp(entry.createdAt)) return fail('A saved pin has invalid fields, IDs or creation time.');
+    if (('origin' in entry && entry.origin !== 'family' && entry.origin !== 'ai-suggestion') || ('image' in entry && entry.image !== null && !isSmallScanImage(entry.image))) return fail('A saved pin has an invalid image or origin.');
     const position = point3(entry.position);
     if (!position || ids.has(entry.id)) return fail('Saved pin coordinates must be three finite values (absolute value ≤ 100 million) and pin IDs must be unique.');
     ids.add(entry.id);
     if (!concernIds.has(entry.concernId)) { dropped++; continue; }
-    pins.push({ id: entry.id, concernId: entry.concernId, position, createdAt: entry.createdAt });
+    pins.push({ id: entry.id, concernId: entry.concernId, position, createdAt: entry.createdAt,
+      ...('origin' in entry ? { origin: entry.origin as 'family' | 'ai-suggestion' } : {}), ...('image' in entry ? { image: entry.image as string | null } : {}) });
   }
   return { ok: true, value: { pins, dropped } };
 }

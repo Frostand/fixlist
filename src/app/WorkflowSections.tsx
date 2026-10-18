@@ -6,6 +6,7 @@ import {
 } from '../domain/workflow';
 import { actionTitle, LocalTime, requestStatusLabels, SourceNote } from './display';
 import { ActionMetadata, CoverageSummary, ProfileFacts, ProgramDetails, RequestWorkContext } from './CatalogViews';
+import type { ScanPin } from '../lib/scan-model';
 import { ScanPanel } from './ScanPanel';
 import { suggestionForChecklist, type ScanSuggestionLayer } from '../lib/scan-suggestions';
 import { ScanSuggestionChip } from './ScanSuggestions';
@@ -20,7 +21,7 @@ export function StepHead({ step, id, title, children }: { step: number; id: stri
   return <header className="step-head"><p className="step-index">Step {step} of 5</p><h2 id={id}>{title}</h2>{children}</header>;
 }
 
-export function ChecklistSection({ scenario, state, onCommand, scanResetVersion = 0, scanResetting = false, scanSuggestions }: WorkflowProps & { scanResetVersion?: number; scanResetting?: boolean; scanSuggestions?: ScanSuggestionLayer | null }) {
+export function ChecklistSection({ scenario, state, onCommand, scanResetVersion = 0, scanResetting = false, scanSuggestions, onScanPinsChange }: WorkflowProps & { scanResetVersion?: number; scanResetting?: boolean; scanSuggestions?: ScanSuggestionLayer | null; onScanPinsChange?: (pins: readonly ScanPin[]) => void }) {
   const coverage = computeCoverage(scenario, state);
   const [loadedSuggestions, setLoadedSuggestions] = useState<{ version: number; layer: ScanSuggestionLayer | null }>({ version: scanResetVersion, layer: null });
   const onSuggestionsChange = useCallback((layer: ScanSuggestionLayer | null) => setLoadedSuggestions({ version: scanResetVersion, layer }), [scanResetVersion]);
@@ -33,7 +34,7 @@ export function ChecklistSection({ scenario, state, onCommand, scanResetVersion 
       </StepHead>
       <CoverageSummary scenario={scenario} state={state} />
       {scanResetting ? <p className="screen-only" role="status">Clearing the saved room scan and pins…</p>
-        : <ScanPanel key={scanResetVersion} scenario={scenario} state={state} restoreSaved={scanResetVersion === 0} onSuggestionsChange={onSuggestionsChange} />}
+        : <ScanPanel key={scanResetVersion} scenario={scenario} state={state} restoreSaved={scanResetVersion === 0} onSuggestionsChange={onSuggestionsChange} {...(onScanPinsChange ? { onPinsChange: onScanPinsChange } : {})} />}
       <div className="rooms">
         {scenario.rooms.map((room) => {
           const evidence = scenario.evidence.filter((item) => item.roomId === room.id);

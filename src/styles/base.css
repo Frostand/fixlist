@@ -478,7 +478,13 @@ main { padding: 2.5rem clamp(1rem, 4vw, 3.5rem) 5rem; min-width: 0; }
 }
 
 @page { size: auto; margin: 16mm; }
+.print-scan-location { margin: 1rem 0; }
+.print-scan-location img { display: block; width: min(100%, 320px); max-height: 320px; height: auto; object-fit: contain; }
+
 @media print {
+  .print-report .print-scan-location, .print-report .print-scan-location img { break-inside: avoid; page-break-inside: avoid; }
+  .print-report .print-scan-location figcaption { break-after: avoid; }
+
   :root { color: #000; background: #fff; font-size: 10pt; line-height: 1.35; }
   body { font-size: 1rem; background: #fff; }
   .app-screen, .screen-only, .rail, .toast { display: none !important; }

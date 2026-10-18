@@ -6,7 +6,7 @@ import { loadScan, saveScan, type ScanStore } from './scan-storage';
 import { importScanSelection } from './scan-import';
 import { dismissScanSuggestion, pinScanSuggestion } from './scan-suggestion-actions';
 import { MAX_SUGGESTION_FRAMES, MAX_SUGGESTION_ITEMS, MAX_SUGGESTIONS_BYTES, MAX_THUMBNAIL_LENGTH,
-  parseScanSuggestions, suggestionForChecklist, suggestionId, validateScanSuggestions, validateSuggestionLayer, visibleSuggestionMarkers } from './scan-suggestions';
+  parseScanSuggestions, suggestionScore, suggestionForChecklist, suggestionId, validateScanSuggestions, validateSuggestionLayer, visibleSuggestionMarkers } from './scan-suggestions';
 import { suggestionCatalogFixture as catalog, suggestionDocumentFixture as document, suggestionsFixture as data, suggestionLayerFixture as layer } from './scan-suggestions.fixture';
 
 const concerns = new Set(demoScenario.concerns.map((concern) => concern.id));
@@ -40,8 +40,8 @@ describe('bounded model suggestions JSON', () => {
     { bestFrame: 'absent.jpg' }, { perFrame: [{ frame: 'frame-1.jpg', probability: 0.5 }, { frame: 'frame-1.jpg', probability: 0.5 }] },
   ])('rejects malformed item fields', (changes) => { expect(validate({ ...data(), items: [{ ...first(), ...changes }] }).ok).toBe(false); });
   it.each(['https://example.test/frame.jpg', 'data:image/svg+xml;base64,PHN2Zz4=', 'data:image/jpeg;base64,dGV4dA==', 'data:image/jpeg;base64,???=', 'data:image/jpeg;base64,' + 'A'.repeat(MAX_THUMBNAIL_LENGTH)])('rejects external, malformed, mislabeled or over-limit thumbnails', (thumbnail) => { expect(validate({ ...data(), items: [{ ...first(), thumbnail }] }).ok).toBe(false); });
-  it('allows null evidence/position and signed PNG data', () => {
-    expect(validate({ ...data(), items: [{ ...first(), position: null, viewpoint: null, bestFrame: null, thumbnail: null }] }).ok).toBe(true);
+  it('allows absent 3D location and legacy signed PNG data', () => {
+    expect(validate({ ...data(), items: [{ ...first(), position: null, viewpoint: null }] }).ok).toBe(true);
     expect(validate({ ...data(), items: [{ ...first(), thumbnail: 'data:image/png;base64,iVBORw0KGgo=' }] }).ok).toBe(true);
   });
   it('drops unknown IDs and mismatched known pairs with a counted notice', () => {
@@ -134,7 +134,7 @@ describe('shared scan import and suggestion-only actions', () => {
   });
   it('gives a checklist chip only to items the model flagged as suggested', () => {
     const flagged = layer();
-    expect(suggestionForChecklist(flagged, 'rug-check')?.maxProbability).toBe(0.856);
+    expect(suggestionScore(suggestionForChecklist(flagged, 'rug-check')!)).toBe(0.856);
     const low = { ...flagged, data: { ...flagged.data, items: flagged.data.items.map((item) => ({ ...item, suggested: false, maxProbability: 0.01 })) } };
     expect(suggestionForChecklist(low, 'rug-check')).toBeUndefined();
   });

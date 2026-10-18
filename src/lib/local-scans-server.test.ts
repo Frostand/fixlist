@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // Dynamic path avoids adding the Node-only Vite config to the browser tsconfig project.
 const configPath = '../../vite.config.ts';
 const config = await import(configPath) as {
+  default: { server: { fs: { deny: string[] } } };
+  isPrivateCaptureRequest: (path: string) => boolean;
   parseLocalScanRequest: (path: string) => { kind: string; name?: string; file?: string } | null;
   createLocalScansHandler: (root: string) => (request: IncomingMessage, response: ServerResponse, next: () => void) => Promise<void>;
   localScansPlugin: () => Record<string, unknown>;
@@ -104,5 +106,31 @@ describe('dev/preview local scans middleware path boundary', () => {
     const plugin = config.localScansPlugin();
     expect(typeof plugin.configureServer).toBe('function'); expect(typeof plugin.configurePreviewServer).toBe('function');
     expect(plugin.generateBundle).toBeUndefined(); expect(plugin.buildStart).toBeUndefined(); expect(plugin.writeBundle).toBeUndefined();
+  });
+});
+
+describe('ordinary Vite file serving cannot bypass the local-scans allowlist', () => {
+  it('retains all installed Vite defaults and denies capture files', () => {
+    expect(config.default.server.fs.deny).toEqual(expect.arrayContaining([
+      '.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**',
+    ]));
+  });
+  it.each([
+    '/private-captures/scans/room-1/scene.json',
+    '/@fs/Users/test/private-captures/scans/room-1/scene.json',
+    '/%70rivate-captures/scans/room-1/scene.json',
+    '/@fs%2fUsers%2ftest%2fprivate%2dcaptures%2fsecret.mp4',
+    '/%2570rivate-captures%252fsecret.mp4',
+    '/PRIVATE-CAPTURES/secret.mp4',
+  ])('refuses direct, encoded and absolute capture paths: %s', async (url) => {
+    expect(config.isPrivateCaptureRequest(url)).toBe(true);
+    const result = await request(url);
+    expect(result.status).toBe(404);
+    expect(result.passed).toBe(false);
+    expect(result.body.toString()).toBe('Not found.');
+  });
+  it('leaves the allowlisted local index and catalog import accessible', () => {
+    expect(config.isPrivateCaptureRequest('/local-scans/index.json')).toBe(false);
+    expect(config.isPrivateCaptureRequest('/scan/hazard-questions.json?import')).toBe(false);
   });
 });
