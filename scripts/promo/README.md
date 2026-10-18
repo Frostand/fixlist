@@ -66,3 +66,14 @@ Default command output is reproducible from these raw clips and the installed
 versions; byte-identical encodes/voice synthesis across different macOS or FFmpeg
 versions are not promised. No app source edits, commit, publication or upload are
 part of this workflow.
+
+## 45-second launch ad (`ad/`)
+
+A motion-designed ad built by Claude Opus directly: `ad/ad.html` is a timeline (every frame is a pure function of `t`) composed from real simulator stills in `recordings/ad/shots/` and a cropped 3D-orbit sequence in `recordings/ad/orbit/` (both extracted from `recordings/promo-raw/`). `ad/music.py` synthesizes an original 120 BPM music bed with numpy (no samples or licensed music).
+
+```sh
+scan/venv-python -I scripts/promo/ad/music.py recordings/ad/music.wav
+ffmpeg -y -i recordings/ad/music.wav -af "loudnorm=I=-14:TP=-1.5:LRA=11" -ar 48000 recordings/ad/music-norm.wav
+node scripts/promo/ad/render.mjs --stills 9.8,19.6,26.6 --out /tmp/ad-stills   # spot-check frames
+node scripts/promo/ad/render.mjs --video recordings/2026-10-18-fixlist-ad-45s.mp4 --audio recordings/ad/music-norm.wav
+```
