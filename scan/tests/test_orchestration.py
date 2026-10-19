@@ -1,4 +1,5 @@
 """Local boundary tests; real ffmpeg/COLMAP/Brush execution is recorded separately."""
+import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -29,6 +30,7 @@ class LocalBoundaryTests(unittest.TestCase):
             with self.assertRaises(ScanError):
                 Run(output,dict(current,features='aliked'),True)
 
+    @unittest.skipUnless(importlib.util.find_spec('lightglue'), 'optional LightGlue/torch learned-matching packages are not installed')
     def test_lightglue_optional_sift_cannot_load_pycolmap_in_torch_child(self):
         # A real subprocess catches LightGlue's eager optional SIFT import.
         # torch and pycolmap must never meet in this test runner, either.
