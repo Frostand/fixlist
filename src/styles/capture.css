@@ -1,0 +1,15 @@
+.capture-screen { min-width: 0; }
+.capture-inputs { display: grid; gap: 1rem; }
+.capture-file { display: grid; gap: .5rem; min-width: 0; font-weight: 600; }
+.capture-file input { max-width: 100%; min-height: 48px; font: inherit; font-size: .9rem; }
+.capture-file input::file-selector-button { min-height: 48px; padding: .5rem; }
+.capture-preview, .capture-flag img { display: block; max-width: 100%; max-height: 24rem; object-fit: contain; border-radius: .65rem; }
+.capture-flag { display: grid; gap: .75rem; overflow-wrap: anywhere; }
+.capture-flag[data-selected="true"] { outline: 3px solid var(--accent, #245d4d); outline-offset: 3px; }
+.capture-flag-select { display: grid; gap: .75rem; text-align: start; white-space: normal; }
+.capture-confirm { border: 2px solid currentColor; }
+.capture-screen h3:focus, .capture-confirm p:focus { outline: 3px solid var(--accent, #245d4d); outline-offset: 4px; }
+.room-picker .room-with-capture { display: grid; gap: .5rem; }
+
+.capture-decisions { flex-wrap: wrap; }
+.capture-decisions button { white-space: normal; }

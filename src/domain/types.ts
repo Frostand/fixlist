@@ -1,7 +1,9 @@
+import type { FactDefinition, FactRule, FactValues } from './fact-screening';
+
 /** Missing information must stay unknown until it is supplied. */
 export type CriterionStatus = 'met' | 'not_met' | 'unknown';
 
-/** Planned screening results; no screening engine is implemented yet. */
+/** Recorded-criteria screening never establishes approval or funding. */
 export type ScreeningStatus =
   | 'criteria_matched'
   | 'needs_information'
@@ -35,6 +37,7 @@ export interface Room {
 
 export interface ChecklistItem {
   id: string;
+  roomId: string;
   prompt: string;
   referenceActionId: string;
 }
@@ -56,6 +59,7 @@ export type HumanConfirmation =
     }
   | {
       humanConfirmed: true;
+      actorId: string;
       confirmedBy: string;
       confirmedAt: string;
     };
@@ -67,29 +71,56 @@ export interface Concern {
   confirmation: HumanConfirmation;
 }
 
-/** Reference content only. A generated repair plan is a later milestone. */
+export type FundingTag = 'general_repair' | 'railing' | 'bathroom_support' | 'lighting';
+
+export interface GuidanceReference {
+  title: string;
+  url: string;
+  section: string;
+  reviewedOn: string;
+}
+
+/** Authored reference content; the workflow selects it only from confirmed concerns. */
 export interface ReferenceAction {
   id: string;
   title: string;
   description: string;
+  nextStep: string;
+  effort: 'quick_fix' | 'helper_task' | 'professional';
+  nextStepSource: 'Based on CDC 2017 Check for Safety';
   source: SourceRecord;
+  guidance: GuidanceReference;
+  fundingTags: readonly FundingTag[];
+  helpRouting: { kind: 'family_review' | 'professional_review'; explanation: string };
+  cost: { status: 'unknown'; explanation: string };
 }
 
-export interface ProgramCriterion {
+export interface FictionalProfile {
   id: string;
-  description: string;
-  status: CriterionStatus;
-  answerNote: string;
+  label: string;
+  fictional: true;
+  facts: FactValues;
 }
 
 export interface AssistanceProgram {
   id: string;
   name: string;
-  fictional: boolean;
+  fictional: true;
   description: string;
   source: SourceRecord;
-  contact: string | null;
-  criteria: readonly ProgramCriterion[];
+  contact: null;
+  rule: FactRule;
+  coverageTags: readonly FundingTag[];
+  unmodeledRequirements: readonly string[];
+}
+
+export interface LocalHelpResource {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  phone: string;
+  source: Extract<SourceRecord, { status: 'verified' }>;
 }
 
 export type CompletionRecord =
@@ -104,7 +135,7 @@ export type CompletionRecord =
       reportedAt: string;
     };
 
-/** A local family log never proves that a helper was contacted or vetted. */
+/** Frozen v1/v2 migration contract only. New state uses HelpRequest in roles.ts. */
 export interface FamilyRequest {
   id: string;
   referenceActionId: string;
@@ -118,7 +149,7 @@ export interface FamilyRequest {
 
 export interface DemoScenario {
   id: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
   title: string;
   synthetic: true;
   disclosure: string;
@@ -127,6 +158,9 @@ export interface DemoScenario {
   evidence: readonly ConcernEvidence[];
   concerns: readonly Concern[];
   referenceActions: readonly ReferenceAction[];
+  factDefinitions: readonly FactDefinition[];
+  profiles: readonly FictionalProfile[];
   programs: readonly AssistanceProgram[];
+  localHelpResources: readonly LocalHelpResource[];
   requests: readonly FamilyRequest[];
 }

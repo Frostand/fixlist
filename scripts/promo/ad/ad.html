@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FixList — 45s launch ad</title>
+<style>
+@font-face { font-family: 'Zilla'; src: url('../../../node_modules/@fontsource/zilla-slab/files/zilla-slab-latin-700-normal.woff2') format('woff2'); font-weight: 700; }
+@font-face { font-family: 'Atkinson'; src: url('../../../node_modules/@fontsource-variable/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2') format('woff2'); font-weight: 200 800; }
+:root { --ink: #16302b; --ink2: #23443d; --plaster: #eef1ec; --sheet: #ffffff; --yellow: #f4c430; --sage: #dbe6df; --muted: #4c6660; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--plaster); font-family: 'Atkinson', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+.abs { position: absolute; }
+.layer { position: absolute; inset: 0; }
+.blob { position: absolute; border-radius: 50%; filter: blur(90px); }
+.dots { position: absolute; inset: -40px; background-image: radial-gradient(rgba(22,48,43,.09) 1.4px, transparent 1.6px); background-size: 34px 34px; }
+.zilla { font-family: 'Zilla', serif; font-weight: 700; letter-spacing: -0.02em; }
+.w { display: inline-block; overflow: hidden; vertical-align: bottom; padding: 0 .04em .08em; margin: 0 -.04em -.08em; }
+.wi { display: inline-block; will-change: transform; }
+.eyebrow { font: 700 22px 'Atkinson'; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+.h1 { font-family: 'Zilla'; font-weight: 700; font-size: 96px; line-height: 1.0; letter-spacing: -0.025em; }
+.sub { font: 500 32px/1.35 'Atkinson'; color: var(--muted); }
+/* phone */
+.phone { position: absolute; width: 410px; height: 879px; border-radius: 66px; background: #0f1f1c; padding: 12px; box-shadow: 0 60px 120px -30px rgba(22,48,43,.45), 0 24px 48px -12px rgba(22,48,43,.25), inset 0 0 0 2px #2c4a43; transform-origin: 50% 50%; }
+.phone .screen { position: relative; width: 386px; height: 855px; border-radius: 55px; overflow: hidden; background: #f5f6f3; }
+.phone .screen img { position: absolute; left: 0; top: 0; width: 386px; height: 839.2px; display: block; }
+.phone .screen .fill { position: absolute; left: 0; right: 0; top: 839px; bottom: 0; background: #f7f7f4; }
+.phone .glare { position: absolute; inset: 12px; border-radius: 55px; background: linear-gradient(115deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,0) 32%); pointer-events: none; }
+.tap { position: absolute; width: 90px; height: 90px; margin: -45px 0 0 -45px; border-radius: 50%; border: 4px solid var(--yellow); background: rgba(244,196,48,.25); opacity: 0; }
+.tapdot { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: rgba(22,48,43,.55); box-shadow: 0 0 0 6px rgba(255,255,255,.55); opacity: 0; }
+.hl { position: absolute; border-radius: 18px; border: 4px solid var(--yellow); box-shadow: 0 0 0 9999px rgba(15,31,28,0), 0 0 34px rgba(244,196,48,.55); opacity: 0; }
+.chip { position: absolute; display: flex; align-items: center; gap: 14px; padding: 16px 26px 16px 18px; border-radius: 999px; background: var(--sheet); box-shadow: 0 18px 40px -12px rgba(22,48,43,.35), 0 2px 6px rgba(22,48,43,.08); font: 700 26px 'Atkinson'; color: var(--ink); white-space: nowrap; opacity: 0; transform-origin: 50% 50%; }
+.chip i { width: 34px; height: 34px; border-radius: 50%; background: var(--yellow); display: grid; place-items: center; font-style: normal; font-size: 20px; color: var(--ink); flex: none; }
+.chip.dark { background: var(--ink); color: var(--plaster); }
+.chip.dark i { background: var(--yellow); }
+.role { position: absolute; text-align: center; width: 420px; opacity: 0; }
+.role b { display: block; font: 700 34px 'Zilla'; letter-spacing: -.01em; }
+.role span { display: block; font: 600 25px 'Atkinson'; color: var(--muted); margin-top: 4px; }
+/* stepper */
+.step { display: flex; align-items: center; gap: 22px; height: 78px; font: 700 34px 'Atkinson'; color: rgba(22,48,43,.32); }
+.step .dot { width: 44px; height: 44px; border-radius: 50%; border: 3px solid rgba(22,48,43,.25); display: grid; place-items: center; font-size: 22px; color: transparent; flex: none; }
+/* bento */
+.tile { position: absolute; background: var(--sheet); border-radius: 34px; box-shadow: 0 30px 60px -28px rgba(22,48,43,.35), 0 2px 8px rgba(22,48,43,.06); overflow: hidden; opacity: 0; }
+.tile .tt { position: absolute; left: 34px; font: 700 40px 'Zilla'; letter-spacing: -.015em; }
+.tile .ts { position: absolute; left: 34px; font: 600 23px 'Atkinson'; color: var(--muted); }
+.crop { position: absolute; border-radius: 20px; background-repeat: no-repeat; box-shadow: inset 0 0 0 1.5px rgba(22,48,43,.08); }
+.badge { position: absolute; padding: 10px 18px; border-radius: 999px; font: 700 21px 'Atkinson'; background: var(--yellow); color: var(--ink); }
+.fine { font: 500 19px/1.45 'Atkinson'; color: rgba(238,241,236,.72); text-align: center; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- background -->
+  <div class="layer" id="bg">
+    <div class="blob" id="blobA" style="width:900px;height:900px;background:#cfe0d6"></div>
+    <div class="blob" id="blobB" style="width:700px;height:700px;background:#f7e3a3;opacity:.55"></div>
+    <div class="dots" id="dots"></div>
+  </div>
+  <div class="layer" id="world">
+    <!-- S3 hero -->
+    <div class="layer" id="s3">
+      <div class="abs" id="s3text" style="left:150px;top:300px;width:820px">
+        <div class="eyebrow" id="s3eb"></div>
+        <div class="h1" id="s3h" style="margin-top:22px"></div>
+        <div class="sub" id="s3sub" style="margin-top:28px;max-width:640px"></div>
+      </div>
+      <div class="phone" id="p3" style="left:1150px;top:101px"></div>
+    </div>
+    <!-- S4 three views -->
+    <div class="layer" id="s4">
+      <div class="abs zilla" id="s4h" style="left:0;right:0;top:58px;text-align:center;font-size:84px"></div>
+      <div class="phone" id="p4a"></div><div class="phone" id="p4b"></div><div class="phone" id="p4c"></div>
+      <div class="role" id="r4a"><b>Margaret · Resident</b><span>Makes every decision</span></div>
+      <div class="role" id="r4b"><b>Sam · Family helper</b><span>Only what Margaret allows</span></div>
+      <div class="role" id="r4c"><b>Alex · Volunteer</b><span>Only what Margaret shares</span></div>
+    </div>
+    <!-- S5 share -->
+    <div class="layer" id="s5">
+      <div class="abs" id="s5text" style="left:150px;top:330px;width:700px">
+        <div class="eyebrow" id="s5eb"></div>
+        <div class="h1" id="s5h" style="margin-top:22px"></div>
+        <div class="sub" id="s5sub" style="margin-top:28px;max-width:560px"></div>
+      </div>
+      <div class="phone" id="p5"></div><div class="phone" id="p5b"></div>
+      <div class="role" id="r5a"><b>Margaret</b><span>Sees everything</span></div>
+      <div class="role" id="r5b"><b>Alex</b><span>Sees only what's shared</span></div>
+      <svg class="abs" id="s5link" width="1920" height="1080" style="left:0;top:0;overflow:visible"><path id="s5path" fill="none" stroke="#f4c430" stroke-width="5" stroke-linecap="round" stroke-dasharray="2 14"/><circle id="s5c1" r="9" fill="#f4c430"/><circle id="s5c2" r="9" fill="#f4c430"/></svg>
+    </div>
+    <!-- S6 volunteer flow -->
+    <div class="layer" id="s6">
+      <div class="abs" id="s6text" style="left:150px;top:150px;width:760px">
+        <div class="eyebrow" id="s6eb">Volunteer help</div>
+        <div class="h1" id="s6h" style="margin-top:22px"></div>
+        <div id="steps" style="margin-top:48px"></div>
+      </div>
+      <div class="phone" id="p6" style="left:1150px;top:120px"></div>
+      <div class="chip dark" id="persona" style="left:1200px;top:44px"><i>A</i><span id="personaText">Alex · Volunteer</span></div>
+    </div>
+    <!-- S7 bento -->
+    <div class="layer" id="s7">
+      <div class="abs h1" id="s7h" style="left:120px;top:64px;font-size:80px"></div>
+      <div class="badge" id="s7badge" style="left:1452px;top:92px;opacity:0">Photos &amp; scans stay on the device</div>
+      <div class="tile" id="t1" style="left:120px;top:200px;width:640px;height:820px">
+        <div class="tt" style="top:30px">3D room scan</div>
+        <div class="ts" style="top:84px">Optional · from a walk-through video</div>
+        <canvas id="orbit" class="crop" width="1000" height="615" style="left:30px;top:138px;width:580px;height:357px;border-radius:22px"></canvas>
+        <div class="chip" id="aichip" style="left:44px;top:520px;font-size:23px;padding:12px 20px 12px 14px"><i>✦</i>AI marks areas to review — you decide</div>
+        <div class="crop" id="t1crop" style="left:30px;top:604px;width:580px;height:186px"></div>
+      </div>
+      <div class="tile" id="t2" style="left:780px;top:200px;width:500px;height:400px">
+        <div class="tt" style="top:30px">Real local help</div>
+        <div class="ts" style="top:84px">Eldercare Locator · U.S. ACL</div>
+        <div class="crop" id="t2crop" style="left:28px;top:136px;width:444px;height:240px"></div>
+      </div>
+      <div class="tile" id="t3" style="left:1300px;top:200px;width:500px;height:400px">
+        <div class="tt" style="top:30px">English · Español</div>
+        <div class="ts" style="top:84px">Spanish marked as unreviewed</div>
+        <div class="crop" id="t3crop" style="left:28px;top:136px;width:444px;height:240px"></div>
+      </div>
+      <div class="tile" id="t4" style="left:780px;top:620px;width:500px;height:400px">
+        <div class="tt" style="top:30px">Family can help</div>
+        <div class="ts" style="top:84px">With permission you can take back</div>
+        <div class="crop" id="t4crop" style="left:28px;top:136px;width:444px;height:240px"></div>
+      </div>
+      <div class="tile" id="t5" style="left:1300px;top:620px;width:500px;height:400px">
+        <div class="tt" style="top:30px">Print-ready report</div>
+        <div class="ts" style="top:84px">Native iOS print &amp; PDF</div>
+        <div class="crop" id="t5crop" style="left:28px;top:136px;width:444px;height:240px"></div>
+      </div>
+    </div>
+  </div>
+  <!-- ink scenes: hook + outro -->
+  <div class="layer" id="ink" style="background:var(--ink)">
+    <div class="layer" id="inkdots" style="background-image:radial-gradient(rgba(238,241,236,.06) 1.4px, transparent 1.6px);background-size:34px 34px"></div>
+    <div class="abs zilla" id="hook" style="left:0;right:0;top:0;bottom:0;display:grid;place-items:center;text-align:center;color:var(--plaster)"></div>
+  </div>
+  <div class="layer" id="wipeLight" style="background:var(--plaster);clip-path:circle(0px at 50% 50%)"></div>
+  <!-- logo scene (light) -->
+  <div class="layer" id="s2" style="background:transparent">
+    <div class="abs" id="lock" style="left:0;right:0;top:300px;text-align:center">
+      <svg id="mark" width="190" height="190" viewBox="0 0 32 32" style="display:block;margin:0 auto">
+        <path id="mHouse" d="M4 14.5 16 4l12 10.5V28H4Z" fill="#fff" stroke="#16302b" stroke-width="2.25" stroke-linejoin="round"/>
+        <path id="mL1" d="M10 16h12" stroke="#16302b" stroke-width="2.25" stroke-linecap="round"/>
+        <path id="mL2" d="M10 21h8" stroke="#16302b" stroke-width="2.25" stroke-linecap="round"/>
+        <rect id="mBox" x="20" y="19" width="4.5" height="4.5" rx="1" fill="#f4c430" stroke="#16302b" stroke-width="1.5" style="transform-box:fill-box;transform-origin:center"/>
+      </svg>
+      <div class="zilla" id="word" style="font-size:150px;line-height:1;margin-top:18px"></div>
+      <div id="tag" style="font:600 44px 'Atkinson';color:var(--ink2);margin-top:26px;opacity:0">Fix what matters at home — together.</div>
+    </div>
+  </div>
+  <!-- wipes -->
+  <div class="layer" id="outro" style="background:var(--ink);clip-path:circle(0px at 50% 50%)">
+    <div class="layer" style="background-image:radial-gradient(rgba(238,241,236,.06) 1.4px, transparent 1.6px);background-size:34px 34px"></div>
+    <div class="abs" id="olock" style="left:0;right:0;top:250px;text-align:center;color:var(--plaster)">
+      <svg width="150" height="150" viewBox="0 0 32 32" style="display:block;margin:0 auto" id="omark">
+        <path d="M4 14.5 16 4l12 10.5V28H4Z" fill="#eef1ec" stroke="#eef1ec" stroke-width="2.25" stroke-linejoin="round"/>
+        <path d="M10 16h12M10 21h8" stroke="#16302b" stroke-width="2.25" stroke-linecap="round"/>
+        <rect x="20" y="19" width="4.5" height="4.5" rx="1" fill="#f4c430" stroke="#16302b" stroke-width="1.5"/>
+      </svg>
+      <div class="zilla" id="oword" style="font-size:132px;line-height:1;margin-top:16px"></div>
+      <div id="otag" style="font:600 42px 'Atkinson';margin-top:24px;opacity:0">Fix what matters at home — together.</div>
+      <div id="oaud" style="font:600 28px 'Atkinson';margin-top:22px;color:var(--yellow);opacity:0">For older adults, families &amp; volunteers · Built for iPhone</div>
+    </div>
+    <div class="abs fine" id="ofine" style="left:160px;right:160px;bottom:56px;opacity:0">
+      Demo build · fictional home and demo profiles · no real accounts yet · AI suggestions are unverified areas to review, not safety findings<br>
+      3D scan adapted from “UE4Arch.com – Viennese apartment” by UE4Arch.com, Wikimedia Commons, CC BY-SA 4.0 · Next steps based on CDC “Check for Safety” (2017)
+    </div>
+  </div>
+</div>
+<script>
+const SHOT = (n) => `../../../recordings/ad/shots/${n}.png`;
+const ORBIT_COUNT = 74;
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const E = {
+  outExpo: (p) => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p),
+  inOutCubic: (p) => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2,
+  outCubic: (p) => 1 - Math.pow(1 - p, 3),
+  inCubic: (p) => p * p * p,
+  inExpo: (p) => p <= 0 ? 0 : Math.pow(2, 10 * p - 10),
+  outBack: (p) => { const c1 = 1.5, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); },
+  spring: (p) => p >= 1 ? 1 : 1 - Math.exp(-6 * p) * Math.cos(10.5 * p),
+};
+// 0 outside [a,b]; eased entrance and exit.
+function vis(t, a, b, inD = .5, outD = .35) {
+  if (t < a || t > b) return 0;
+  return Math.min(E.outExpo(prog(t, a, a + inD)), 1 - E.inCubic(prog(t, b - outD, b)));
+}
+function css(el, o) { Object.assign(el.style, o); }
+
+/* ---------- kinetic text ---------- */
+function setLines(el, lines) {
+  el.innerHTML = lines.map((line) => '<div>' + line.split(' ').map((w) => `<span class="w"><span class="wi">${w}</span></span>`).join(' ') + '</div>').join('');
+  el._words = [...el.querySelectorAll('.wi')];
+  el._key = lines.join('|');
+}
+// Reveal words upward from a mask; exit upward.
+function kinetic(el, lines, t, a, b, { stagger = .055, inD = .7, outD = .38, outStagger = .025 } = {}) {
+  if (el._key !== lines.join('|')) setLines(el, lines);
+  const n = el._words.length;
+  el._words.forEach((w, i) => {
+    const pin = E.outExpo(prog(t, a + i * stagger, a + i * stagger + inD));
+    const pout = E.inCubic(prog(t, b - outD + i * outStagger, b + i * outStagger));
+    const y = (1 - pin) * 110 - pout * 110;
+    w.style.transform = `translateY(${y}%)`;
+  });
+  el.style.opacity = t >= a && t <= b + n * outStagger ? 1 : 0;
+}
+
+/* ---------- phones ---------- */
+const phones = {};
+function makePhone(id, screens) {
+  const el = $(id);
+  el.innerHTML = '<div class="screen"></div><div class="glare"></div>';
+  const scr = el.querySelector('.screen');
+  const imgs = {};
+  for (const s of screens) { const im = new Image(); im.src = SHOT(s); im.decoding = 'sync'; scr.appendChild(im); imgs[s] = im; }
+  const fill = document.createElement('div'); fill.className = 'fill'; scr.appendChild(fill);
+  phones[id] = { el, scr, imgs, taps: [], hls: [] };
+  return phones[id];
+}
+// schedule: [{s: name, at: time, cut?: true}] — iOS-style push between screens.
+function screens(id, t, schedule) {
+  const p = phones[id];
+  Object.values(p.imgs).forEach((im) => { im.style.opacity = 0; });
+  schedule.forEach((cur, i) => {
+    const next = schedule[i + 1];
+    if (i > 0 && t < cur.at) return;
+    if (next && t >= next.at + (next.cut ? 0 : .5)) return;
+    const pin = i === 0 || cur.cut ? 1 : E.outExpo(prog(t, cur.at, cur.at + .5));
+    const pout = next && !next.cut ? E.outExpo(prog(t, next.at, next.at + .5)) : 0;
+    const im = p.imgs[cur.s];
+    im.style.opacity = 1;
+    im.style.zIndex = i;
+    im.style.transform = `translateX(${(1 - pin) * 100 - pout * 28}%)`;
+    im.style.filter = pout > 0 ? `brightness(${1 - pout * .12})` : 'none';
+  });
+}
+function tap(id, t, at, x, y) {
+  const p = phones[id];
+  let el = p.taps.find((d) => d.at === at);
+  if (!el) {
+    const ring = document.createElement('div'); ring.className = 'tap';
+    const dot = document.createElement('div'); dot.className = 'tapdot';
+    p.scr.append(ring, dot); el = { at, ring, dot }; p.taps.push(el);
+  }
+  const k = prog(t, at - .12, at + .55);
+  css(el.ring, { left: x + '%', top: y * .9815 + '%', opacity: k > 0 && k < 1 ? (1 - E.outCubic(k)) * .95 : 0, transform: `scale(${.35 + E.outExpo(k) * 1.25})`, zIndex: 50 });
+  const d = prog(t, at - .35, at + .3);
+  css(el.dot, { left: x + '%', top: y * .9815 + '%', opacity: d > 0 && d < 1 ? Math.sin(d * Math.PI) : 0, transform: `scale(${1 - .25 * Math.sin(d * Math.PI)})`, zIndex: 51 });
+}
+function highlight(id, t, a, b, x, y, w, h) {
+  const p = phones[id];
+  const key = a + ':' + x + ':' + y;
+  let el = p.hls.find((d) => d.key === key);
+  if (!el) { el = { key, node: document.createElement('div') }; el.node.className = 'hl'; p.scr.appendChild(el.node); p.hls.push(el); }
+  const v = vis(t, a, b, .45, .3);
+  css(el.node, { left: x + '%', top: y * .9815 + '%', width: w + '%', height: h * .9815 + '%', opacity: v, transform: `scale(${1.06 - .06 * E.outExpo(prog(t, a, a + .45))})`, zIndex: 40 });
+}
+function placePhone(id, o) {
+  const { x, y, s = 1, rx = 0, ry = 0, rz = 0, op = 1, blur = 0 } = o;
+  css(phones[id].el, { left: x - 205 + 'px', top: y - 439.5 + 'px', opacity: op, transform: `perspective(2400px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) scale(${s})`, filter: blur > .2 ? `blur(${blur}px)` : 'none' });
+}
+function chip(id, t, a, b, x, y, html, dark = false) {
+  let el = $(id);
+  if (!el) { el = document.createElement('div'); el.id = id; el.className = 'chip dyn' + (dark ? ' dark' : ''); el.innerHTML = html; $('stage').appendChild(el); }
+  const v = vis(t, a, b, .55, .3);
+  const sp = E.spring(prog(t, a, a + .7));
+  css(el, { left: x + 'px', top: y + 'px', opacity: v, transform: `translateY(${(1 - sp) * 26}px) scale(${.86 + .14 * sp})` });
+}
+function crop(id, name, rect) {
+  const el = $(id);
+  const w = rect.w, h = rect.h;
+  css(el, { backgroundImage: `url(${SHOT(name)})`, backgroundSize: `${100 / w * 100}% auto`, backgroundPosition: `${rect.x / (100 - w) * 100}% ${rect.y / (100 - h) * 100}%` });
+}
+
+/* ---------- build ---------- */
+makePhone('p3', ['home-resident', 'check-unsure', 'check-yes', 'confirm-before', 'confirm', 'plan']);
+makePhone('p4a', ['home-resident']); makePhone('p4b', ['home-helper']); makePhone('p4c', ['home-volunteer']);
+makePhone('p5', ['share', 'choose-volunteer', 'invite-review', 'resident-request']);
+makePhone('p5b', ['vol-task']);
+makePhone('p6', ['vol-task', 'vol-schedule', 'res-agree', 'vol-done', 'res-done']);
+crop('t1crop', 'ai', { x: 3, y: 29.2, w: 94, h: 13.9 });
+crop('t2crop', 'help', { x: 2, y: 21, w: 96, h: 26 });
+crop('t3crop', 'spanish', { x: 2, y: 47, w: 96, h: 27 });
+crop('t4crop', 'family-access', { x: 2, y: 63, w: 96, h: 26 });
+crop('t5crop', 'print', { x: 2, y: 66, w: 96, h: 27 });
+$('steps').innerHTML = ['Invited', 'Accepted', 'Visit scheduled', 'Progress update', 'Done'].map((s) => `<div class="step"><div class="dot">✓</div><span>${s}</span></div>`).join('');
+const orbitImgs = Array.from({ length: ORBIT_COUNT }, (_, i) => { const im = new Image(); im.src = `../../../recordings/ad/orbit/o${String(i + 1).padStart(3, '0')}.jpg`; return im; });
+const orbitCtx = $('orbit').getContext('2d');
+['mHouse', 'mL1', 'mL2'].forEach((id) => { const p = $(id); const L = p.getTotalLength(); p.style.strokeDasharray = L; p.dataset.len = L; });
+
+/* ---------- scenes ---------- */
+function background(t) {
+  css($('blobA'), { left: 900 + Math.sin(t * .23) * 160 + 'px', top: -260 + Math.cos(t * .19) * 120 + 'px' });
+  css($('blobB'), { left: -180 + Math.cos(t * .17) * 140 + 'px', top: 560 + Math.sin(t * .21) * 100 + 'px' });
+  css($('dots'), { transform: `translate(${(t * 6) % 34}px, ${(t * 4) % 34}px)` });
+}
+
+function hook(t) {
+  const inkOn = t < 4.75;
+  $('ink').style.display = inkOn ? 'block' : 'none';
+  if (!inkOn) return;
+  $('inkdots').style.transform = `scale(${1 + t * .01})`;
+  const h = $('hook');
+  const beats = [
+    { a: 0.05, b: 0.95, lines: ['A loose rug.'] },
+    { a: 1.0, b: 1.95, lines: ['A dark hallway.'] },
+    { a: 2.0, b: 2.95, lines: ['A missing grab bar.'] },
+    { a: 3.0, b: 3.95, lines: ['Easy to miss.', 'Hard to fix alone.'] },
+  ];
+  const cur = beats.find((b) => t >= b.a && t <= b.b + .2) || beats[beats.length - 1];
+  if (!h._inner) { h.innerHTML = '<div style="position:relative"><div id="hookText" style="font-size:150px;line-height:1.02"></div><div id="hookBar" style="position:absolute;left:50%;height:14px;border-radius:7px;background:var(--yellow);transform-origin:0 50%"></div></div>'; h._inner = $('hookText'); }
+  kinetic(h._inner, cur.lines, t, cur.a, cur.b, { stagger: .06, inD: .55, outD: .22 });
+  h._inner.style.fontSize = cur.lines.length > 1 ? '118px' : '150px';
+  // second line of the closing beat in yellow
+  const rows = h._inner.querySelectorAll('div');
+  rows.forEach((r, i) => { r.style.color = cur.lines.length > 1 && i === 1 ? 'var(--yellow)' : 'var(--plaster)'; });
+  h._inner.style.transform = `scale(${1 + prog(t, cur.a, cur.b) * .04})`;
+  const barW = cur.lines.length > 1 ? 560 : [520, 760, 900][beats.indexOf(cur)] ?? 600;
+  const grow = E.outExpo(prog(t, cur.a + .18, cur.a + .6)), shrink = E.inCubic(prog(t, cur.b - .2, cur.b));
+  css($('hookBar'), { width: barW + 'px', marginLeft: -barW / 2 + 'px', top: (cur.lines.length > 1 ? 262 : 172) + 'px', transform: `scaleX(${grow * (1 - shrink)})`, opacity: grow > 0 ? 1 : 0 });
+}
+
+function logo(t) {
+  // light circle wipe from the centre at 4.0s
+  const r = E.inOutCubic(prog(t, 3.95, 4.6)) * 1250;
+  $('wipeLight').style.clipPath = `circle(${r}px at 50% 50%)`;
+  $('wipeLight').style.display = t > 4.75 ? 'none' : 'block';
+  const on = t >= 4.1 && t < 8.1;
+  $('s2').style.display = on ? 'block' : 'none';
+  if (!on) return;
+  const draw = E.inOutCubic(prog(t, 4.25, 5.05));
+  ['mHouse', 'mL1', 'mL2'].forEach((id, i) => { const p = $(id); const L = +p.dataset.len; p.style.strokeDashoffset = L * (1 - E.outCubic(prog(t, 4.25 + i * .12, 4.95 + i * .12))); });
+  $('mHouse').style.fill = `rgba(255,255,255,${prog(t, 4.8, 5.1)})`;
+  const sp = E.spring(prog(t, 5.0, 5.8));
+  $('mBox').style.transform = `scale(${sp})`;
+  kinetic($('word'), ['FixList'], t, 5.15, 8.0, { stagger: 0, inD: .8, outD: .45 });
+  const tg = vis(t, 5.75, 7.8, .6, .35);
+  css($('tag'), { opacity: tg, transform: `translateY(${(1 - E.outExpo(prog(t, 5.75, 6.35))) * 24}px)` });
+  const out = E.inExpo(prog(t, 7.55, 8.05));
+  css($('lock'), { transform: `translateY(${-out * 80}px) scale(${1 + (1 - draw) * .06 - out * .08})`, opacity: 1 - out });
+  css($('mark'), { transform: `translateY(${(1 - E.outExpo(prog(t, 4.1, 4.8))) * 30}px)` });
+}
+
+function hero(t) {
+  const on = t >= 7.9 && t < 16.2;
+  $('s3').style.display = on ? 'block' : 'none';
+  if (!on) return;
+  const enter = E.spring(prog(t, 8.0, 9.1));
+  const exit = E.inExpo(prog(t, 15.65, 16.15));
+  const push = E.inOutCubic(prog(t, 12.6, 15.8));
+  const zoom = E.inOutCubic(prog(t, 13.05, 14.0)) * (1 - E.inOutCubic(prog(t, 15.0, 15.7)));
+  placePhone('p3', { x: 1355 + (1 - enter) * 260 - exit * 900 - zoom * 40, y: 540 + (1 - enter) * 120 - zoom * 175, s: (0.98 + push * .03 + zoom * .34) * (1 - exit * .1), ry: -16 + enter * 9 + push * 3 + zoom * 3, rx: 5 - enter * 3 - zoom * 2, op: Math.min(1, prog(t, 8.0, 8.35)) * (1 - exit) });
+  screens('p3', t, [
+    { s: 'home-resident', at: 0 },
+    { s: 'check-unsure', at: 9.05 },
+    { s: 'check-yes', at: 9.82, cut: true },
+    { s: 'confirm-before', at: 10.55 },
+    { s: 'confirm', at: 11.32, cut: true },
+    { s: 'plan', at: 12.55 },
+  ]);
+  highlight('p3', t, 8.45, 9.0, 3.5, 41, 93, 18.5);
+  tap('p3', t, 9.75, 50, 59.5);
+  tap('p3', t, 11.25, 46, 52.5);
+  highlight('p3', t, 13.0, 15.6, 3, 52.6, 94, 27);
+  const segs = [
+    { a: 8.15, b: 10.42, eb: 'Check', lines: ['Check your home,', 'one question', 'at a time.'], sub: 'Big buttons. Plain words. Saved on the device.' },
+    { a: 10.5, b: 12.47, eb: 'Confirm', lines: ['Nothing goes', 'on the plan', 'until you say so.'], sub: 'A “yes” and a confirmation are separate choices.' },
+    { a: 12.55, b: 15.75, eb: 'Plan', lines: ['A clear next', 'step for', 'every fix.'], sub: 'Based on the CDC home-safety checklist.' },
+  ];
+  const seg = segs.find((s) => t >= s.a && t <= s.b + .25) || segs[segs.length - 1];
+  $('s3eb').textContent = seg.eb;
+  css($('s3eb'), { opacity: vis(t, seg.a, seg.b, .4, .25) });
+  kinetic($('s3h'), seg.lines, t, seg.a, seg.b, { stagger: .05, inD: .65, outD: .3 });
+  $('s3sub').textContent = seg.sub;
+  css($('s3sub'), { opacity: vis(t, seg.a + .35, seg.b, .5, .25), transform: `translateY(${(1 - E.outExpo(prog(t, seg.a + .35, seg.a + .9))) * 18}px)` });
+  chip('c3a', t, 9.95, 10.45, 905, 600, '<i>✓</i>Yes, recorded');
+  chip('c3b', t, 11.45, 12.5, 860, 540, '<i>✓</i>Explicitly confirmed');
+  chip('c3c', t, 13.55, 15.45, 640, 470, '<i>↗</i>Grouped by who can do it');
+  chip('c3d', t, 13.85, 15.45, 640, 556, '<i>✓</i>Cost stays “unknown” — no guesses');
+}
+
+function threeViews(t) {
+  const on = t >= 15.9 && t < 22.2;
+  $('s4').style.display = on ? 'block' : 'none';
+  if (!on) return;
+  kinetic($('s4h'), ['One app. Three views.'], t, 16.05, 21.75, { stagger: .07, inD: .6, outD: .3 });
+  const fan = E.spring(prog(t, 16.35, 17.5));
+  const exit = E.inExpo(prog(t, 21.6, 22.1));
+  const push = E.inOutCubic(prog(t, 16.3, 22));
+  const xs = [430, 960, 1490], rz = [-7, 0, 7];
+  ['p4a', 'p4b', 'p4c'].forEach((id, i) => {
+    const enter = E.outExpo(prog(t, 15.95, 16.6));
+    placePhone(id, { x: lerp(960 + (i - 1) * 40, xs[i], fan), y: 625 + (1 - enter) * 420 + exit * (i === 1 ? -60 : 60), s: .82 * (1 + push * .03) * (1 - exit * .08), rz: lerp(rz[i] * 2.2, 0, fan) + (i - 1) * Math.sin(t * 1.2) * .4, ry: (i - 1) * -6 * (1 - fan) , op: (1 - exit) * Math.min(1, prog(t, 15.95, 16.3)) });
+    phones[id].el.style.zIndex = i === 1 ? 3 : 2;
+  });
+  screens('p4a', t, [{ s: 'home-resident', at: 0 }]);
+  screens('p4b', t, [{ s: 'home-helper', at: 0 }]);
+  screens('p4c', t, [{ s: 'home-volunteer', at: 0 }]);
+  ['r4a', 'r4b', 'r4c'].forEach((id, i) => {
+    const a = 16.95 + i * .18; const v = vis(t, a, 21.7, .55, .3); const sp = E.spring(prog(t, a, a + .75));
+    css($(id), { left: xs[i] - 210 + 'px', top: '172px', opacity: v * (1 - exit), transform: `translateY(${(1 - sp) * 24}px)` });
+  });
+  highlight('p4a', t, 18.2, 21.4, 3.5, 41, 93, 18.5);
+  highlight('p4b', t, 18.5, 21.4, 3.5, 45.8, 93, 18.5);
+  highlight('p4c', t, 18.8, 21.4, 3.5, 34, 93, 17.5);
+  chip('c4a', t, 19.3, 21.55, 760, 980, '<i>✦</i>Each person gets their own next step');
+}
+
+function share(t) {
+  const on = t >= 21.9 && t < 28.2;
+  $('s5').style.display = on ? 'block' : 'none';
+  if (!on) return;
+  const enter = E.spring(prog(t, 22.0, 23.0));
+  const split = E.inOutCubic(prog(t, 24.55, 25.35));
+  const exit = E.inExpo(prog(t, 27.65, 28.15));
+  placePhone('p5', { x: lerp(1355 + (1 - enter) * 240, 1150, split), y: 540 + (1 - enter) * 100 + split * 40, s: lerp(1, .86, split) * (1 - exit * .1), ry: lerp(-10 + enter * 4, 0, split), op: Math.min(1, prog(t, 22.0, 22.3)) * (1 - exit) });
+  placePhone('p5b', { x: lerp(2200, 1610, split), y: 580, s: .86 * (1 - exit * .1), ry: lerp(-20, 0, split), op: split * (1 - exit) });
+  screens('p5', t, [{ s: 'share', at: 0 }, { s: 'choose-volunteer', at: 23.2 }, { s: 'invite-review', at: 23.85 }, { s: 'resident-request', at: 24.55, cut: true }]);
+  screens('p5b', t, [{ s: 'vol-task', at: 0 }]);
+  tap('p5', t, 22.75, 13, 71.5);
+  tap('p5', t, 24.3, 45, 73.5);
+  const segs = [
+    { a: 22.05, b: 24.5, eb: 'Ask for help', lines: ['Share only', 'what you', 'choose.'], sub: 'Pick each detail a volunteer can see — and take it back.' },
+    { a: 24.6, b: 27.75, eb: 'Privacy', lines: ['Same request.', 'Different view.'], sub: '' },
+  ];
+  const seg = segs.find((s) => t >= s.a && t <= s.b + .25) || segs[1];
+  $('s5eb').textContent = seg.eb;
+  css($('s5eb'), { opacity: vis(t, seg.a, seg.b, .4, .25) });
+  kinetic($('s5h'), seg.lines, t, seg.a, seg.b, { stagger: .05, inD: .65, outD: .3 });
+  $('s5sub').textContent = seg.sub;
+  css($('s5sub'), { opacity: vis(t, seg.a + .35, seg.b, .5, .25) });
+  css($('s5text'), { top: seg.eb === 'Privacy' ? '380px' : '320px', width: seg.eb === 'Privacy' ? '620px' : '700px' });
+  // roles above the split phones
+  [['r5a', 1150, 25.05], ['r5b', 1610, 25.2]].forEach(([id, x, a]) => {
+    const sp = E.spring(prog(t, a, a + .7));
+    css($(id), { left: x - 210 + 'px', top: '58px', opacity: vis(t, a, 27.7, .5, .3), transform: `translateY(${(1 - sp) * 20}px)` });
+  });
+  highlight('p5', t, 25.55, 27.6, 2.5, 32.3, 95, 4.6);
+  highlight('p5b', t, 25.85, 27.6, 3.5, 60.8, 93, 4.6);
+  // connector from Margaret's shared row to Alex's room name
+  const k = E.inOutCubic(prog(t, 25.7, 26.5)) * (1 - E.inCubic(prog(t, 27.4, 27.7)));
+  const scale = .86, top5 = 580 - 439.5 * scale;
+  const ax = 1150 + 205 * scale - 6, ay = top5 + (12 + 839.2 * .345) * scale;
+  const bx = 1610 - 205 * scale + 6, by = top5 + (12 + 839.2 * .632) * scale;
+  const path = `M ${ax} ${ay} C ${ax + 120} ${ay}, ${bx - 120} ${by}, ${bx} ${by}`;
+  $('s5path').setAttribute('d', path);
+  const L = $('s5path').getTotalLength();
+  $('s5path').style.strokeDashoffset = 0;
+  $('s5path').setAttribute('stroke-dasharray', `2 14`);
+  $('s5path').style.opacity = k > 0 ? 1 : 0;
+  $('s5path').style.clipPath = `inset(0 ${100 - k * 100}% 0 0)`;
+  ['s5c1', 's5c2'].forEach((id, i) => { const c = $(id); c.setAttribute('cx', i ? bx : ax); c.setAttribute('cy', i ? by : ay); c.style.opacity = i ? (k > .95 ? 1 : 0) : (k > 0 ? 1 : 0); });
+  chip('c5a', t, 25.9, 27.65, 150, 770, '<i>✓</i>Room name — shared');
+  chip('c5b', t, 26.15, 27.65, 150, 860, '<i>✕</i>Photos, scan, visit times — not shared');
+}
+
+function volunteer(t) {
+  const on = t >= 27.9 && t < 34.2;
+  $('s6').style.display = on ? 'block' : 'none';
+  if (!on) return;
+  const enter = E.spring(prog(t, 28.0, 29.0));
+  const exit = E.inExpo(prog(t, 33.7, 34.15));
+  placePhone('p6', { x: 1355 + (1 - enter) * 240 - exit * 120, y: 560 + (1 - enter) * 100, s: 1 - exit * .25, ry: -12 + enter * 6, op: Math.min(1, prog(t, 28.0, 28.3)) * (1 - exit) });
+  screens('p6', t, [{ s: 'vol-task', at: 0 }, { s: 'vol-schedule', at: 29.45 }, { s: 'res-agree', at: 30.45 }, { s: 'vol-done', at: 31.45 }, { s: 'res-done', at: 32.45 }]);
+  tap('p6', t, 29.05, 50, 72.8);
+  tap('p6', t, 31.05, 33, 59.5);
+  tap('p6', t, 32.1, 50, 61.5);
+  tap('p6', t, 33.1, 40, 81.5);
+  kinetic($('s6h'), ['From invite', 'to done.'], t, 28.1, 33.75, { stagger: .05, inD: .65, outD: .3 });
+  css($('s6eb'), { opacity: vis(t, 28.1, 33.75, .4, .25) });
+  const stepsAt = [28.35, 29.45, 30.45, 31.45, 32.45, 33.2];
+  [...$('steps').children].forEach((row, i) => {
+    const a = stepsAt[i] + (i === 4 ? .75 : 0);
+    const on2 = prog(t, a, a + .35);
+    const appear = E.outExpo(prog(t, 28.25 + i * .07, 28.85 + i * .07));
+    row.style.opacity = appear * (1 - exit);
+    row.style.transform = `translateX(${(1 - appear) * -30}px)`;
+    row.style.color = on2 > 0 ? `rgba(22,48,43,${.32 + .68 * on2})` : 'rgba(22,48,43,.32)';
+    const dot = row.querySelector('.dot');
+    css(dot, { background: on2 > 0 ? (i === 4 ? 'var(--yellow)' : 'var(--ink)') : 'transparent', borderColor: on2 > 0 ? (i === 4 ? 'var(--yellow)' : 'var(--ink)') : 'rgba(22,48,43,.25)', color: on2 > .5 ? (i === 4 ? 'var(--ink)' : 'var(--plaster)') : 'transparent', transform: `scale(${1 + Math.sin(on2 * Math.PI) * .25})` });
+  });
+  // persona badge follows who is acting
+  const resident = (t >= 30.45 && t < 31.45) || t >= 32.45;
+  $('personaText').textContent = resident ? 'Margaret · Resident' : 'Alex · Volunteer';
+  $('persona').querySelector('i').textContent = resident ? 'M' : 'A';
+  const pv = vis(t, 28.2, 33.75, .5, .3);
+  const bump = Math.max(...[29.45, 30.45, 31.45, 32.45].map((a) => Math.sin(clamp((t - a) / .35) * Math.PI)));
+  css($('persona'), { opacity: pv, left: (1355 - 160) + 'px', top: '30px', transform: `scale(${1 + bump * .06})` });
+  chip('c6a', t, 33.2, 33.8, 150, 830, '<i>✓</i>Done — when Margaret says so', true);
+}
+
+function bento(t) {
+  const on = t >= 33.9 && t < 40.9;
+  $('s7').style.display = on ? 'block' : 'none';
+  if (!on) return;
+  kinetic($('s7h'), ['Everything in one place.'], t, 34.0, 41.0, { stagger: .05, inD: .6, outD: .3 });
+  const badge = vis(t, 35.6, 41.0, .5, .3); const bs = E.spring(prog(t, 35.6, 36.3));
+  css($('s7badge'), { opacity: badge, transform: `scale(${.8 + .2 * bs})` });
+  ['t1', 't2', 't3', 't4', 't5'].forEach((id, i) => {
+    const a = 34.15 + [0, .12, .24, .36, .48][i];
+    const sp = E.spring(prog(t, a, a + .9));
+    const v = vis(t, a, 41.0, .45, .3);
+    const zoomOut = E.inCubic(prog(t, 39.9, 40.8));
+    const float = Math.sin(t * 1.3 + i) * 3;
+    css($(id), { opacity: v, transform: `translateY(${(1 - sp) * 60 + float}px) scale(${(.94 + .06 * sp) * (1 - zoomOut * .08)})` });
+  });
+  // live 3D orbit (ping-pong through the captured frames)
+  const f = Math.floor(Math.max(0, t - 34.2) * 30);
+  const n = ORBIT_COUNT * 2 - 2; let idx = f % n; if (idx >= ORBIT_COUNT) idx = n - idx;
+  const im = orbitImgs[idx];
+  if (im.complete) orbitCtx.drawImage(im, 0, 0, 1000, 615);
+  const ai = E.spring(prog(t, 35.1, 35.8));
+  css($('aichip'), { opacity: vis(t, 35.1, 41.0, .45, .3), transform: `translateY(${(1 - ai) * 18}px)` });
+  css($('t1crop'), { opacity: vis(t, 35.4, 41.0, .5, .3) });
+}
+
+function outro(t) {
+  const r = E.inOutCubic(prog(t, 39.95, 40.75)) * 1250;
+  $('outro').style.clipPath = `circle(${r}px at 50% 50%)`;
+  $('outro').style.display = t >= 39.9 ? 'block' : 'none';
+  if (t < 39.9) return;
+  const m = E.spring(prog(t, 40.35, 41.2));
+  css($('omark'), { transform: `scale(${.6 + .4 * m}) rotate(${(1 - m) * -8}deg)`, opacity: Math.min(1, prog(t, 40.35, 40.6)) });
+  kinetic($('oword'), ['FixList'], t, 40.6, 46, { stagger: 0, inD: .8 });
+  css($('otag'), { opacity: vis(t, 41.1, 46, .6, .3), transform: `translateY(${(1 - E.outExpo(prog(t, 41.1, 41.8))) * 20}px)` });
+  css($('oaud'), { opacity: vis(t, 41.6, 46, .6, .3) });
+  css($('ofine'), { opacity: vis(t, 42.2, 46, .8, .3) * .95 });
+  const fade = E.inCubic(prog(t, 44.4, 45));
+  $('stage').style.filter = fade > 0 ? `brightness(${1 - fade * .85})` : 'none';
+}
+
+function renderAt(t) {
+  document.querySelectorAll('.chip.dyn').forEach((c) => { c.style.opacity = 0; });
+  background(t);
+  hook(t); logo(t); hero(t); threeViews(t); share(t); volunteer(t); bento(t); outro(t);
+  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+}
+window.renderAt = renderAt;
+window.ready = (async () => {
+  await document.fonts.ready;
+  const imgs = [...document.images, ...orbitImgs];
+  await Promise.all(imgs.map((im) => im.decode().catch(() => {})));
+  const bgs = ['ai', 'help', 'spanish', 'family-access', 'print'].map((n) => { const im = new Image(); im.src = SHOT(n); return im.decode(); });
+  await Promise.all(bgs);
+  renderAt(0);
+  return true;
+})();
+</script>
+</body>
+</html>

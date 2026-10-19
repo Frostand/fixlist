@@ -1,0 +1,110 @@
+{
+  "format": "fixlist-room-capture",
+  "version": 1,
+  "captureId": "cap-parity-0001",
+  "roomId": "living-room",
+  "createdAt": "2026-10-18T18:00:00.000Z",
+  "mode": "arkit",
+  "floorY": 0,
+  "outline": {
+    "closed": true,
+    "points": [
+      [
+        -2,
+        -3
+      ],
+      [
+        2,
+        -3
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        -2,
+        1
+      ]
+    ]
+  },
+  "doors": [
+    [
+      0,
+      1
+    ]
+  ],
+  "photos": [
+    {
+      "photoId": "p01",
+      "checklistItemId": null,
+      "takenAt": "2026-10-18T18:00:00.000Z",
+      "width": 16,
+      "height": 16,
+      "sha256": "7d481c78a6281bb71ce56edc3d9f1d69322fbc26453e9e2d04af255230db589d",
+      "camera": {
+        "transform": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1.2,
+          0,
+          1
+        ],
+        "intrinsics": [
+          16,
+          16,
+          8,
+          8
+        ],
+        "tracking": "normal"
+      },
+      "jpeg": "/9j/4AAQSkZJRgABAgAAAQABAAD//gAPTGF2YzYzLjEuMTAxAP/bAEMACAQEBAQEBQUFBQUFBgYGBgYGBgYGBgYGBgcHBwgICAcHBwYGBwcICAgICQkJCAgICAkJCgoKDAwLCw4ODhERFP/EAEwAAQEAAAAAAAAAAAAAAAAAAAAHAQEBAAAAAAAAAAAAAAAAAAAFBxABAAAAAAAAAAAAAAAAAAAAABEBAAAAAAAAAAAAAAAAAAAAAP/AABEIABAAEAMBIgACEQADEQD/2gAMAwEAAhEDEQA/AI4Av4p//9k="
+    },
+    {
+      "photoId": "p02",
+      "checklistItemId": "rug-check",
+      "takenAt": "2026-10-18T18:00:00.000Z",
+      "width": 16,
+      "height": 16,
+      "sha256": "c10fc90311f230df4e4c5080ef23100d21a34d92386d1bd59e9a7b212bf0aefa",
+      "camera": {
+        "transform": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1.2,
+          0,
+          1
+        ],
+        "intrinsics": [
+          16,
+          16,
+          8,
+          8
+        ],
+        "tracking": "normal"
+      },
+      "jpeg": "/9j/4AAQSkZJRgABAgAAAQABAAD//gAPTGF2YzYzLjEuMTAxAP/bAEMACAQEBAQEBQUFBQUFBgYGBgYGBgYGBgYGBgcHBwgICAcHBwYGBwcICAgICQkJCAgICAkJCgoKDAwLCw4ODhERFP/EAEwAAQEAAAAAAAAAAAAAAAAAAAAHAQEBAAAAAAAAAAAAAAAAAAAFCBABAAAAAAAAAAAAAAAAAAAAABEBAAAAAAAAAAAAAAAAAAAAAP/AABEIABAAEAMBIgACEQADEQD/2gAMAwEAAhEDEQA/ALEAn8o//9k="
+    }
+  ]
+}

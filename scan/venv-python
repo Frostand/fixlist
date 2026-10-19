@@ -1,0 +1,10 @@
+#!/bin/sh
+# Keep all Python tools/dependencies outside this repository.
+set -eu
+SCAN_PYTHON="${FIXLIST_SCAN_PYTHON:-$HOME/.local/share/fixlist-scan/venv/bin/python}"
+if [ ! -x "$SCAN_PYTHON" ]; then
+  echo 'Missing scan Python. Follow scan/README.md setup or set FIXLIST_SCAN_PYTHON.' >&2
+  exit 2
+fi
+export PYTHONDONTWRITEBYTECODE=1
+exec "$SCAN_PYTHON" "$@"

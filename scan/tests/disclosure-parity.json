@@ -1,0 +1,8 @@
+[
+  {"name":"supported StartLux MLX weights","notice":"Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.","license":"CC BY-NC 4.0 weights","valid":true},
+  {"name":"claim substitution","notice":"Verified hazards and safety findings.","license":"CC BY-NC 4.0 weights","valid":false},
+  {"name":"notice omitted","notice":"","license":"CC BY-NC 4.0 weights","valid":false},
+  {"name":"different license unsupported","notice":"Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.","license":"MIT","valid":false},
+  {"name":"license omitted","notice":"Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.","license":"","valid":false},
+  {"name":"synthetic custom license unsupported","notice":"Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.","license":"Synthetic test license","valid":false}
+]
