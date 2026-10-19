@@ -20,6 +20,7 @@ import { ChecklistQuestion, ResidentHome, ResidentPlan, RoomList } from './Resid
 import { InvitationReview, ResidentRequest, RequestList, SharingScreen, VolunteerChooser } from './RequestScreens';
 import { VolunteerHome, VolunteerTask, VolunteerTasks } from './VolunteerScreens';
 import { AccessScreen, HelpScreen, MoreScreen, RecoveryNotice, ResetConfirmation, ResourcesScreen, VolunteerProfile } from './SettingsScreens';
+import { RoomPage, CaptureFlow } from './CaptureScreens';
 import { ScanPanel } from './ScanPanel';
 import { PrintReport } from './PrintReport';
 import { createInvitationDraft, emptyNavigationState, loadNavigationState, updateNavigationState, selectedInvitationVolunteer, type NavigationState } from './navigation-state';
@@ -134,7 +135,7 @@ function DemoApp() {
   }, [dispatch, initial.storage]);
   let body: ReactNode;
   const prototypeTitle = navigationTitleKey(navigation.layout, route);
-  const titleKey: MessageKey = prototypeTitle ?? (route.screen === 'question' ? 'nav.check' : route.screen === 'task' ? 'nav.request' : route.screen === 'requests' ? 'home.requests' : `nav.${route.screen}` as MessageKey);
+  const titleKey: MessageKey = prototypeTitle ?? (route.screen === 'room' ? 'room.title' : route.screen === 'capture' ? 'capture.title' : route.screen === 'question' ? 'nav.check' : route.screen === 'task' ? 'nav.request' : route.screen === 'requests' ? 'home.requests' : `nav.${route.screen}` as MessageKey);
   const common = { scenario, state, person, dispatch, navigate };
   const props = household ? { ...common, household } : null;
   const request = 'id' in route ? householdRequests.find((v) => v.request.id === route.id) : null;
@@ -153,6 +154,7 @@ function DemoApp() {
     else if (route.screen === 'task') { const view = volunteerRequests.find((v) => v.id === route.id); body = view ? <VolunteerTask key={view.id} request={view} people={state.people.map(({ id, name }) => ({ id, name }))} scanImage={view.scanLocation ? scanPins.find((p) => p.id === view.scanLocation)?.image ?? null : null} dispatch={dispatch} /> : <Message message="request.empty" />; }
   } else if (route.screen === 'home') body = props ? <ResidentHome {...props} layout={navigation.layout} requests={requests} next={person.role === 'family_helper' ? helperNextStep(scenario, state, person.id) : elderNextStep(scenario, state, person.id)} /> : <Denied />;
   else if (route.screen === 'check') body = props?.household.checklistAnswers ? <RoomList {...props} showScanEntry={navigation.layout !== 'current'} /> : <Denied />;
+  else if (route.screen === 'room' || route.screen === 'capture') body = props && hasScope(state, person.id, 'checklist') ? route.screen === 'room' ? <RoomPage key={`${person.id}-${route.id}-${resetVersion}`} {...common} roomId={route.id} /> : <CaptureFlow key={`${person.id}-${route.id}-${resetVersion}`} {...common} roomId={route.id} /> : <Denied />;
   else if (route.screen === 'question') body = props?.household.checklistAnswers ? <ChecklistQuestion key={`${person.id}-${route.id}`} {...props} questionId={route.id} saved={saved} suggestions={suggestions} photoStillRecorded={(id) => current.current.photos.some((photo) => photo.id === id)} onPhotoError={setError} /> : <Denied />;
   else if (route.screen === 'plan') body = props?.household.plan ? <ResidentPlan {...props} /> : <Denied />;
   else if (route.screen === 'requests') body = household?.requests ? <RequestList requests={householdRequests} navigate={navigate} showResources={navigation.layout !== 'current'} /> : <Denied />;

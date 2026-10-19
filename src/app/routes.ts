@@ -1,7 +1,8 @@
+import { demoScenario } from '../data/demo-scenario';
 import type { PersonRole } from '../domain/roles';
 import { navigationActiveTab, NAVIGATION_LAYOUTS, type NavigationLayout } from './navigation-layouts';
 export type ResidentScreen = 'home' | 'check' | 'plan' | 'help' | 'more' | 'resources' | 'scan' | 'report' | 'access' | 'language' | 'about' | 'requests';
-export type Route = { screen: 'start' | 'people' | 'guide' } | { screen: ResidentScreen; role: 'r' } | { screen: 'question'; role: 'r'; id: string } | { screen: 'request' | 'sharing' | 'invite' | 'review'; role: 'r'; id: string } | { screen: 'home' | 'tasks' | 'profile'; role: 'v' } | { screen: 'task'; role: 'v'; id: string };
+export type Route = { screen: 'start' | 'people' | 'guide' } | { screen: ResidentScreen; role: 'r' } | { screen: 'question' | 'room' | 'capture'; role: 'r'; id: string } | { screen: 'request' | 'sharing' | 'invite' | 'review'; role: 'r'; id: string } | { screen: 'home' | 'tasks' | 'profile'; role: 'v' } | { screen: 'task'; role: 'v'; id: string };
 const residentScreens: readonly string[] = ['home', 'check', 'plan', 'help', 'more', 'resources', 'scan', 'report', 'access', 'language', 'about', 'requests'];
 const validPart = (v: string | undefined): v is string => !!v && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(v);
 export function parseRoute(hash: string, search = '', fallback: Route = { screen: 'start' }): Route {
@@ -15,6 +16,7 @@ export function parseRoute(hash: string, search = '', fallback: Route = { screen
   if (role === 'r' && parts.length === 2 && residentScreens.includes(screen!)) return { role, screen: screen as ResidentScreen };
   if (role === 'v' && parts.length === 2 && ['home', 'tasks', 'profile'].includes(screen!)) return { role, screen: screen as 'home' | 'tasks' | 'profile' };
   if (parts.length === 3 && validPart(id)) {
+    if (role === 'r' && ['room', 'capture'].includes(screen!) && demoScenario.rooms.some((room) => room.id === id)) return { role, screen: screen as 'room' | 'capture', id };
     if (role === 'r' && ['question', 'request', 'sharing', 'invite', 'review'].includes(screen!)) return { role, screen: screen as 'question' | 'request' | 'sharing' | 'invite' | 'review', id };
     if (role === 'v' && screen === 'task') return { role, screen, id };
   }
@@ -34,7 +36,8 @@ export function parentRoute(route: Route, role: PersonRole, returnTo: Route | nu
   if (!('role' in route)) return { screen: 'people' };
   if (route.role === 'v') return route.screen === 'task' ? { role: 'v', screen: 'tasks' } : homeRoute(role);
   if (['sharing', 'invite', 'review'].includes(route.screen) && 'id' in route) return { role: 'r', screen: 'request', id: route.id };
-  if (route.screen === 'question') return { role: 'r', screen: 'check' };
+  if (route.screen === 'capture') return { role: 'r', screen: 'room', id: route.id };
+  if (route.screen === 'question' || route.screen === 'room') return { role: 'r', screen: 'check' };
   if (route.screen === 'request') return { role: 'r', screen: 'requests' };
   return { role: 'r', screen: 'more' };
 }

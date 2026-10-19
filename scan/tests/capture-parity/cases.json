@@ -1,0 +1,50 @@
+{
+  "description": "Synthetic JPEGs and scores. No real home or model output. Shared TypeScript/Python validator parity.",
+  "cases": [
+    {
+      "file": "valid-bundle.json",
+      "kind": "bundle",
+      "valid": true
+    },
+    {
+      "file": "valid-flags.json",
+      "kind": "flags",
+      "valid": true
+    },
+    {
+      "file": "invalid-wrong-notice.json",
+      "kind": "flags",
+      "valid": false
+    },
+    {
+      "file": "invalid-wrong-derivation.json",
+      "kind": "flags",
+      "valid": false
+    },
+    {
+      "file": "invalid-point-below-threshold.json",
+      "kind": "flags",
+      "valid": false
+    },
+    {
+      "file": "invalid-photo-hash-mismatch.json",
+      "kind": "bundle",
+      "valid": false
+    },
+    {
+      "file": "invalid-unknown-key.json",
+      "kind": "bundle",
+      "valid": false
+    },
+    {
+      "file": "invalid-bad-rotation.json",
+      "kind": "bundle",
+      "valid": false
+    },
+    {
+      "file": "invalid-point-not-grid-centre.json",
+      "kind": "flags",
+      "valid": false
+    }
+  ]
+}

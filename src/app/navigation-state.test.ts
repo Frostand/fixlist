@@ -35,7 +35,7 @@ describe('separately versioned navigation context', () => {
   });
   it.each(navigationLayouts)('reset clears the %s preference and retains unrelated storage', async (layout) => {
     const storage = memory(); storage.setItem('unrelated', 'keep'); await saveNavigationState(storage, { ...emptyNavigationState(), layout });
-    const result = await resetFixListData(storage, scenario, { photos: async () => ({ ok: true, message: '' }), scan: async () => ({ ok: true, message: '' }) });
+    const result = await resetFixListData(storage, scenario, { captures: async () => ({ ok: true, message: '' }), photos: async () => ({ ok: true, message: '' }), scan: async () => ({ ok: true, message: '' }) });
     expect(result.status).toBe('reset'); expect(storage.getItem(NAVIGATION_STORAGE_KEY)).toBeNull(); expect(loadNavigationState(storage).layout).toBe('current'); expect(storage.getItem('unrelated')).toBe('keep');
   });
   it('recovers a selected volunteer after reload without changing household saved bytes', async () => {

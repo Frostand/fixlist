@@ -93,7 +93,7 @@ describe('D02 deterministic cross-tab critical sections', () => {
     const storage = sharedStorage(); await saveDemoState(storage, scenario, atStage('invited'));
     const a = client(storage); let release!: () => void, started!: () => void;
     const began = new Promise<void>((resolve) => { started = resolve; });
-    const reset = resetFixListData(storage, scenario, { photos: () => { started(); return new Promise<{ ok: boolean; message: string }>((resolve) => { release = () => resolve({ ok: true, message: 'cleared' }); }); }, scan: async () => ({ ok: true, message: 'cleared' }) });
+    const reset = resetFixListData(storage, scenario, { captures: async () => ({ ok: true, message: '' }), photos: () => { started(); return new Promise<{ ok: boolean; message: string }>((resolve) => { release = () => resolve({ ok: true, message: 'cleared' }); }); }, scan: async () => ({ ok: true, message: 'cleared' }) });
     await began; const pending = a.dispatch({ type: 'set_language', language: 'es' });
     await Promise.resolve(); expect(a.publish).not.toHaveBeenCalled(); expect(storage.getItem(DEMO_STORAGE_KEY)).toBeNull();
     release(); expect((await reset).status).toBe('reset'); expect(await pending).toMatchObject({ ok: false, code: 'stale_revision' });

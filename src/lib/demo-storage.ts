@@ -7,6 +7,8 @@ import { validateLegacyState } from './legacy-demo-state';
 import { reconstructState } from './state-validation';
 import { resetPhotoStorage } from './photo-storage';
 import { resetScanStorage } from './scan-storage';
+import { resetCaptureStorage } from './capture-storage';
+import { discardAllNativeCaptures } from './native-capture';
 import { DEMO_STORAGE_KEY, NAVIGATION_STORAGE_KEY, withDemoStorageLock } from './storage-lock';
 export { DEMO_STORAGE_KEY } from './storage-lock';
 export const MAX_SERIALIZED_BYTES = 64 * 1024;
@@ -126,11 +128,11 @@ export async function resetDemoState(storage: StorageInput, scenario: DemoScenar
   catch { return { status: 'error', state: createInitialState(scenario), message: 'Saved demo data could not be locked for reset. Reloading may restore older saved data.' }; }
 }
 /** Each owned store is attempted even if another fails; unrelated keys/databases are untouched. */
-export async function resetFixListData(storage: StorageInput, scenario: DemoScenario, stores = { photos: resetPhotoStorage, scan: resetScanStorage }): Promise<ResetResult> {
+export async function resetFixListData(storage: StorageInput, scenario: DemoScenario, stores = { photos: resetPhotoStorage, scan: resetScanStorage, captures: resetCaptureStorage }): Promise<ResetResult> {
   async function clearPrivateStores(result: ResetResult): Promise<ResetResult> {
-    const outcomes = await Promise.allSettled([Promise.resolve().then(() => stores.photos()), Promise.resolve().then(() => stores.scan())]);
+    const outcomes = await Promise.allSettled([Promise.resolve().then(() => stores.photos()), Promise.resolve().then(() => stores.scan()), Promise.resolve().then(() => stores.captures()), Promise.resolve().then(() => discardAllNativeCaptures())]);
     const failed = outcomes.some((o) => o.status === 'rejected' || !o.value.ok);
-    return failed ? { ...result, status: 'error', message: `${result.message} Some saved photos or scans could not be cleared. Reloading may restore older data.` } : result;
+    return failed ? { ...result, status: 'error', message: `${result.message} Some saved photos, scans or walk-throughs could not be cleared. Reloading may restore older data.` } : result;
   }
   try { return await withDemoStorageLock(() => clearPrivateStores(resetMetadata(storage, scenario))); }
   catch { return clearPrivateStores({ status: 'error', state: createInitialState(scenario), message: 'Saved demo data could not be locked for reset. Reloading may restore older saved data.' }); }

@@ -86,7 +86,7 @@ describe('v2 to v4 in-memory migration', () => {
 describe('complete FixList reset', () => {
   it('clears only its local key and both owned stores, attempting each even when another fails', async () => {
     const store = new Store(); store.values.set(DEMO_STORAGE_KEY, 'old'); store.values.set('other', 'keep'); const attempts: string[] = [];
-    const result = await resetFixListData(store, demoScenario, { photos: async () => { attempts.push('photos'); throw new Error('denied'); }, scan: async () => { attempts.push('scan'); return { ok: true, message: 'cleared' }; } });
+    const result = await resetFixListData(store, demoScenario, { captures: async () => ({ ok: true, message: '' }), photos: async () => { attempts.push('photos'); throw new Error('denied'); }, scan: async () => { attempts.push('scan'); return { ok: true, message: 'cleared' }; } });
     expect(attempts).toEqual(['photos', 'scan']); expect(result.status).toBe('error'); expect(result.state).toEqual(createInitialState(demoScenario)); expect(store.values.get('other')).toBe('keep'); expect(store.removes).toEqual([DEMO_STORAGE_KEY, 'fixlist:navigation:v1']);
   });
 });

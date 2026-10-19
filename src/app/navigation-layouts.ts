@@ -12,9 +12,9 @@ const home: TabDefinition = { screen: 'home', label: 'nav.home', icon: 'home' };
 const rooms: TabDefinition = { screen: 'check', label: 'nav.rooms', icon: 'rooms', gate: 'hasChecklist' };
 const fixes: TabDefinition = { screen: 'plan', label: 'nav.fixList', icon: 'plan', gate: 'hasPlan' };
 const requests: TabDefinition = { screen: 'requests', label: 'nav.requests', icon: 'requests', gate: 'hasRequests' };
-const taskRoutes = { question: 'check', scan: 'check', requests: 'requests', request: 'requests', sharing: 'requests', invite: 'requests', review: 'requests', resources: 'requests', more: null, help: null, access: null, language: null, report: null, about: null } as const;
+const taskRoutes = { question: 'check', room: 'check', capture: 'check', scan: 'check', requests: 'requests', request: 'requests', sharing: 'requests', invite: 'requests', review: 'requests', resources: 'requests', more: null, help: null, access: null, language: null, report: null, about: null } as const;
 export const NAVIGATION_LAYOUTS: Readonly<Record<NavigationLayout, LayoutDefinition>> = {
-  current: { tabs: [home, { screen: 'check', label: 'nav.check', icon: 'check', gate: 'hasChecklist' }, { screen: 'plan', label: 'nav.plan', icon: 'plan', gate: 'hasPlan' }, { screen: 'help', label: 'nav.help', icon: 'help' }, { screen: 'more', label: 'nav.more', icon: 'more' }], settingsEntry: false, active: { question: 'check', task: 'tasks', request: 'home', requests: 'home', sharing: 'home', invite: 'home', review: 'home', scan: 'more', report: 'more', access: 'more', language: 'more', about: 'more' } },
+  current: { tabs: [home, { screen: 'check', label: 'nav.check', icon: 'check', gate: 'hasChecklist' }, { screen: 'plan', label: 'nav.plan', icon: 'plan', gate: 'hasPlan' }, { screen: 'help', label: 'nav.help', icon: 'help' }, { screen: 'more', label: 'nav.more', icon: 'more' }], settingsEntry: false, active: { question: 'check', room: 'check', capture: 'check', task: 'tasks', request: 'home', requests: 'home', sharing: 'home', invite: 'home', review: 'home', scan: 'more', report: 'more', access: 'more', language: 'more', about: 'more' } },
   three: { tabs: [home, rooms, requests], settingsEntry: true, active: { ...taskRoutes, plan: 'home' } },
   four: { tabs: [home, rooms, fixes, requests], settingsEntry: true, active: { ...taskRoutes, plan: 'plan' } },
 };

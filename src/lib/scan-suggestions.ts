@@ -95,7 +95,7 @@ export function plattProbability(raw: number, a: number, b: number): number {
   const p = Math.max(1e-6, Math.min(1 - 1e-6, raw));
   return 1 / (1 + Math.exp(-(a * Math.log(p / (1 - p)) + b)));
 }
-function calibration(value: unknown): Calibration | null | false {
+export function validateSuggestionCalibration(value: unknown): Calibration | null | false {
   if (value === null) return null;
   if (!record(value) || !shape(value, ['method', 'parameters', 'fittedAt', 'labelSource', 'trainExamples', 'heldOutExamples', 'heldOutBrierRaw', 'heldOutBrierCalibrated'])
     || value.method !== 'platt' || !record(value.parameters) || !shape(value.parameters, trustedPhotoQuestions.map((q) => q.checklistItemId))
@@ -198,7 +198,7 @@ export function validateScanSuggestions(value: unknown, catalog: SuggestionCatal
   if (!actualHash) return fail('Scene bytes have not been verified in this session. Prepare the scan asset before loading suggestions.', 'SCENE_IDENTITY_UNVERIFIED');
   if (identity.sceneSHA256 !== actualHash) return fail('Scene content hash does not match the loaded scan.', 'SCENE_IDENTITY_MISMATCH');
   if (!numbers(thresholds) || !numbers(value.timing) || value.notice !== TRUSTED_SUGGESTION_NOTICE) return fail('thresholds/timing must be bounded numbers and the trusted human-confirmation notice is required.');
-  const fitted = value.version === 2 ? calibration(value.calibration) : null;
+  const fitted = value.version === 2 ? validateSuggestionCalibration(value.calibration) : null;
   if (fitted === false) return fail('invalid calibration provenance or Platt parameters.');
   if (value.version === 2 && (!shape(thresholds, ['suggestion', 'location', 'relevance', 'noneProbability', 'minFrames'])
     || !['suggestion', 'location', 'relevance', 'noneProbability'].every((key) => probability(thresholds[key])) || !integer(thresholds.minFrames, 1, scan.framesAnalyzed))) return fail('invalid v2 thresholds.');
