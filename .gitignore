@@ -12,3 +12,8 @@ coverage/
 /private-captures/
 /recordings/*
 !/recordings/README.md
+
+# Keep local documentation and assistant configuration out of Git.
+*.md
+*.mdx
+/.claude/
