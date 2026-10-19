@@ -27,6 +27,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 class FixListBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(FixListPrintPlugin())
+        bridge?.registerPluginInstance(FixListCapturePlugin())
     }
 }
 
