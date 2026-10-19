@@ -98,3 +98,15 @@ export interface FixListCapturePlugin {
   discardAll(): Promise<void>;
   shareFile(options: { fileName: string; text: string }): Promise<{ completed: boolean }>;
 }
+
+/**
+ * Every on-screen string the native capture screen shows; the web app supplies them per language.
+ * Placeholders: {current}, {total}, {count}.
+ */
+export const NATIVE_CAPTURE_STRING_KEYS = [
+  'findFloor', 'floorFound', 'trackingLimited', 'interrupted', 'relocalizeFailed',
+  'tapCorners', 'cornerCount', 'undo', 'closeOutline', 'markDoor', 'doorMode', 'skipOutline', 'approximate',
+  'photoProgress', 'shutter', 'retake', 'skip', 'next', 'done',
+  'cancel', 'cancelConfirmTitle', 'cancelConfirmMessage', 'cancelConfirmStop', 'cancelConfirmKeep',
+] as const;
+export type NativeCaptureStringKey = typeof NATIVE_CAPTURE_STRING_KEYS[number];
