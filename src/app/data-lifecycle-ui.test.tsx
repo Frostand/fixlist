@@ -33,7 +33,7 @@ describe('recovery and role-specific next actions', () => {
     const card = nextStepCard(next, state, false);
     expect(card.key).toBe('next.answer_checklist'); expect(card.route).toEqual({ role: 'r', screen: 'question', id: 'cord-check' });
     const html = renderToStaticMarkup(<ResidentHome scenario={scenario} state={state} person={state.people[1]!} household={visibleHouseholdFor(scenario, state, 'sam')!} requests={[]} next={next} dispatch={async () => ({ ok: true })} navigate={() => {}} />);
-    expect(html).toContain(en[card.key]);
+    expect(html).toContain(en['next.reviewNotSure']);
     state = run(state, { type: 'grant_delegation', personId: 'sam', scopes: ['confirm'] });
     expect(helperNextStep(scenario, state, 'sam')).toEqual({ kind: 'helper_evidence' });
     expect(nextStepCard(helperNextStep(scenario, state, 'sam'), state, false).route).toEqual({ role: 'r', screen: 'help' });

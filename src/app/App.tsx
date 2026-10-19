@@ -23,6 +23,7 @@ import { AccessScreen, HelpScreen, MoreScreen, RecoveryNotice, ResetConfirmation
 import { ScanPanel } from './ScanPanel';
 import { PrintReport } from './PrintReport';
 import { createInvitationDraft, emptyNavigationState, loadNavigationState, updateNavigationState, selectedInvitationVolunteer, type NavigationState } from './navigation-state';
+import { navigationLayoutParameter, navigationTitleKey } from './navigation-layouts';
 
 export function App() { return validateCatalog(scenario).ok ? <DemoApp /> : <I18nProvider language="en"><Unavailable /></I18nProvider>; }
 function Unavailable() { const t = useT(); return <main><h1>{t('app.name')}</h1><p role="alert">{t('error.catalog')}</p></main>; }
@@ -34,16 +35,21 @@ function DemoApp() {
   const [route, setRoute] = useState<Route>(launch.route), routeRef = useRef(route); routeRef.current = route;
   const [returnTo, setReturnTo] = useState<Route | null>(() => { const hash = typeof window === 'undefined' ? null : window.history?.state?.fixlistReturnTo; const parsed = typeof hash === 'string' ? parseRoute(hash) : null; return parsed && 'role' in parsed ? parsed : null; });
   const returnRef = useRef(returnTo); returnRef.current = returnTo;
-  const [navigation, setNavigation] = useState<NavigationState>({ ...initial.navigation, pendingDestination: launch.pending });
+  const [launchLayout] = useState(() => navigationLayoutParameter(typeof window === 'undefined' ? '' : window.location.search));
+  const [navigation, setNavigation] = useState<NavigationState>({ ...initial.navigation, pendingDestination: launch.pending, layout: launchLayout ?? initial.navigation.layout });
   const navigationRef = useRef(navigation); navigationRef.current = navigation;
-  async function rememberNavigation(update: (saved: NavigationState) => NavigationState) {
+  async function rememberNavigation(update: (saved: NavigationState) => NavigationState, errorKey: MessageKey = 'routing.draftUnsaved') {
     const current = dispatch.capture?.();
     const next = await updateNavigationState(initial.storage, (saved) => !resettingRef.current && (current?.() ?? true) ? update(saved) : null);
-    if (!next) { if (!resettingRef.current && (current?.() ?? true)) setError('routing.draftUnsaved'); return false; }
+    if (!next) { if (!resettingRef.current && (current?.() ?? true)) setError(errorKey); return false; }
     if (resettingRef.current || !(current?.() ?? true)) return false;
     navigationRef.current = next; setNavigation(next); return true;
   }
-  useEffect(() => { if (launch.pending) void rememberNavigation((saved) => ({ ...saved, pendingDestination: launch.pending })); }, [initial, launch]);
+  useEffect(() => {
+    if (launch.pending || launchLayout) void rememberNavigation((saved) => ({ ...saved, pendingDestination: launch.pending, layout: launchLayout ?? saved.layout }), launchLayout ? 'navigation.unsaved' : 'routing.draftUnsaved');
+    // A launch override is consumed once, so a later toggle or reset survives reload.
+    if (new URLSearchParams(window.location.search).has('nav')) { const url = new URL(window.location.href); url.searchParams.delete('nav'); window.history.replaceState(window.history.state, '', url); }
+  }, [initial, launch, launchLayout]);
   const person = state.people.find((p) => p.id === state.activePersonId)!;
   const [launchLanguage, setLaunchLanguage] = useState<Language>(person.language), [languageChosen, setLanguageChosen] = useState(false);
   const [saved, setSaved] = useState(!['invalid', 'unavailable', 'error'].includes(initial.status)), [error, setError] = useState<string | OperationFailure>('');
@@ -127,7 +133,8 @@ function DemoApp() {
     return () => window.removeEventListener('storage', changed);
   }, [dispatch, initial.storage]);
   let body: ReactNode;
-  const titleKey: MessageKey = route.screen === 'question' ? 'nav.check' : route.screen === 'task' ? 'nav.request' : route.screen === 'requests' ? 'home.requests' : `nav.${route.screen}` as MessageKey;
+  const prototypeTitle = navigationTitleKey(navigation.layout, route);
+  const titleKey: MessageKey = prototypeTitle ?? (route.screen === 'question' ? 'nav.check' : route.screen === 'task' ? 'nav.request' : route.screen === 'requests' ? 'home.requests' : `nav.${route.screen}` as MessageKey);
   const common = { scenario, state, person, dispatch, navigate };
   const props = household ? { ...common, household } : null;
   const request = 'id' in route ? householdRequests.find((v) => v.request.id === route.id) : null;
@@ -144,11 +151,11 @@ function DemoApp() {
     else if (route.screen === 'tasks') body = <VolunteerTasks requests={volunteerRequests} navigate={navigate} />;
     else if (route.screen === 'profile') body = <VolunteerProfile person={person} dispatch={dispatch} navigate={navigate} />;
     else if (route.screen === 'task') { const view = volunteerRequests.find((v) => v.id === route.id); body = view ? <VolunteerTask key={view.id} request={view} people={state.people.map(({ id, name }) => ({ id, name }))} scanImage={view.scanLocation ? scanPins.find((p) => p.id === view.scanLocation)?.image ?? null : null} dispatch={dispatch} /> : <Message message="request.empty" />; }
-  } else if (route.screen === 'home') body = props ? <ResidentHome {...props} requests={requests} next={person.role === 'family_helper' ? helperNextStep(scenario, state, person.id) : elderNextStep(scenario, state, person.id)} /> : <Denied />;
-  else if (route.screen === 'check') body = props?.household.checklistAnswers ? <RoomList {...props} /> : <Denied />;
+  } else if (route.screen === 'home') body = props ? <ResidentHome {...props} layout={navigation.layout} requests={requests} next={person.role === 'family_helper' ? helperNextStep(scenario, state, person.id) : elderNextStep(scenario, state, person.id)} /> : <Denied />;
+  else if (route.screen === 'check') body = props?.household.checklistAnswers ? <RoomList {...props} showScanEntry={navigation.layout !== 'current'} /> : <Denied />;
   else if (route.screen === 'question') body = props?.household.checklistAnswers ? <ChecklistQuestion key={`${person.id}-${route.id}`} {...props} questionId={route.id} saved={saved} suggestions={suggestions} photoStillRecorded={(id) => current.current.photos.some((photo) => photo.id === id)} onPhotoError={setError} /> : <Denied />;
   else if (route.screen === 'plan') body = props?.household.plan ? <ResidentPlan {...props} /> : <Denied />;
-  else if (route.screen === 'requests') body = household?.requests ? <RequestList requests={householdRequests} navigate={navigate} /> : <Denied />;
+  else if (route.screen === 'requests') body = household?.requests ? <RequestList requests={householdRequests} navigate={navigate} showResources={navigation.layout !== 'current'} /> : <Denied />;
   else if (route.screen === 'request') body = request ? <ResidentRequest key={request.request.id} {...common} view={request} /> : <Message message="request.empty" />;
   else if (route.screen === 'sharing') body = isResident && request ? <SharingScreen key={`${request.request.id}-${request.request.revision}`} request={request.request} scenario={scenario} pins={scanPins} dispatch={dispatch} navigate={navigate} /> : <Denied />;
   else if (route.screen === 'invite') body = isResident && request ? <VolunteerChooser people={state.people} requestId={request.request.id} onChoose={async (id, requestId) => { const draft = createInvitationDraft(current.current, requestId, id); if (!draft) return; if (await rememberNavigation((saved) => ({ ...saved, invitations: [...saved.invitations.filter((d) => d.requestId !== requestId), draft] }))) navigate({ role: 'r', screen: 'review', id: requestId }); }} /> : <Denied />;
@@ -156,20 +163,20 @@ function DemoApp() {
   else if (route.screen === 'scan') body = household?.canViewScan && !resetting ? <ScanPanel key={resetVersion} scenario={scenario} state={state} onSuggestionsChange={onSuggestionsChange} onPinsChange={onPinsChange} /> : <Denied />;
   else if (route.screen === 'resources') body = <ResourcesScreen {...common} />;
   else if (route.screen === 'access') body = isResident ? <AccessScreen state={state} dispatch={dispatch} /> : <Denied />;
-  else if (route.screen === 'more') body = <MoreScreen person={person} resident={isResident} canViewScan={!!household?.canViewScan} navigate={navigate} dispatch={dispatch} onReset={() => setResetConfirm(true)} />;
+  else if (route.screen === 'more') body = <MoreScreen person={person} resident={isResident} canViewScan={!!household?.canViewScan} navigate={navigate} dispatch={dispatch} onReset={() => setResetConfirm(true)} layout={navigation.layout} onLayoutChange={(layout) => rememberNavigation((saved) => ({ ...saved, layout }), 'navigation.unsaved')} />;
   else if (route.screen === 'help') body = <HelpScreen person={person} navigate={navigate} dispatch={dispatch} />;
   else if (route.screen === 'about') body = <About />;
   else if (route.screen === 'language') body = <LanguagePicker onSelect={async (value) => { if ((await dispatch({ type: 'set_language', language: value })).ok) setLaunchLanguage(value); }} />;
   else if (route.screen === 'report') body = isResident ? <ReportScreen state={state} pins={scanPins} onError={() => setError('error.print')} /> : <Denied />;
   const screenBody = <><ErrorMessage error={error} />{typeof error === 'object' && error.code === 'stale_revision' ? <RefreshSaved onRefresh={refreshSaved} /> : null}{['invalid', 'error', 'unavailable', 'migrated'].includes(recovery.status) ? <RecoveryNotice status={recovery.status as 'invalid' | 'error' | 'unavailable' | 'migrated'} message={recovery.message} canManage={isResident} onExport={exportSaved} onReset={() => setResetConfirm(true)} onRefresh={refreshSaved} /> : null}<SaveFeedback saved={saved} feedback={feedback} />{body}{resetConfirm ? <ResetConfirmation onReset={() => void reset()} onCancel={() => setResetConfirm(false)} /> : null}</>;
-  return <I18nProvider language={language}>{!usesTabShell(route) ? screenBody : <TranslatedShell person={person} route={route} returnTo={returnTo} titleKey={titleKey} navigate={navigate} hasChecklist={hasScope(state, person.id, 'checklist')} hasPlan={!!household?.plan} {...(person.role === 'family_helper' ? { actingFor: 'Margaret' } : {})}>{screenBody}</TranslatedShell>}</I18nProvider>;
+  return <I18nProvider language={language}>{!usesTabShell(route) ? screenBody : <TranslatedShell person={person} route={route} returnTo={returnTo} layout={navigation.layout} titleKey={titleKey} navigate={navigate} hasChecklist={hasScope(state, person.id, 'checklist')} hasPlan={!!household?.plan} hasRequests={!!household?.requests} {...(person.role === 'family_helper' ? { actingFor: 'Margaret' } : {})}>{screenBody}</TranslatedShell>}</I18nProvider>;
 }
 function TranslatedShell({ titleKey, ...props }: Omit<Parameters<typeof PhoneShell>[0], 'title'> & { titleKey: MessageKey }) { const t = useT(); return <PhoneShell {...props} title={t(titleKey)} />; }
 function StartLanguage({ onSelect }: { onSelect(language: Language): void }) { const t = useT(); return <StartShell title={t('nav.start')}><p>{t('app.tagline')}</p><LanguagePicker onSelect={onSelect} /></StartShell>; }
 function Message({ message }: { message: MessageKey }) { const t = useT(); return <p className="notice">{t(message)}</p>; }
 function Denied() { return <Message message="person.noGrant" />; }
 function About() { const t = useT(); return <div className="stack"><p>{t('more.aboutBody')}</p><p>{t('app.disclosure')}</p><p>{t('app.local')}</p></div>; }
-function ErrorMessage({ error }: { error: string | OperationFailure }) { const t = useT(); if (!error) return null; if (typeof error === 'object') return <p className="error-message" role="alert">{t(`failure.${error.code}`)}</p>; const result = error === 'reset-failed' ? { key: 'error.reset' as const } : error.startsWith('error.') || error.startsWith('check.') || error.startsWith('routing.') ? { key: error as MessageKey } : { key: 'error.generic' as const }; return <p className="error-message" role="alert">{t(result.key)}</p>; }
+function ErrorMessage({ error }: { error: string | OperationFailure }) { const t = useT(); if (!error) return null; if (typeof error === 'object') return <p className="error-message" role="alert">{t(`failure.${error.code}`)}</p>; const result = error === 'reset-failed' ? { key: 'error.reset' as const } : error.startsWith('error.') || error.startsWith('check.') || error.startsWith('routing.') || error.startsWith('navigation.') ? { key: error as MessageKey } : { key: 'error.generic' as const }; return <p className="error-message" role="alert">{t(result.key)}</p>; }
 function RefreshSaved({ onRefresh }: { onRefresh(): void }) { const t = useT(); return <button onClick={onRefresh}>{t('data.refresh')}</button>; }
 function SaveFeedback({ saved, feedback }: { saved: boolean; feedback: number }) { const t = useT(); return <p className={saved ? 'sr-only screen-only' : 'notice screen-only'} role="status" aria-live="polite" key={feedback}>{t(saved ? 'check.saved' : 'check.unsaved')}</p>; }
 function BackToInvitations({ navigate, requestId }: { navigate: Navigate; requestId?: string | undefined }) { const t = useT(); return <button onClick={() => navigate(requestId ? { role: 'r', screen: 'invite', id: requestId } : { role: 'r', screen: 'requests' })}>{t('nav.invite')}</button>; }

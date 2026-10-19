@@ -4,7 +4,7 @@ import { en } from '../i18n/en';
 import { useCallback, useState, type ReactNode } from 'react';
 import type { Concern, ConcernEvidence, DemoScenario } from '../domain/types';
 import {
-  canConfirmConcern, computeCoverage, computePlan, getRequestViews, getRequiredChecklistItemIds, attributionLabel,
+  canConfirmConcern, computePlan, getRequestViews, getRequiredChecklistItemIds, attributionLabel,
   type ChecklistAnswer, type ResidentCommandInput, type DemoState,
 } from '../domain/workflow';
 import { actionTitle, LocalTime, requestStatusLabels, SourceNote } from './display';
@@ -13,11 +13,12 @@ import type { ScanPin } from '../lib/scan-model';
 import { ScanPanel } from './ScanPanel';
 import { suggestionForChecklist, type ScanSuggestionLayer } from '../lib/scan-suggestions';
 import { ScanSuggestionChip } from './ScanSuggestions';
+import { checklistPresentation, displayAnswer } from './checklist-presentation';
 
 interface WorkflowProps { scenario: DemoScenario; state: DemoState; onCommand: (command: ResidentCommandInput) => void }
 
 const answerOptions: readonly { value: ChecklistAnswer; label: string }[] = [
-  { value: 'yes', label: en["check.yes"] }, { value: 'no', label: en["check.no"] }, { value: 'unknown', label: en["legacy.workflowsections.1"] },
+  { value: 'yes', label: en["check.yes"] }, { value: 'no', label: en["check.no"] }, { value: 'unknown', label: en["check.unknown"] },
 ];
 
 export function StepHead({ step, id, title, children }: { step: number; id: string; title: string; children?: ReactNode }) {
@@ -27,7 +28,7 @@ export function StepHead({ step, id, title, children }: { step: number; id: stri
 
 export function ChecklistSection({ scenario, state, onCommand, scanResetVersion = 0, scanResetting = false, scanSuggestions, onScanPinsChange }: WorkflowProps & { scanResetVersion?: number; scanResetting?: boolean; scanSuggestions?: ScanSuggestionLayer | null; onScanPinsChange?: (pins: readonly ScanPin[]) => void }) {
   const t = useT();
-  const coverage = computeCoverage(scenario, state);
+  const coverage = checklistPresentation(scenario, state);
   const [loadedSuggestions, setLoadedSuggestions] = useState<{ version: number; layer: ScanSuggestionLayer | null }>({ version: scanResetVersion, layer: null });
   const onSuggestionsChange = useCallback((layer: ScanSuggestionLayer | null) => setLoadedSuggestions({ version: scanResetVersion, layer }), [scanResetVersion]);
   const suggestions = scanResetting ? null : scanSuggestions ?? (loadedSuggestions.version === scanResetVersion ? loadedSuggestions.layer : null);
@@ -48,7 +49,7 @@ export function ChecklistSection({ scenario, state, onCommand, scanResetVersion 
             <article className="room" key={room.id} data-count={evidence.length} aria-labelledby={`room-${room.id}`}>
               <header className="room-head">
                 <h3 id={`room-${room.id}`}>{authored(t, room.name)}</h3>
-                {tally ? <p className="room-tally" data-complete={tally.unknown === 0}>{tally.answered}/{tally.total}{t("legacy.workflowsections.8")}</p> : null}
+                {tally ? <p className="room-tally" data-complete={tally.unknown === 0}>{t('home.progress', { answered: tally.answered, total: tally.total, notSure: tally.notSure, unanswered: tally.unanswered })}</p> : null}
               </header>
               <div className="room-items">
                 {evidence.map((item) => <ObservationItem key={item.id} scenario={scenario} state={state} onCommand={onCommand} evidence={item} suggestions={suggestions} />)}
@@ -66,7 +67,7 @@ function ObservationItem({ scenario, state, onCommand, evidence, suggestions }: 
   const item = scenario.checklist.find((entry) => entry.id === evidence.checklistItemId);
   const concerns = scenario.concerns.filter((concern) => concern.evidenceIds[0] === evidence.id);
   const confirmed = concerns.some((concern) => state.confirmations[concern.id]?.humanConfirmed === true);
-  const answer = item ? state.checklistAnswers[item.id] ?? 'unknown' : 'unknown';
+  const answer = item ? displayAnswer(state, item.id) : 'unanswered';
   const suggestion = item ? suggestionForChecklist(suggestions, item.id) : undefined;
   return (
     <div className="item" data-confirmed={confirmed}>
@@ -78,6 +79,7 @@ function ObservationItem({ scenario, state, onCommand, evidence, suggestions }: 
       {item ? (
         <fieldset className="answer">
           <legend>{authored(t, item.prompt)}</legend>
+          {answer === 'unanswered' ? <p className="small-text">{t('check.unanswered')}</p> : null}
           {suggestion ? <ScanSuggestionChip item={suggestion} /> : null}
           <div className="segmented" data-answer={answer}>
             {answerOptions.map((option) => (
@@ -123,7 +125,7 @@ function ConcernControl({ scenario, state, onCommand, concern }: WorkflowProps &
 export function PlanSection({ scenario, state, onCommand }: WorkflowProps) {
   const t = useT();
   const plan = computePlan(scenario, state);
-  const coverage = computeCoverage(scenario, state);
+  const coverage = checklistPresentation(scenario, state);
   const concernCount = plan.reduce((count, item) => count + item.concernIds.length, 0);
   return (
     <section id="plan" className="step" aria-labelledby="plan-heading">
@@ -132,7 +134,7 @@ export function PlanSection({ scenario, state, onCommand }: WorkflowProps) {
       </StepHead>
       <p className="tally-line" role="status" aria-live="polite">{concernCount}{t("legacy.workflowsections.18")}{concernCount === 1 ? '' : 's'} · {plan.length}{t("legacy.workflowsections.19")}{plan.length === 1 ? '' : 's'}.</p>
       <p className="small-text">{t("legacy.workflowsections.20")}</p>
-      {plan.length === 0 ? <p className="empty-state">{t("legacy.workflowsections.21")}{coverage.unknown > 0 ? t('workflow.unknown', { count: coverage.unknown }) : t("legacy.workflowsections.22")}{t("legacy.workflowsections.23")}</p> : (
+      {plan.length === 0 ? <p className="empty-state">{t("legacy.workflowsections.21")}{t('home.progress', { answered: coverage.answered, total: coverage.total, notSure: coverage.notSure, unanswered: coverage.unanswered })}. {t("legacy.workflowsections.23")}</p> : (
         <ol className="plan-list">{plan.map((item) => (
           <li key={item.referenceActionId} value={item.catalogPosition}>
             <article className="action-card" data-routing={item.referenceAction.helpRouting.kind} aria-labelledby={`action-${item.referenceActionId}`}>

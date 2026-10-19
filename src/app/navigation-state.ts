@@ -3,18 +3,20 @@ import type { DemoScenario } from '../domain/types';
 import { visibleRequestsFor, type DemoState, type Person } from '../domain/workflow';
 import { parseRoute, routeHash, type Route } from './routes';
 import { NAVIGATION_STORAGE_KEY, withDemoStorageLock } from '../lib/storage-lock';
+import { isNavigationLayout, type NavigationLayout } from './navigation-layouts';
 
 /** Navigation context only; deliberately separate from the household saved-state schema. */
 export { NAVIGATION_STORAGE_KEY } from '../lib/storage-lock';
 export interface InvitationDraft { requestId: string; volunteerId: string; residentId: string; revision: number }
-export interface NavigationState { version: 1; invitations: readonly InvitationDraft[]; dismissedGuides: readonly string[]; pendingDestination: Route | null }
-export const emptyNavigationState = (): NavigationState => ({ version: 1, invitations: [], dismissedGuides: [], pendingDestination: null });
+export interface NavigationState { version: 1; invitations: readonly InvitationDraft[]; dismissedGuides: readonly string[]; pendingDestination: Route | null; layout: NavigationLayout }
+export const emptyNavigationState = (): NavigationState => ({ version: 1, invitations: [], dismissedGuides: [], pendingDestination: null, layout: 'current' });
 const validId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value);
 export function loadNavigationState(storage: DemoStorage | null): NavigationState {
   try {
     const raw = storage?.getItem(NAVIGATION_STORAGE_KEY); if (!raw || raw.length > 16384) return emptyNavigationState();
     const value = JSON.parse(raw);
-    if (!value || value.version !== 1 || Object.keys(value).sort().join(',') !== 'dismissedGuides,invitations,pendingDestination,version'
+    if (!value || value.version !== 1 || !['dismissedGuides,invitations,pendingDestination,version', 'dismissedGuides,invitations,layout,pendingDestination,version'].includes(Object.keys(value).sort().join(','))
+      || Object.hasOwn(value, 'layout') && !isNavigationLayout(value.layout)
       || !Array.isArray(value.invitations) || value.invitations.length > 100 || !Array.isArray(value.dismissedGuides) || value.dismissedGuides.length > 20
       || !value.dismissedGuides.every(validId) || new Set(value.dismissedGuides).size !== value.dismissedGuides.length) return emptyNavigationState();
     const ids = new Set<string>();
@@ -29,7 +31,7 @@ export function loadNavigationState(storage: DemoStorage | null): NavigationStat
       pendingDestination = parseRoute(value.pendingDestination);
       if (!('role' in pendingDestination) || routeHash(pendingDestination) !== value.pendingDestination) return emptyNavigationState();
     }
-    return { ...value, pendingDestination };
+    return { ...value, pendingDestination, layout: value.layout ?? 'current' };
   } catch { return emptyNavigationState(); }
 }
 /** Read and transform inside the household lock so drafts cannot overwrite another tab's edits. */

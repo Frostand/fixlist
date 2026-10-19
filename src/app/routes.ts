@@ -1,4 +1,5 @@
 import type { PersonRole } from '../domain/roles';
+import { navigationActiveTab, NAVIGATION_LAYOUTS, type NavigationLayout } from './navigation-layouts';
 export type ResidentScreen = 'home' | 'check' | 'plan' | 'help' | 'more' | 'resources' | 'scan' | 'report' | 'access' | 'language' | 'about' | 'requests';
 export type Route = { screen: 'start' | 'people' | 'guide' } | { screen: ResidentScreen; role: 'r' } | { screen: 'question'; role: 'r'; id: string } | { screen: 'request' | 'sharing' | 'invite' | 'review'; role: 'r'; id: string } | { screen: 'home' | 'tasks' | 'profile'; role: 'v' } | { screen: 'task'; role: 'v'; id: string };
 const residentScreens: readonly string[] = ['home', 'check', 'plan', 'help', 'more', 'resources', 'scan', 'report', 'access', 'language', 'about', 'requests'];
@@ -21,8 +22,14 @@ export function parseRoute(hash: string, search = '', fallback: Route = { screen
 }
 export function routeHash(route: Route): string { return `#/${'role' in route ? `${route.role}/` : ''}${route.screen}${'id' in route ? `/${encodeURIComponent(route.id)}` : ''}`; }
 export function homeRoute(role: PersonRole): Route { return { role: role === 'volunteer' ? 'v' : 'r', screen: 'home' }; }
-export function isTabRoot(route: Route): boolean { return 'role' in route && (route.role === 'v' ? ['home', 'tasks', 'profile'] : ['home', 'check', 'plan', 'help', 'more']).includes(route.screen); }
-export function parentRoute(route: Route, role: PersonRole, returnTo: Route | null = null): Route {
+export function isTabRoot(route: Route, layout: NavigationLayout = 'current'): boolean { return 'role' in route && (route.role === 'v' ? ['home', 'tasks', 'profile'] : NAVIGATION_LAYOUTS[layout].tabs.map((t) => t.screen)).includes(route.screen); }
+export function parentRoute(route: Route, role: PersonRole, returnTo: Route | null = null, layout: NavigationLayout = 'current'): Route {
+  if (layout !== 'current' && 'role' in route && route.role === 'r') {
+    if (route.screen === 'scan') return { role: 'r', screen: 'check' };
+    if (route.screen === 'plan' && layout === 'three') return { role: 'r', screen: 'home' };
+    if (route.screen === 'resources') return returnTo ?? { role: 'r', screen: 'requests' };
+    if (route.screen === 'more') return homeRoute(role);
+  }
   if (route.screen === 'resources') return returnTo ?? { role: 'r', screen: 'help' };
   if (!('role' in route)) return { screen: 'people' };
   if (route.role === 'v') return route.screen === 'task' ? { role: 'v', screen: 'tasks' } : homeRoute(role);
@@ -33,20 +40,12 @@ export function parentRoute(route: Route, role: PersonRole, returnTo: Route | nu
 }
 
 export function navigationUrl(href: string, route: Route): URL {
-  const url = new URL(href); url.searchParams.delete('localScan'); url.hash = routeHash(route); return url;
+  const url = new URL(href); url.searchParams.delete('localScan'); url.searchParams.delete('nav'); url.hash = routeHash(route); return url;
 }
 export function resourceReturnTo(next: Route, previous: Route, returnTo: Route | null): Route | null {
   return next.screen === 'resources' ? previous.screen === 'resources' ? returnTo : 'role' in previous ? previous : null : null;
 }
-export function activeTab(route: Route, returnTo: Route | null = null): string | null {
-  if (!('role' in route)) return null;
-  if (route.screen === 'resources') return returnTo && returnTo.screen !== 'resources' ? activeTab(returnTo) : 'help';
-  if (route.screen === 'question') return 'check';
-  if (route.screen === 'task') return 'tasks';
-  if (['request', 'requests', 'sharing', 'invite', 'review'].includes(route.screen)) return 'home';
-  if (['scan', 'report', 'access', 'language', 'about'].includes(route.screen)) return 'more';
-  return route.screen;
-}
+export function activeTab(route: Route, returnTo: Route | null = null, layout: NavigationLayout = 'current'): string | null { return navigationActiveTab(layout, route, returnTo); }
 export function authorizedDestination(role: PersonRole, intended: Route | null): Route {
   return intended && 'role' in intended && intended.role === (role === 'volunteer' ? 'v' : 'r') ? intended : homeRoute(role);
 }

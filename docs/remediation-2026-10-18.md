@@ -19,7 +19,7 @@ Status of `docs/consolidated-review-backlog-2026-10-18.md` after two remediation
 | A. Data and lifecycle | D01–D15 (D02 with Web Locks; see limit below) | — | — |
 | B. Routing and interaction | N01–N10, N12, N13, N15 | N11 (needs VoiceOver checks), N14 (needs device camera/library checks) | — |
 | C. Scan pipeline | S01, S02, S04–S07, S09, S14, S16 | S03 (`cap sync` itself is still non-atomic), S08 (harness guard plus simulator open/close; device memory not measured), S10 (lower caps and preflight; no phone memory measurement), S12 (marked crops for new pins; older unmarked images are withheld from sharing until re-prepared) | S11, S13, S15 |
-| D. IA, design, accessibility | — | U07 (code part: guides outside the tab shell, skip/resume) | U01–U06, U08–U12 (U09 is visible in print: unanswered questions read "Not sure") |
+| D. IA, design, accessibility | U09 (unanswered shows no selection and reads "Not answered"; explicit Not sure stays separate in screens, progress and print) | U02/U03 (switchable three- and four-tab prototype behind "Navigation layout (prototype)" / `?nav=`; default layout unchanged; awaiting the session in `docs/navigation-comparison-session-guide.md`), U07 (code part: guides outside the tab shell, skip/resume) | U01, U04–U06, U08, U10–U12 |
 | E. Capture | — | — | C01–C09 |
 | F. Model evaluation | — | M08 (code: byte/model pins and resume invalidation) | M01–M07, M09, M10 |
 | G. Accounts | — | — | A01–A10 (outside the current no-backend scope) |

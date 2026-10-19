@@ -31,9 +31,9 @@ describe('screen and printable catalog content', () => {
     const checklist = renderToStaticMarkup(<ChecklistSection scenario={demoScenario} state={state} onCommand={noop} />);
     const plan = renderToStaticMarkup(<PlanSection scenario={demoScenario} state={state} onCommand={noop} />);
     const assistance = renderToStaticMarkup(<AssistanceSection scenario={demoScenario} state={state} onCommand={noop} />);
-    expect(checklist).toContain('0 of 8 answered; 8 unknown');
-    expect(checklist).toContain('Sample stairs: 0 of 3 answered; 3 unknown');
-    expect(plan).toContain('8 sample questions are still unknown');
+    expect(checklist).toContain('0 of 8 answered (0 not sure); 8 not answered');
+    expect(checklist).toContain('Sample stairs: 0 of 3 answered (0 not sure); 3 not answered');
+    expect(plan).toContain('0 of 8 answered (0 not sure); 8 not answered');
     expect(plan).toContain('An empty plan does not certify safety');
     expect(assistance.match(/<select/g)).toHaveLength(1);
     expect(assistance).toContain('id="fictional-profile"');
@@ -47,7 +47,7 @@ describe('screen and printable catalog content', () => {
   it('prints selected facts, every action context, nested conditions, relevance and references', () => {
     const state = command(confirmedState(), { type: 'select_profile', profileId: 'boundary-maple' });
     const html = renderToStaticMarkup(<PrintReport scenario={demoScenario} snapshot={{ state, generatedAt: at, scanPins: [] }} />);
-    expect(html).toContain('8 of 8 answered; 0 unknown');
+    expect(html).toContain('8 of 8 answered (0 not sure); 0 not answered');
     expect(html).toContain('Fictional: exact age and income boundaries');
     expect(html).toContain('65 years');
     expect(html).toContain('30000 USD/year');

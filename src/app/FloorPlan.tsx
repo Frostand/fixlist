@@ -2,7 +2,8 @@ import { authored } from '../i18n/authored';
 import { useT } from '../i18n';
 import { en } from '../i18n/en';
 import type { DemoScenario } from '../domain/types';
-import { computeCoverage, type DemoState } from '../domain/workflow';
+import type { DemoState } from '../domain/workflow';
+import { checklistPresentation } from './checklist-presentation';
 
 /** Schematic, not to scale. Rooms missing from this layout are simply omitted from the map. */
 const layout: Record<string, { x: number; y: number; w: number; h: number; label: string }> = {
@@ -23,10 +24,10 @@ export function confirmedCountByRoom(scenario: DemoScenario, state: DemoState): 
   return counts;
 }
 
-/** Hatching marks unanswered questions: an unsurveyed room is never drawn as clear. */
+/** Hatching marks Not sure or unanswered questions; neither is drawn as clear. */
 export function FloorPlan({ scenario, state }: { scenario: DemoScenario; state: DemoState }) {
   const t = useT();
-  const coverage = computeCoverage(scenario, state);
+  const coverage = checklistPresentation(scenario, state);
   const confirmed = confirmedCountByRoom(scenario, state);
   const rooms = coverage.rooms.filter((room) => layout[room.roomId]);
   if (rooms.length === 0) return null;
@@ -43,7 +44,7 @@ export function FloorPlan({ scenario, state }: { scenario: DemoScenario; state: 
           const box = layout[room.roomId]!;
           const count = confirmed[room.roomId] ?? 0;
           const state = room.unknown > 0 ? 'unanswered' : 'answered';
-          const description = t('map.description', { room: authored(t, room.roomName), answered: room.answered, total: room.total, unknown: room.unknown, confirmed: count });
+          const description = t('map.description', { room: authored(t, room.roomName), answered: room.answered, total: room.total, notSure: room.notSure, unanswered: room.unanswered, confirmed: count });
           return (
             <a key={room.roomId} href={`#room-${room.roomId}`} className="plan-room" data-state={state} aria-label={description}>
               <rect className="room-shape" x={box.x} y={box.y} width={box.w} height={box.h} />
@@ -68,6 +69,7 @@ export function FloorPlan({ scenario, state }: { scenario: DemoScenario; state: 
           <li><span className="swatch swatch-clear" aria-hidden="true" />{t("legacy.floorplan.9")}</li>
           <li><span className="swatch swatch-flag" aria-hidden="true" />{t("legacy.floorplan.10")}</li>
         </ul>
+        <ul className="coverage-rooms">{rooms.map((room) => <li key={room.roomId}>{authored(t, room.roomName)}: {t('home.progress', { answered: room.answered, total: room.total, notSure: room.notSure, unanswered: room.unanswered })}</li>)}</ul>
       </figcaption>
     </figure>
   );

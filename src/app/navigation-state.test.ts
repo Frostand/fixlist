@@ -2,10 +2,42 @@ import { describe, expect, it } from 'vitest';
 import { demoScenario as scenario } from '../data/demo-scenario';
 import { atStage, run } from '../domain/roles-test-helpers';
 import { createInitialState } from '../domain/workflow';
-import { clearNavigationState, createInvitationDraft, emptyNavigationState, loadNavigationState, NAVIGATION_STORAGE_KEY, saveNavigationState, selectedInvitationVolunteer } from './navigation-state';
+import { clearNavigationState, createInvitationDraft, emptyNavigationState, loadNavigationState, NAVIGATION_STORAGE_KEY, saveNavigationState, selectedInvitationVolunteer, updateNavigationState } from './navigation-state';
+import { navigationLayoutParameter, navigationLayouts } from './navigation-layouts';
+import { resetFixListData } from '../lib/demo-storage';
 
 function memory() { const bytes = new Map<string, string>(); return { bytes, getItem: (k: string) => bytes.get(k) ?? null, setItem: (k: string, v: string) => { bytes.set(k, v); }, removeItem: (k: string) => { bytes.delete(k); } }; }
 describe('separately versioned navigation context', () => {
+  it('defaults valid older records to current while preserving their drafts and pending destination', () => {
+    const storage = memory(), { layout: _layout, ...old } = emptyNavigationState();
+    const record = { ...old, dismissedGuides: ['sam'], pendingDestination: '#/r/plan' };
+    storage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(record));
+    expect(loadNavigationState(storage)).toEqual({ ...record, pendingDestination: { role: 'r', screen: 'plan' }, layout: 'current' });
+    expect(storage.getItem(NAVIGATION_STORAGE_KEY)).toBe(JSON.stringify(record));
+  });
+  it('persists toggles and valid launch overrides without altering household bytes or other navigation fields', async () => {
+    const storage = memory(), draft = createInvitationDraft(atStage(), atStage().requests[0]!.id, 'alex')!;
+    storage.setItem('fixlist:demo:v1', 'household-unchanged');
+    await saveNavigationState(storage, { ...emptyNavigationState(), invitations: [draft], dismissedGuides: ['sam'] });
+    for (const layout of navigationLayouts) {
+      expect(await updateNavigationState(storage, (saved) => ({ ...saved, layout }))).toMatchObject({ layout });
+      expect(loadNavigationState(storage)).toMatchObject({ layout, invitations: [draft], dismissedGuides: ['sam'] });
+      const override = navigationLayoutParameter(`?nav=${layout}`);
+      await updateNavigationState(storage, (saved) => ({ ...saved, layout: override ?? saved.layout }));
+      expect(loadNavigationState(storage).layout).toBe(layout); expect(storage.getItem('fixlist:demo:v1')).toBe('household-unchanged');
+    }
+    await updateNavigationState(storage, (saved) => ({ ...saved, layout: navigationLayoutParameter('?nav=invalid') ?? saved.layout }));
+    expect(loadNavigationState(storage).layout).toBe('four');
+  });
+  it.each([null, false, 3, 'five', 'THREE', {}, []])('rejects an invalid stored layout %j', (layout) => {
+    const storage = memory(); storage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({ ...emptyNavigationState(), layout }));
+    expect(loadNavigationState(storage)).toEqual(emptyNavigationState());
+  });
+  it.each(navigationLayouts)('reset clears the %s preference and retains unrelated storage', async (layout) => {
+    const storage = memory(); storage.setItem('unrelated', 'keep'); await saveNavigationState(storage, { ...emptyNavigationState(), layout });
+    const result = await resetFixListData(storage, scenario, { photos: async () => ({ ok: true, message: '' }), scan: async () => ({ ok: true, message: '' }) });
+    expect(result.status).toBe('reset'); expect(storage.getItem(NAVIGATION_STORAGE_KEY)).toBeNull(); expect(loadNavigationState(storage).layout).toBe('current'); expect(storage.getItem('unrelated')).toBe('keep');
+  });
   it('recovers a selected volunteer after reload without changing household saved bytes', async () => {
     const state = atStage(), draft = createInvitationDraft(state, state.requests[0]!.id, 'alex')!, storage = memory();
     storage.setItem('fixlist:demo:v1', 'untouched-household');

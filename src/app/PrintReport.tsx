@@ -8,6 +8,7 @@ import { computePlan, getRequestViews } from '../domain/workflow';
 import type { PrintSnapshot } from '../lib/print';
 import { actionTitle, LocalTime, requestStatusLabels } from './display';
 import { ActionMetadata, CoverageSummary, ProfileFacts, ProgramDetails, RequestWorkContext } from './CatalogViews';
+import { displayAnswer } from './checklist-presentation';
 
 export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; snapshot: PrintSnapshot }) {
   const t = useT();
@@ -20,7 +21,7 @@ export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; sn
         <p>{t("legacy.printreport.3")}<LocalTime iso={snapshot.generatedAt} />{t("legacy.printreport.4")}</p><p>{authored(t, scenario.disclosure)}</p>
         <p><strong>{t("legacy.printreport.5")}</strong>{t("legacy.printreport.6")}</p>
       </header>
-      <section aria-labelledby="report-coverage-heading"><h3 id="report-coverage-heading">{t("legacy.printreport.7")}</h3><CoverageSummary scenario={scenario} state={snapshot.state} /><ul>{scenario.checklist.map((q) => <li key={q.id}><strong>{authored(t, q.prompt)}</strong>: {t(`check.${snapshot.state.checklistAnswers[q.id] ?? 'unknown'}`)}{snapshot.state.checklistAttribution[q.id] ? <p>{t('person.by', { name: personLabel(snapshot.state.people, snapshot.state.checklistAttribution[q.id]!.actorId, t) })}</p> : null}</li>)}</ul></section>
+      <section aria-labelledby="report-coverage-heading"><h3 id="report-coverage-heading">{t("legacy.printreport.7")}</h3><CoverageSummary scenario={scenario} state={snapshot.state} /><ul>{scenario.checklist.map((q) => <li key={q.id}><strong>{authored(t, q.prompt)}</strong>: {t(`check.${displayAnswer(snapshot.state, q.id)}`)}{snapshot.state.checklistAttribution[q.id] ? <p>{t('person.by', { name: personLabel(snapshot.state.people, snapshot.state.checklistAttribution[q.id]!.actorId, t) })}</p> : null}</li>)}</ul></section>
       <section aria-labelledby="report-plan-heading">
         <h3 id="report-plan-heading">{t("legacy.printreport.8")}</h3><p>{t("legacy.printreport.9")}</p>
         {plan.length === 0 ? <p>{t("legacy.printreport.10")}</p> : (

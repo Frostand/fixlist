@@ -2,7 +2,7 @@ import { authored } from '../i18n/authored';
 import { useT } from '../i18n';
 import { en } from '../i18n/en';
 import type { RuleResult } from '../domain/fact-screening';
-import { computeCoverage } from '../domain/coverage';
+import { checklistPresentation, displayAnswer } from './checklist-presentation';
 import { getSelectedProfile, type DemoState } from '../domain/workflow';
 import { computeWorkRelevance, screenProgram } from '../domain/screening';
 import type { PlanItem } from '../domain/plan';
@@ -17,13 +17,13 @@ const relevanceLabels = { relevant: en["legacy.catalogviews.8"], not_relevant: e
 
 export function CoverageSummary({ scenario, state }: { scenario: DemoScenario; state: DemoState }) {
   const t = useT();
-  const coverage = computeCoverage(scenario, state);
-  const cells = scenario.checklist.map((item) => state.checklistAnswers[item.id] ?? 'unknown');
+  const coverage = checklistPresentation(scenario, state);
+  const cells = scenario.checklist.map((item) => displayAnswer(state, item.id));
   return <div className="coverage-summary">
-    <p className="coverage-headline"><strong>{t("legacy.catalogviews.11")}{coverage.answered}{t("legacy.catalogviews.12")}{coverage.total}{t("legacy.catalogviews.13")}{coverage.unknown}{t("legacy.catalogviews.14")}</strong> {coverage.yes}{t("legacy.catalogviews.15")}{coverage.no}{t("legacy.catalogviews.16")}</p>
+    <p className="coverage-headline"><strong>{t("legacy.catalogviews.11")}{t('home.progress', { answered: coverage.answered, total: coverage.total, notSure: coverage.notSure, unanswered: coverage.unanswered })}</strong> {coverage.yes}{t("legacy.catalogviews.15")}{coverage.no}{t("legacy.catalogviews.16")}</p>
     <ol className="coverage-bar" aria-hidden="true">{cells.map((answer, index) => <li key={index} data-answer={answer} />)}</ol>
-    {coverage.unknown > 0 ? <p>{t("legacy.catalogviews.17")}</p> : <p>{t("legacy.catalogviews.18")}</p>}
-    <ul className="coverage-rooms">{coverage.rooms.map((room) => <li key={room.roomId} data-complete={room.unknown === 0}>{authored(t, room.roomName)}: {room.answered}{t("legacy.catalogviews.12")}{room.total}{t("legacy.catalogviews.13")}{room.unknown}{t("legacy.catalogviews.14")}</li>)}</ul>
+    <p>{t(coverage.unanswered > 0 ? 'checklist.incomplete' : coverage.notSure > 0 ? 'checklist.uncertain' : 'legacy.catalogviews.18')}</p>
+    <ul className="coverage-rooms">{coverage.rooms.map((room) => <li key={room.roomId} data-complete={room.unknown === 0}>{authored(t, room.roomName)}: {t('home.progress', { answered: room.answered, total: room.total, notSure: room.notSure, unanswered: room.unanswered })}</li>)}</ul>
     <p className="small-text">{authored(t, coverage.disclaimer)}</p>
   </div>;
 }
