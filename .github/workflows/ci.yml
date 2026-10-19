@@ -1,0 +1,40 @@
+# Required checks from AGENTS.md. A red step is a failure; nothing here deploys, uploads or publishes.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      # The packaging tests call scan helpers through scan/venv-python, which reads FIXLIST_SCAN_PYTHON.
+      - run: python -m pip install -r scan/requirements.txt
+      - run: echo "FIXLIST_SCAN_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # The scan pipeline is supported on the developer's Mac; real pycolmap tests crash on the Linux wheel.
+  scan:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r scan/requirements.txt
+      - run: FIXLIST_SCAN_PYTHON="$(command -v python)" scan/venv-python -X faulthandler -m unittest discover -s scan/tests -v

@@ -1,0 +1,238 @@
+{
+  "format": "fixlist-capture-suggestions",
+  "version": 1,
+  "createdAt": "2026-10-18T18:05:00.000Z",
+  "capture": {
+    "captureId": "cap-parity-0001",
+    "roomId": "living-room",
+    "photos": [
+      {
+        "photoId": "p01",
+        "sha256": "7d481c78a6281bb71ce56edc3d9f1d69322fbc26453e9e2d04af255230db589d"
+      },
+      {
+        "photoId": "p02",
+        "sha256": "c10fc90311f230df4e4c5080ef23100d21a34d92386d1bd59e9a7b212bf0aefa"
+      }
+    ]
+  },
+  "model": {
+    "name": "synthetic-parity-fixture-no-inference",
+    "backend": "mlx",
+    "engine": "startlux-decision",
+    "license": "CC BY-NC 4.0 weights",
+    "identity": null
+  },
+  "thresholds": {
+    "suggestion": 0.6,
+    "relevance": 0.5,
+    "location": 0.5
+  },
+  "calibration": null,
+  "notice": "Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.",
+  "items": [
+    {
+      "checklistItemId": "rug-check",
+      "concernId": "rug-concern",
+      "question": "Is a rug or mat edge visibly raised, curled, or bunched on a walking path in this photo, where someone could trip?",
+      "relevanceQuestion": "Is a rug or floor mat visible on a walking path in this photo?",
+      "limitation": "A photo does not establish whether a rug is secured or whether the route is used.",
+      "status": "suggested",
+      "score": 0.9,
+      "bestPhotoId": "p01",
+      "perPhoto": [
+        {
+          "photoId": "p01",
+          "rawProbability": 0.77,
+          "probability": 0.77,
+          "relevanceProbability": 0.9
+        },
+        {
+          "photoId": "p02",
+          "rawProbability": 0.2,
+          "probability": 0.2,
+          "relevanceProbability": 0.9
+        }
+      ],
+      "point": {
+        "u": 8,
+        "v": 8
+      }
+    },
+    {
+      "checklistItemId": "cord-check",
+      "concernId": "cord-concern",
+      "question": "Is a visible loose cord or cable crossing an open floor area used as a walking path in this photo?",
+      "relevanceQuestion": "Is an open floor walking path visible in this photo?",
+      "limitation": "The visible path and cable may be partly occluded; actual use is unknown.",
+      "status": "below-threshold",
+      "score": 0.1,
+      "bestPhotoId": "p01",
+      "perPhoto": [
+        {
+          "photoId": "p01",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        },
+        {
+          "photoId": "p02",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        }
+      ],
+      "point": null
+    },
+    {
+      "checklistItemId": "stair-clutter-check",
+      "concernId": "stair-clutter-concern",
+      "question": "Are loose objects visibly occupying a stair tread or the walking area of a stair landing in this photo?",
+      "relevanceQuestion": "Are stairs or a stair landing visible in this photo?",
+      "limitation": "This covers visible steps only, not the entire staircase.",
+      "status": "below-threshold",
+      "score": 0.1,
+      "bestPhotoId": "p01",
+      "perPhoto": [
+        {
+          "photoId": "p01",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        },
+        {
+          "photoId": "p02",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        }
+      ],
+      "point": null
+    },
+    {
+      "checklistItemId": "handrail-check",
+      "concernId": "handrail-concern",
+      "question": "Does a visible stair handrail have an obvious break, detached bracket, or visibly separated wall or floor attachment in this photo?",
+      "relevanceQuestion": "Is a stair handrail and at least one of its attachment points visible in this photo?",
+      "limitation": "Visible damage is a proxy. A single photo cannot test looseness or load capacity.",
+      "status": "below-threshold",
+      "score": 0.1,
+      "bestPhotoId": "p01",
+      "perPhoto": [
+        {
+          "photoId": "p01",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        },
+        {
+          "photoId": "p02",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        }
+      ],
+      "point": null
+    },
+    {
+      "checklistItemId": "stair-lighting-check",
+      "concernId": "stair-lighting-concern",
+      "question": "Are visible stair treads or a stair landing so dimly lit in this photo that their edges are difficult to distinguish?",
+      "relevanceQuestion": "Are stairs or a stair landing visible in this photo?",
+      "limitation": "Exposure affects apparent brightness. A photo cannot establish missing lighting, switch accessibility, or normal lighting conditions.",
+      "status": "below-threshold",
+      "score": 0.1,
+      "bestPhotoId": "p01",
+      "perPhoto": [
+        {
+          "photoId": "p01",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        },
+        {
+          "photoId": "p02",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        }
+      ],
+      "point": null
+    },
+    {
+      "checklistItemId": "night-lighting-check",
+      "concernId": "night-lighting-concern",
+      "question": "Is a visible walking path beside a bed or through a bedroom doorway so dimly lit in this photo that floor obstacles would be difficult to see?",
+      "relevanceQuestion": "Is a bed with an adjoining floor walking path, or a bedroom doorway and its walking path, visible in this photo?",
+      "limitation": "A single photo cannot establish a bed-to-bathroom route or its nighttime lighting.",
+      "status": "below-threshold",
+      "score": 0.1,
+      "bestPhotoId": "p01",
+      "perPhoto": [
+        {
+          "photoId": "p01",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        },
+        {
+          "photoId": "p02",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        }
+      ],
+      "point": null
+    },
+    {
+      "checklistItemId": "shower-surface-check",
+      "concernId": "shower-surface-concern",
+      "question": "Is pooled water, a visibly wet glossy patch, or a loose bunched mat visible on a bathtub or shower floor in this photo?",
+      "relevanceQuestion": "Is the floor or standing surface of a bathtub or shower visible in this photo?",
+      "limitation": "Visible wetness or a loose mat is a proxy. A photo cannot measure friction or determine slipperiness.",
+      "status": "below-threshold",
+      "score": 0.1,
+      "bestPhotoId": "p01",
+      "perPhoto": [
+        {
+          "photoId": "p01",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        },
+        {
+          "photoId": "p02",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        }
+      ],
+      "point": null
+    },
+    {
+      "checklistItemId": "bathroom-support-check",
+      "concernId": "bathroom-support-concern",
+      "question": "Is a bathtub, shower, or toilet and its adjoining wall visible in this photo with no grab bar visible beside that fixture?",
+      "relevanceQuestion": "Is a bathtub, shower, or toilet together with its adjoining wall visible in this photo?",
+      "limitation": "An out-of-frame bar may exist. A photo cannot determine a person's support needs or whether a bar is properly installed.",
+      "status": "below-threshold",
+      "score": 0.1,
+      "bestPhotoId": "p01",
+      "perPhoto": [
+        {
+          "photoId": "p01",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        },
+        {
+          "photoId": "p02",
+          "rawProbability": 0.1,
+          "probability": 0.1,
+          "relevanceProbability": 0.9
+        }
+      ],
+      "point": null
+    }
+  ]
+}
