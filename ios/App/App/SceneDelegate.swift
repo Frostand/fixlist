@@ -30,6 +30,7 @@ class FixListBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(FixListPrintPlugin())
         bridge?.registerPluginInstance(FixListCapturePlugin())
+        bridge?.registerPluginInstance(FixListHazardsPlugin())
 
         // The app scrolls inside its own shell. Pin the outer page so iOS cannot pan the
         // fixed header under the status bar when the keyboard opens.

@@ -57,8 +57,9 @@ export interface CaptureSuggestionsFile {
   version: 1;
   createdAt: string;
   capture: { captureId: string; roomId: string; photos: readonly { photoId: string; sha256: string }[] };
-  model: { name: string; backend: 'mlx'; engine: 'startlux-decision'; license: string; identity: null | { version: 1; weightsSHA256: string; runtimeSHA256: string } };
-  thresholds: { suggestion: number; relevance: number; location: number };
+  model: { name: string; backend: 'mlx' | 'coreml'; engine: 'startlux-decision' | 'clip-zero-shot'; license: string; identity: null | { version: 1; weightsSHA256: string; runtimeSHA256: string } };
+  /** Per-item relevance thresholds are required only for the pinned Core ML backend. */
+  thresholds: { suggestion: number; relevance: number; location: number; perItem?: Readonly<Record<string, number>> };
   calibration: null | Record<string, unknown>;
   notice: string;
   items: readonly CaptureSuggestionItem[];
