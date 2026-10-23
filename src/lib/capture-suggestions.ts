@@ -3,6 +3,8 @@ import { demoScenario } from '../data/demo-scenario';
 import { CAPTURE_FLAG_EXCLUDED, type CaptureManifest, type CaptureSuggestionItem, type CaptureSuggestionsFile, type CaptureSuggestionRow } from './capture-types';
 import { captureDate, captureFail, exactKeys, plainRecord, sha256String, unitProbability, type CaptureResult } from './capture-model';
 import { createSuggestionCatalog, plattProbability, TRUSTED_MODEL_LICENSE, TRUSTED_SUGGESTION_NOTICE, validateSuggestionCalibration, type SuggestionCatalog } from './scan-suggestions';
+import { isTrustedOndeviceModel, ondeviceFlagCopy } from './ondevice-contract';
+import { ONDEVICE_MODEL, ONDEVICE_THRESHOLDS } from './ondevice-model';
 
 export const MAX_CAPTURE_FLAGS_BYTES = 4 * 1024 * 1024;
 export const CAPTURE_MISMATCH_MESSAGE = 'These flags belong to a different capture.';
@@ -15,31 +17,39 @@ export function validateCaptureSuggestions(value: unknown, capture: CaptureManif
   if (binding.captureId !== capture.captureId || binding.roomId !== capture.roomId || binding.photos.length !== capture.photos.length
     || binding.photos.some((p, i) => p.photoId !== capture.photos[i]!.photoId || p.sha256 !== capture.photos[i]!.sha256)) return captureFail(CAPTURE_MISMATCH_MESSAGE, 'CAPTURE_MISMATCH');
   const model = value.model, thresholds = value.thresholds;
+  const coreml = isTrustedOndeviceModel(model);
   if (!plainRecord(model) || !exactKeys(model, ['name', 'backend', 'engine', 'license', 'identity']) || typeof model.name !== 'string' || !model.name.length || model.name.length > 200 || /[\u0000-\u001f\u007f]/.test(model.name)
-    || model.backend !== 'mlx' || model.engine !== 'startlux-decision' || model.license !== TRUSTED_MODEL_LICENSE) return captureFail('Invalid trusted model/license tuple.');
+    || !coreml && (model.backend !== 'mlx' || model.engine !== 'startlux-decision' || model.license !== TRUSTED_MODEL_LICENSE)) return captureFail('Invalid trusted model/license tuple.');
   if (model.identity !== null && (!plainRecord(model.identity) || !exactKeys(model.identity, ['version', 'weightsSHA256', 'runtimeSHA256']) || model.identity.version !== 1
     || !sha256String(model.identity.weightsSHA256) || !sha256String(model.identity.runtimeSHA256))) return captureFail('Invalid model content identity.');
-  if (!plainRecord(thresholds) || !exactKeys(thresholds, ['suggestion', 'relevance', 'location']) || !Object.values(thresholds).every(unitProbability)) return captureFail('Invalid flags thresholds.');
+  if (!plainRecord(thresholds) || !exactKeys(thresholds, coreml ? ['suggestion', 'relevance', 'location', 'perItem'] : ['suggestion', 'relevance', 'location'])
+    || ![thresholds.suggestion, thresholds.relevance, thresholds.location].every(unitProbability)) return captureFail('Invalid flags thresholds.');
+  if (coreml && (thresholds.suggestion !== 1 || thresholds.relevance !== 0 || thresholds.location !== 0.7 || value.calibration !== null
+    || !plainRecord(thresholds.perItem) || !exactKeys(thresholds.perItem, photoQuestions.items.map((q) => q.checklistItemId))
+    || photoQuestions.items.some((q) => (thresholds.perItem as Record<string, unknown>)[q.checklistItemId] !== ONDEVICE_THRESHOLDS[q.checklistItemId]))) return captureFail('Invalid pinned on-device relevance thresholds.');
   const fitted = validateSuggestionCalibration(value.calibration);
   if (fitted === false) return captureFail('Invalid calibration provenance or Platt parameters.');
   if (!Array.isArray(value.items) || value.items.length !== photoQuestions.items.length) return captureFail('Flags require every photo question in catalog order.');
   const items: CaptureSuggestionItem[] = [];
   for (const [i, item] of value.items.entries()) {
     const trusted = photoQuestions.items[i]!;
+    const copy = coreml ? { ...trusted, ...ondeviceFlagCopy(trusted.checklistItemId) } : trusted;
     if (!plainRecord(item) || !exactKeys(item, ['checklistItemId', 'concernId', 'question', 'relevanceQuestion', 'limitation', 'status', 'score', 'bestPhotoId', 'perPhoto', 'point'])
-      || !(['checklistItemId', 'concernId', 'question', 'relevanceQuestion', 'limitation'] as const).every((key) => item[key] === trusted[key])
+      || !(['checklistItemId', 'concernId', 'question', 'relevanceQuestion', 'limitation'] as const).every((key) => item[key] === copy[key])
       || !catalog.get(trusted.checklistItemId)?.concernIds.has(trusted.concernId) || !Array.isArray(item.perPhoto) || item.perPhoto.length !== capture.photos.length) return captureFail('Flags question, limitation, order or photo rows disagree with the catalog.');
     const rows: CaptureSuggestionRow[] = [];
     for (const [j, row] of item.perPhoto.entries()) {
       if (!plainRecord(row) || !exactKeys(row, ['photoId', 'rawProbability', 'probability', 'relevanceProbability']) || row.photoId !== capture.photos[j]!.photoId
         || !unitProbability(row.rawProbability) || !unitProbability(row.probability) || !unitProbability(row.relevanceProbability)) return captureFail('Invalid flags photo evidence.');
+      if (coreml && (row.rawProbability !== row.relevanceProbability || row.rawProbability === 1)) return captureFail('On-device scores must represent raw relevance, not a condition probability.');
       const param = fitted?.parameters[trusted.checklistItemId], expected = param ? plattProbability(row.rawProbability, param.a, param.b) : row.rawProbability;
       if (fitted ? Math.abs(row.probability - expected) > 1e-9 : row.probability !== expected) return captureFail('Flags probability disagrees with raw evidence/calibration.');
       rows.push({ photoId: row.photoId as string, rawProbability: row.rawProbability, probability: row.probability, relevanceProbability: row.relevanceProbability });
     }
     const relevant = rows.filter((r) => r.relevanceProbability >= (thresholds.relevance as number));
     const best = relevant.reduce<CaptureSuggestionRow | null>((b, r) => !b || r.probability > b.probability ? r : b, null);
-    const score = best?.probability ?? null, status = score === null ? 'not-visible' : score >= (thresholds.suggestion as number) ? 'suggested' : 'below-threshold';
+    const suggestionThreshold = coreml ? ONDEVICE_THRESHOLDS[trusted.checklistItemId]! : thresholds.suggestion as number;
+    const score = best?.probability ?? null, status = score === null ? 'not-visible' : score >= suggestionThreshold ? 'suggested' : 'below-threshold';
     if (item.score !== score || item.bestPhotoId !== (best?.photoId ?? null) || item.status !== status) return captureFail('Flags derivation disagrees with photo evidence and thresholds.');
     if (item.point !== null) {
       const photo = capture.photos.find((p) => p.photoId === best?.photoId);
@@ -51,12 +61,12 @@ export function validateCaptureSuggestions(value: unknown, capture: CaptureManif
       const centre = (pixel: number, edge: number) => [0, 1, 2].some((i) => Math.abs(pixel - (i + .5) * edge / 3) <= 1e-6);
       if (!centre(item.point.u, photo.width) || !centre(item.point.v, photo.height)) return captureFail('Flag point is not a review-grid cell centre.');
     }
-    items.push({ checklistItemId: trusted.checklistItemId, concernId: trusted.concernId, question: trusted.question, relevanceQuestion: trusted.relevanceQuestion, limitation: trusted.limitation,
+    items.push({ checklistItemId: trusted.checklistItemId, concernId: trusted.concernId, question: copy.question, relevanceQuestion: copy.relevanceQuestion, limitation: copy.limitation,
       status, score, bestPhotoId: best?.photoId ?? null, perPhoto: rows, point: item.point === null ? null : { u: item.point.u as number, v: item.point.v as number } });
   }
   return { ok: true, value: { format: 'fixlist-capture-suggestions', version: 1, createdAt: value.createdAt, capture: { captureId: capture.captureId, roomId: capture.roomId, photos: capture.photos.map(({ photoId, sha256 }) => ({ photoId, sha256 })) },
-    model: { name: model.name, backend: 'mlx', engine: 'startlux-decision', license: TRUSTED_MODEL_LICENSE, identity: model.identity === null ? null : { version: 1, weightsSHA256: model.identity.weightsSHA256 as string, runtimeSHA256: model.identity.runtimeSHA256 as string } },
-    thresholds: { suggestion: thresholds.suggestion as number, relevance: thresholds.relevance as number, location: thresholds.location as number }, calibration: fitted ? { ...fitted } : null, notice: TRUSTED_SUGGESTION_NOTICE, items } };
+    model: coreml ? structuredClone(ONDEVICE_MODEL) : { name: model.name, backend: 'mlx', engine: 'startlux-decision', license: TRUSTED_MODEL_LICENSE, identity: model.identity === null ? null : { version: 1, weightsSHA256: model.identity.weightsSHA256 as string, runtimeSHA256: model.identity.runtimeSHA256 as string } },
+    thresholds: { suggestion: thresholds.suggestion as number, relevance: thresholds.relevance as number, location: thresholds.location as number, ...(coreml ? { perItem: { ...ONDEVICE_THRESHOLDS } } : {}) }, calibration: fitted ? { ...fitted } : null, notice: TRUSTED_SUGGESTION_NOTICE, items } };
 }
 export function parseCaptureSuggestions(text: string, capture: CaptureManifest): CaptureResult<CaptureSuggestionsFile> {
   if (new Blob([text]).size > MAX_CAPTURE_FLAGS_BYTES) return captureFail('Flags file exceeds 4 MiB.');
