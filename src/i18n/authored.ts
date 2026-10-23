@@ -38,7 +38,7 @@ const scanStorageFallbackKeys = new Map<string, MessageKey>([
 /** Only call for authored catalog/domain copy, never names, notes, updates or visit/area text. */
 export function authored(t: Translator, input: string | number): string {
   const text = String(input);
-  const key = authoredKeys.get(text);
+  const key = authoredKeys.get(text) ?? authoredKeys.get(text.replace(/\bplan\b/g, 'fix list').replace(/\bPlan\b/g, 'Fix list'));
   if (key) return t(key);
   if (t('check.yes') === en['check.yes']) return text;
   if (text === 'true' || text === 'false') return t(text === 'true' ? 'check.yes' : 'check.no');

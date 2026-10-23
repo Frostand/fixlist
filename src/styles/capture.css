@@ -39,3 +39,10 @@
 .inline-question .screen-link strong { font-size: .9375rem; font-weight: 500; }
 .advanced-review > p { margin-block-end: 1rem; }
 .sketch-hero .room-sketch > h2 { font-size: 1.0625rem; }
+.scan-intro > .eyebrow { text-align: center; margin-block-end: -.5rem; }
+.flag-check-progress { display: flex; align-items: center; gap: .85rem; }
+.flag-check-progress > * { margin: 0; }
+.flag-check-progress p { font-size: .9375rem; line-height: 1.4; }
+.flag-check-spinner { inline-size: 1.4rem; block-size: 1.4rem; flex: none; border: 3px solid var(--moss-wash); border-block-start-color: var(--moss); border-radius: 50%; animation: flag-check-spin 1s linear infinite; }
+@keyframes flag-check-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .flag-check-spinner { animation: none; } }

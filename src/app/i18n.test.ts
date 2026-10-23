@@ -29,6 +29,11 @@ describe('typed, source-bounded translations', () => {
     expect(scanMessage(t, t('legacy.scanpanel.6'))).toBe(t('legacy.scanpanel.6'));
     expect(scanMessage(t, 'Unknown import failure')).toBe(t('scan.storage.failed'));
   });
+  it('maps stable authored source templates to the current fix-list term in both languages', () => {
+    const source = 'No confirmed work is in the current plan; work relevance cannot be established.';
+    expect(authored((key, values) => translate('en', key, values), source)).toBe(en['authored.61']);
+    expect(authored(t, source)).toBe(es['authored.61']);
+  });
   it('rejects obvious hardcoded English in every application TSX file, with a small explicit language/name allowlist', () => {
     const allow = new Set(['English', 'Español', 'Margaret']);
     const found: string[] = [];
