@@ -162,6 +162,7 @@ export const es = {
   "capture.flagsTooLarge": "El archivo de marcas supera los 4 MiB.",
   "room.reviewNotice": "Resultado de IA sin verificar. Tú decides. Las sugerencias nunca responden ni confirman una pregunta.",
   "room.modelLicense": "Pesos del modelo: CC BY-NC 4.0 (solo para uso no comercial).",
+  "room.modelLicenseOnDevice": "Revisado en este teléfono. Pesos del modelo: OpenCLIP ViT-B-32, licencia MIT.",
   // unanswered versus explicit uncertainty (presentation only)
   "check.unanswered": "Sin responder",
   "checklist.incomplete": "Hay preguntas sin responder. Las respuestas sin certeza se registran por separado; ninguno de estos estados confirma una inquietud.",

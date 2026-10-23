@@ -160,6 +160,7 @@ export const en = {
   "capture.flagsTooLarge": "Flags file exceeds 4 MiB.",
   "room.reviewNotice": "Unverified AI output. You decide. Suggestions never answer or confirm a question.",
   "room.modelLicense": "Model weights: CC BY-NC 4.0 (non-commercial use only).",
+  "room.modelLicenseOnDevice": "Checked on this phone. Model weights: OpenCLIP ViT-B-32, MIT license.",
   // unanswered versus explicit uncertainty (presentation only)
   "check.unanswered": "Not answered",
   "checklist.incomplete": "Some questions are not answered. Not sure answers are recorded separately; neither state confirms a concern.",
