@@ -46,7 +46,13 @@ export function navigationUrl(href: string, route: Route): URL {
   const url = new URL(href); url.searchParams.delete('localScan'); url.searchParams.delete('nav'); url.hash = routeHash(route); return url;
 }
 export function resourceReturnTo(next: Route, previous: Route, returnTo: Route | null): Route | null {
-  return next.screen === 'resources' ? previous.screen === 'resources' ? returnTo : 'role' in previous ? previous : null : null;
+  if (next.screen === 'resources') return previous.screen === 'resources' ? returnTo : 'role' in previous ? previous : null;
+  const flow = ['request', 'sharing', 'invite', 'review'];
+  if ('role' in next && next.role === 'r' && flow.includes(next.screen)) {
+    if (flow.includes(previous.screen)) return returnTo;
+    return 'role' in previous && previous.role === 'r' ? previous : null;
+  }
+  return null;
 }
 export function activeTab(route: Route, returnTo: Route | null = null, layout: NavigationLayout = 'current'): string | null { return navigationActiveTab(layout, route, returnTo); }
 export function authorizedDestination(role: PersonRole, intended: Route | null): Route {

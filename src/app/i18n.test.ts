@@ -13,7 +13,7 @@ describe('typed, source-bounded translations', () => {
   it('has exact key and interpolation parity; Spanish remains explicitly unreviewed', () => {
     expect(Object.keys(es).sort()).toEqual(Object.keys(en).sort()); expect(reviewed).toBe(false);
     for (const key of Object.keys(en) as (keyof typeof en)[]) expect(es[key].match(/\{\w+\}/g)?.sort() ?? []).toEqual(en[key].match(/\{\w+\}/g)?.sort() ?? []);
-    expect(t('person.written', { name: 'Do not translate my name' })).toBe('Escrito por Do not translate my name');
+    expect(t('person.written', { name: 'Do not translate my name' })).toBe('Añadido por Do not translate my name');
   });
   it('covers every room, question, action and exact photo question by stable catalog ID', () => {
     for (const room of demoScenario.rooms) expect(catalogText(t, 'room', room.id)).not.toBe('No disponible');

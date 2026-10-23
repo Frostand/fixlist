@@ -26,7 +26,7 @@ describe('capture screens preserve roles and human decisions', () => {
     expect(prompts.map((p) => p.checklistItemId)).toEqual([null, 'shower-surface-check', 'bathroom-support-check']);
     const html = renderToStaticMarkup(<I18nProvider language={language}><GuidedPhotoTour prompts={prompts} onSave={async () => {}} onCancel={() => {}} /></I18nProvider>);
     expect(html.match(/capture="environment"/g)).toHaveLength(1); expect(html.match(/accept="image\/\*"/g)).toHaveLength(2);
-    expect(html).toContain('aria-label='); expect(html).toContain('disabled=""');
+    expect(html.match(/type="file"[^>]*hidden=""/g)).toHaveLength(2); expect(html).toContain(translate(language, 'scanViewer.takePhoto')); expect(html).toContain(translate(language, 'scanViewer.choosePhoto')); expect(html).toContain('disabled=""');
     for (const key of NATIVE_CAPTURE_STRING_KEYS) expect(translate(language, `capture.native.${key}`).length).toBeGreaterThan(2);
   });
   it('never mounts capture screens for a volunteer or an ungranted helper', () => {

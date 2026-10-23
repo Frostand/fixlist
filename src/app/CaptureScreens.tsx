@@ -11,6 +11,7 @@ import type { CaptureManifest, CapturePhoto, CaptureSuggestionItem } from '../li
 import { captureAvailability, runNativeCapture, shareText, type CapturePrompt } from '../lib/native-capture';
 import { reencodePhoto } from '../lib/photo-storage';
 import { trustedPhotoQuestions } from '../lib/scan-suggestions';
+import { PhotoInputActions } from './Photos';
 import { RoomSketch } from './RoomSketch';
 import { ScreenLink, type Navigate } from './PhoneShell';
 import type { Dispatch } from './ui-controller';
@@ -75,12 +76,13 @@ function AuthorizedRoomPage(props: CaptureScreenProps) {
       if (current()) { setRecord({ ...record, flags: parsed.value }); setSelectedId(null); setNotice(t('room.imported')); }
     });
   }
+  const flagsInput = useRef<HTMLInputElement>(null);
   const capture = record?.manifest;
   return <div className="stack capture-screen"><h2>{catalogText(t, 'room', roomId)}</h2><p>{t('capture.privacy')}</p>{error ? <p role="alert" className="error-message">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
-    {loading ? <p role="status">{t('common.loading')}</p> : <><p>{capture ? t('room.saved', { date: new Date(capture.createdAt).toLocaleDateString(language), count: capture.photos.length }) : t('room.none')}</p>{capture ? <p>{t(capture.outline ? 'room.outline' : 'room.photosOnly')}</p> : null}
+    {loading ? <p role="status">{t('common.loading')}</p> : <><p>{capture ? t('room.saved', { date: new Date(capture.createdAt).toLocaleDateString(language), photos: t(capture.photos.length === 1 ? 'capture.photoOne' : 'capture.photoMany', { count: capture.photos.length }) }) : t('room.none')}</p>
     <button disabled={busy || !!error && !record} onClick={() => navigate({ role: 'r', screen: 'capture', id: roomId })}>{t(capture ? 'room.replace' : 'room.start')}</button>
     {record ? <><RoomCaptureContent {...props} record={record} photoUrls={urls} selectedId={selectedId} onSelect={setSelectedId} mode={mode} onMode={setMode} navigate={navigate} />
-    <section className="card stack"><button disabled={busy} onClick={() => setConfirmation('export')}>{t('room.export')}</button><label className="capture-file">{t('room.import')}<input type="file" accept=".json,application/json" aria-label={t('room.import')} disabled={busy} onChange={(event) => void importFlags(event)} /></label></section>
+    <section className="card stack"><button disabled={busy} onClick={() => setConfirmation('export')}>{t('room.export')}</button><button className="secondary" disabled={busy} onClick={() => flagsInput.current?.click()}>{t('room.import')}</button><input ref={flagsInput} hidden type="file" accept=".json,application/json" aria-label={t('room.import')} disabled={busy} onChange={(event) => void importFlags(event)} /></section>
     <button className="secondary" disabled={busy} onClick={() => setConfirmation('delete')}>{t('room.delete')}</button>
     {confirmation ? <Confirmation text={t(confirmation === 'delete' ? 'room.deleteConfirm' : 'room.exportPrivacy')} confirm={t(confirmation === 'delete' ? 'room.delete' : 'room.send')} onCancel={() => setConfirmation(null)} onConfirm={() => { const action = confirmation; setConfirmation(null); void operation(async (current) => {
       if (action === 'delete') { await store.remove(roomId, record.manifest.captureId, current); if (current()) { setRecord(null); setSelectedId(null); setNotice(t('room.deleted')); } }
@@ -102,7 +104,7 @@ export function RoomCaptureContent({ record, photoUrls, selectedId, onSelect, mo
     finally { decisionPending.current = false; if (alive.current) setDecisionBusy(false); }
   }
   const sketchFlags = flags.map((f) => ({ id: f.checklistItemId, checklistItemId: f.checklistItemId, photoId: f.bestPhotoId!, point: f.point, label: f.question }));
-  return <><section className="stack"><p className="muted">{t(capture.outline ? 'room.approximate' : 'room.noOutline')}</p>{capture.outline?.closed ? <div className="button-row" role="group" aria-label={t('room.view')}><button className="secondary" aria-pressed={mode === 'plan'} onClick={() => onMode('plan')}>{t('room.plan')}</button><button className="secondary" aria-pressed={mode === '3d'} onClick={() => onMode('3d')}>{t('room.threeD')}</button></div> : null}
+  return <><section className="stack">{capture.outline?.closed ? <div className="button-row" role="group" aria-label={t('room.view')}><button className="secondary" aria-pressed={mode === 'plan'} onClick={() => onMode('plan')}>{t('room.plan')}</button><button className="secondary" aria-pressed={mode === '3d'} onClick={() => onMode('3d')}>{t('room.threeD')}</button></div> : null}
     <RoomSketch capture={capture} photoUrls={photoUrls} flags={sketchFlags} selectedId={selectedId} onSelect={onSelect} mode={mode} /></section>
     <section className="stack"><h2>{t('room.flags')}</h2>{record.flags ? <><p>{t('room.reviewNotice')}</p><p className="muted">{t('room.modelLicense')}</p></> : null}{!flags.length ? <p>{t('room.flagsEmpty')}</p> : null}{flags.map((flag) => <article className="card capture-flag" key={flag.checklistItemId} data-selected={selectedId === flag.checklistItemId}>
       <button className="secondary capture-flag-select" aria-pressed={selectedId === flag.checklistItemId} onClick={() => onSelect(flag.checklistItemId)}>{photoUrls.get(flag.bestPhotoId!) ? <img src={photoUrls.get(flag.bestPhotoId!)} alt={t('room.photo', { number: capture.photos.findIndex((p) => p.photoId === flag.bestPhotoId) + 1 })} /> : null}{flag.question}</button>
@@ -168,9 +170,8 @@ export function GuidedPhotoTour({ prompts, onSave, onCancel }: { prompts: readon
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { heading.current?.focus(); }, [index]);
   useEffect(() => { if (!photo) { setPreview(''); return; } const url = URL.createObjectURL(photo.blob); setPreview(url); return () => URL.revokeObjectURL(url); }, [photo]);
-  async function selectPhoto(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]; event.target.value = '';
-    if (!file || busyRef.current) return;
+  async function selectPhoto(file: File) {
+    if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setError('');
     try {
       const encoded = await reencodePhoto(file), sha256 = await sha256Blob(encoded.blob);
@@ -186,10 +187,10 @@ export function GuidedPhotoTour({ prompts, onSave, onCancel }: { prompts: readon
   }
   return <div className="stack"><p>{t('capture.native.photoProgress', { current: Math.min(index + 1, prompts.length), total: prompts.length })}</p><h3 tabIndex={-1} ref={heading}>{prompts[index]?.text ?? t('capture.review')}</h3>
     {error ? <p role="alert" className="error-message">{error}</p> : null}{busy ? <p role="status">{t('capture.processing')}</p> : null}
-    {index < prompts.length ? <><div className="capture-inputs"><label className="capture-file">{t('capture.take')}<input type="file" accept="image/*" capture="environment" aria-label={t('capture.take')} disabled={busy} onChange={(e) => void selectPhoto(e)} /></label><label className="capture-file">{t('capture.choose')}<input type="file" accept="image/*" aria-label={t('capture.choose')} disabled={busy} onChange={(e) => void selectPhoto(e)} /></label></div>
+    {index < prompts.length ? <><PhotoInputActions busy={busy} onPhoto={(file) => void selectPhoto(file)} />
     {preview ? <img className="capture-preview" src={preview} alt={t('room.photo', { number: index + 1 })} /> : null}
     <div className="button-row">{photo ? <><button className="secondary" disabled={busy} onClick={() => setDrafts((old) => { const next = new Map(old); next.delete(index); return next; })}>{t('capture.native.retake')}</button><button disabled={busy} onClick={() => setIndex(index + 1)}>{t('capture.native.next')}</button></> : null}<button className="secondary" disabled={busy} onClick={() => { setDrafts((old) => { const next = new Map(old); next.delete(index); return next; }); setIndex(index + 1); }}>{t('capture.native.skip')}</button></div></> : null}
-    <p role="status">{t('capture.savedCount', { count: drafts.size })}</p>{!drafts.size ? <p>{t('capture.minimum')}</p> : null}
+    <p role="status">{t('capture.savedCount', { photos: t(drafts.size === 1 ? 'capture.photoOne' : 'capture.photoMany', { count: drafts.size }) })}</p>{!drafts.size ? <p>{t('capture.minimum')}</p> : null}
     <div className="button-row">{index > 0 ? <button className="secondary" disabled={busy} onClick={() => setIndex(index - 1)}>{t('capture.back')}</button> : null}<button disabled={busy || !drafts.size} onClick={() => void save()}>{t('capture.native.done')}</button><button className="secondary" disabled={busy} onClick={() => drafts.size ? setCancelConfirm(true) : onCancel()}>{t('capture.cancel')}</button></div>
     {cancelConfirm ? <Confirmation text={t('capture.cancelConfirm')} confirm={t('capture.discard')} onConfirm={onCancel} onCancel={() => setCancelConfirm(false)} /> : null}
   </div>;

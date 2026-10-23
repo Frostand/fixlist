@@ -46,6 +46,7 @@ function DemoApp() {
   const [captureRouteEpoch] = useState(() => createCaptureRouteEpoch(launch.route));
   const [returnTo, setReturnTo] = useState<Route | null>(() => { const hash = typeof window === 'undefined' ? null : window.history?.state?.fixlistReturnTo; const parsed = typeof hash === 'string' ? parseRoute(hash) : null; return parsed && 'role' in parsed ? parsed : null; });
   const returnRef = useRef(returnTo); returnRef.current = returnTo;
+  const [showNavigationLayout] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('nav'));
   const [launchLayout] = useState(() => navigationLayoutParameter(typeof window === 'undefined' ? '' : window.location.search));
   const [navigation, setNavigation] = useState<NavigationState>({ ...initial.navigation, pendingDestination: launch.pending, layout: launchLayout ?? initial.navigation.layout });
   const navigationRef = useRef(navigation); navigationRef.current = navigation;
@@ -92,7 +93,7 @@ function DemoApp() {
     window.addEventListener('hashchange', update); window.addEventListener('popstate', update);
     return () => { window.removeEventListener('hashchange', update); window.removeEventListener('popstate', update); };
   }, []);
-  useEffect(() => { const frame = requestAnimationFrame(() => { document.getElementById('screen-heading')?.focus({ preventScroll: true }); window.scrollTo(0, 0); }); return () => cancelAnimationFrame(frame); }, [route]);
+  useEffect(() => { const frame = requestAnimationFrame(() => { document.getElementById('screen-heading')?.focus({ preventScroll: true }); window.scrollTo(0, 0); document.querySelector('.phone-main')?.scrollTo(0, 0); }); return () => cancelAnimationFrame(frame); }, [route]);
   const language = route.screen === 'start' || route.screen === 'people' ? launchLanguage : person.language;
   useEffect(() => { document.documentElement.lang = language; }, [language]);
   const household = visibleHouseholdFor(scenario, state, person.id), requests = visibleRequestsFor(scenario, state, person.id);
@@ -189,19 +190,19 @@ function DemoApp() {
   else if (route.screen === 'scan') body = household?.canViewScan && !resetting ? <ScanPanel key={resetVersion} scenario={scenario} state={state} onSuggestionsChange={onSuggestionsChange} onPinsChange={onPinsChange} /> : <Denied />;
   else if (route.screen === 'resources') body = <ResourcesScreen {...common} />;
   else if (route.screen === 'access') body = isResident ? <AccessScreen state={state} dispatch={dispatch} /> : <Denied />;
-  else if (route.screen === 'more') body = <MoreScreen person={person} resident={isResident} canViewScan={!!household?.canViewScan} navigate={navigate} dispatch={dispatch} onReset={() => setResetConfirm(true)} layout={navigation.layout} onLayoutChange={(layout) => rememberNavigation((saved) => ({ ...saved, layout }), 'navigation.unsaved')} />;
+  else if (route.screen === 'more') body = <MoreScreen person={person} resident={isResident} canViewScan={!!household?.canViewScan} navigate={navigate} dispatch={dispatch} onReset={() => setResetConfirm(true)} layout={navigation.layout} showNavigationLayout={showNavigationLayout} onLayoutChange={(layout) => rememberNavigation((saved) => ({ ...saved, layout }), 'navigation.unsaved')} />;
   else if (route.screen === 'help') body = <HelpScreen person={person} navigate={navigate} dispatch={dispatch} />;
   else if (route.screen === 'about') body = <About />;
-  else if (route.screen === 'language') body = <LanguagePicker onSelect={async (value) => { if ((await dispatch({ type: 'set_language', language: value })).ok) setLaunchLanguage(value); }} />;
+  else if (route.screen === 'language') body = <LanguagePicker current={language} onSelect={async (value) => { if ((await dispatch({ type: 'set_language', language: value })).ok) setLaunchLanguage(value); }} />;
   else if (route.screen === 'report') body = isResident ? <ReportScreen state={state} pins={scanPins} onError={() => setError('error.print')} /> : <Denied />;
   const screenBody = <><ErrorMessage error={error} />{typeof error === 'object' && error.code === 'stale_revision' ? <RefreshSaved onRefresh={refreshSaved} /> : null}{['invalid', 'error', 'unavailable', 'migrated'].includes(recovery.status) ? <RecoveryNotice status={recovery.status as 'invalid' | 'error' | 'unavailable' | 'migrated'} message={recovery.message} canManage={isResident} onExport={exportSaved} onReset={() => setResetConfirm(true)} onRefresh={refreshSaved} /> : null}<SaveFeedback saved={saved} feedback={feedback} />{body}{resetConfirm ? <ResetConfirmation onReset={() => void reset()} onCancel={() => setResetConfirm(false)} /> : null}</>;
   return <I18nProvider language={language}>{!usesTabShell(route) ? screenBody : <TranslatedShell person={person} route={route} returnTo={returnTo} layout={navigation.layout} titleKey={titleKey} navigate={navigate} hasChecklist={hasScope(state, person.id, 'checklist')} hasPlan={!!household?.plan} hasRequests={!!household?.requests} {...(person.role === 'family_helper' ? { actingFor: state.people.find((p) => p.id === state.household.residentId)?.name ?? '' } : {})}>{screenBody}</TranslatedShell>}</I18nProvider>;
 }
 function TranslatedShell({ titleKey, ...props }: Omit<Parameters<typeof PhoneShell>[0], 'title'> & { titleKey: MessageKey }) { const t = useT(); return <PhoneShell {...props} title={t(titleKey)} />; }
-function StartLanguage({ onSelect }: { onSelect(language: Language): void }) { const t = useT(); return <StartShell title={t('nav.start')}><p>{t('app.tagline')}</p><LanguagePicker onSelect={onSelect} /></StartShell>; }
+function StartLanguage({ onSelect }: { onSelect(language: Language): void }) { const t = useT(); return <StartShell showDemo title={t('nav.start')}><p>{t('app.tagline')}</p><LanguagePicker onSelect={onSelect} /></StartShell>; }
 function Message({ message }: { message: MessageKey }) { const t = useT(); return <p className="notice">{t(message)}</p>; }
 function Denied() { return <Message message="person.noGrant" />; }
-function About() { const t = useT(); return <div className="stack"><p>{t('more.aboutBody')}</p><p>{t('app.disclosure')}</p><p>{t('app.local')}</p></div>; }
+function About() { const t = useT(); return <div className="stack"><p>{t('more.purpose')}</p><p className="muted">{t('more.credits')}</p><p>{t('more.aboutBody')}</p><p>{t('app.disclosure')}</p><p>{t('app.local')}</p></div>; }
 function ErrorMessage({ error }: { error: string | OperationFailure }) { const t = useT(); if (!error) return null; if (typeof error === 'object') return <p className="error-message" role="alert">{t(`failure.${error.code}`)}</p>; const result = error === 'reset-failed' ? { key: 'error.reset' as const } : error.startsWith('error.') || error.startsWith('check.') || error.startsWith('routing.') || error.startsWith('navigation.') ? { key: error as MessageKey } : { key: 'error.generic' as const }; return <p className="error-message" role="alert">{t(result.key)}</p>; }
 function RefreshSaved({ onRefresh }: { onRefresh(): void }) { const t = useT(); return <button onClick={onRefresh}>{t('data.refresh')}</button>; }
 function SaveFeedback({ saved, feedback }: { saved: boolean; feedback: number }) { const t = useT(); return <p className={saved ? 'sr-only screen-only' : 'notice screen-only'} role="status" aria-live="polite" key={feedback}>{t(saved ? 'check.saved' : 'check.unsaved')}</p>; }

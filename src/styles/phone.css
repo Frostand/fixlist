@@ -8,7 +8,7 @@ button, .button { display: inline-flex; justify-content: center; align-items: ce
 a, button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: .2rem solid var(--focus); outline-offset: .2rem; }
 /* Headings receive focus programmatically on navigation so screen readers announce the new screen; they are not controls, so no ring. */
-:is(h1, h2)[tabindex="-1"]:focus, :is(h1, h2)[tabindex="-1"]:focus-visible { outline: none; }
+[tabindex="-1"]:not(button, a, input, select, textarea):focus, [tabindex="-1"]:not(button, a, input, select, textarea):focus-visible { outline: none; }
 button:disabled { opacity: .55; }
 button svg, .button svg { width: 1.3rem; height: 1.3rem; flex: none; }
 input, select, textarea { width: 100%; min-width: 0; max-width: 100%; border: .08rem solid var(--rule-strong); border-radius: .6rem; background: var(--sheet); color: var(--ink); padding: .65rem; }
@@ -21,21 +21,21 @@ h2 { font-family: var(--font-display); font-size: 1.6rem; }
 h3 { font-size: 1.35rem; }
 p, ul, ol, dl, figure { margin: 0; }
 p, li, dd, dt, figcaption { overflow-wrap: anywhere; }
-.phone-app { max-width: 44rem; margin: auto; min-height: 100dvh; background: var(--plaster); }
-.phone-bar { position: relative; padding: max(.6rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) .65rem max(1rem, env(safe-area-inset-left)); background: var(--sheet-tint); border-bottom: .06rem solid var(--rule); }
+.phone-app { max-width: 44rem; margin: auto; height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--plaster); }
+.phone-bar { position: relative; flex: none; padding: calc(.6rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) .65rem max(1rem, env(safe-area-inset-left)); background: var(--sheet-tint); border-bottom: .06rem solid var(--rule); }
 .bar-top { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 .wordmark { font-family: var(--font-display); font-weight: 700; font-size: 1.55rem; letter-spacing: -.04em; }
 .bar-button { background: transparent; color: var(--ink); border: 0; padding: .5rem; min-width: 3rem; font-size: 1rem; }
 .person-chip { max-width: 100%; background: var(--plaster); color: var(--ink); border: .06rem solid var(--rule); padding: .4rem .75rem .4rem .4rem; margin-top: .3rem; font-size: 1rem; }
 .avatar { display: grid; place-items: center; border-radius: 50%; background: var(--ink); color: white; width: 2rem; height: 2rem; flex: none; font-weight: 700; }
-.phone-main { max-width: none; margin: 0; padding: 1rem max(1rem, env(safe-area-inset-right)) calc(8rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
+.phone-main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scroll-padding-block: 1rem 8rem; max-width: none; margin: 0; padding: 1rem max(1rem, env(safe-area-inset-right)) calc(8rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
 .screen-title { margin: 1rem 0 1.2rem; }
 .demo-banners { color: var(--graphite); font-size: .85rem; line-height: 1.4; border-left: .15rem solid var(--rule-strong); padding-left: .6rem; }
 .demo-banners p + p { margin-top: .5rem; }
 .translation-note { font-weight: 700; }
 .acting-banner { margin-top: .8rem; font-size: 1rem; font-weight: 700; }
-.tab-bar { display: grid; grid-template-columns: repeat(var(--tab-count), minmax(0, 1fr)); position: fixed; z-index: 10; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 44rem); padding: .35rem max(.3rem, env(safe-area-inset-right)) max(.35rem, env(safe-area-inset-bottom)) max(.3rem, env(safe-area-inset-left)); border-top: .06rem solid var(--rule-strong); background: var(--sheet-tint); gap: .1rem; }
-.tab-bar a, .tab-disabled { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem; min-height: 3.5rem; padding: .3rem .1rem; border-radius: .6rem; text-decoration: none; color: var(--graphite); font-size: .8rem; text-align: center; overflow-wrap: anywhere; line-height: 1.2; }
+.tab-bar { display: grid; grid-template-columns: repeat(var(--tab-count), minmax(min-content, 1fr)); overflow-x: auto; position: fixed; z-index: 10; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 44rem); padding: .35rem max(.3rem, env(safe-area-inset-right)) max(.35rem, env(safe-area-inset-bottom)) max(.3rem, env(safe-area-inset-left)); border-top: .06rem solid var(--rule-strong); background: var(--sheet-tint); gap: .1rem; }
+.tab-bar a, .tab-disabled { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem; min-height: 3.5rem; padding: .3rem .1rem; border-radius: .6rem; text-decoration: none; color: var(--graphite); font-size: .8rem; text-align: center; overflow-wrap: normal; word-break: keep-all; hyphens: none; line-height: 1.2; }
 .tab-bar svg { width: 1.4rem; height: 1.4rem; }
 .tab-bar a[aria-current] { color: var(--ink); background: var(--plaster); font-weight: 700; }
 .tab-disabled { opacity: .65; }
@@ -120,7 +120,7 @@ blockquote footer { font-size: 1rem; color: var(--graphite); }
 .scan-panel .button-row > button { width: 100%; }
 @media (min-width: 48rem) { .phone-app { border-inline: .06rem solid var(--rule); } .phone-main { padding-inline: 1.8rem; } .room-picker { grid-template-columns: 1fr 1fr; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
-@media print { html { font-size: 10pt; } body { font-size: 1rem; } .phone-app, .phone-main { max-width: none; padding: 0; margin: 0; border: 0; min-height: 0; background: white; } .paper { padding: 0; margin: 0; } .screen-only { display: none !important; } .print-report .household-photo { max-height: 14rem; break-inside: avoid; } }
+@media print { html { font-size: 10pt; } body { font-size: 1rem; } .phone-app, .phone-main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scroll-padding-block: 1rem 8rem; max-width: none; padding: 0; margin: 0; border: 0; min-height: 0; background: white; } .paper { padding: 0; margin: 0; } .screen-only { display: none !important; } .print-report .household-photo { max-height: 14rem; break-inside: avoid; } }
 
 .print-report a { display: inline-flex; align-items: center; min-height: 3rem; }
 @media print { .print-report a { min-height: 0; display: inline; } }
@@ -136,10 +136,56 @@ blockquote footer { font-size: 1rem; color: var(--graphite); }
   .phone-app .rule { padding-inline-start: 0; min-width: 0; }
   .phone-app .rule::before { position: static; display: inline-grid; margin-inline-end: .35rem; vertical-align: middle; }
 }
-/* Keep scrolled content below the iOS status area and the person/help controls. */
-.phone-bar { position: sticky; top: 0; z-index: 20; }
-html { scroll-padding-top: 12rem; }
-@media screen and (max-width: 22rem) {
-  /* At the narrow fallback width, let enlarged navigation scroll away so the task stays readable. */
-  .phone-bar { position: relative; }
+/* Task content scrolls inside the shell, keeping the header above keyboard panning. */
+@media (hover: hover) and (pointer: fine) {
+  .person-chip:hover:not(:disabled), .bar-button:hover:not(:disabled) { background: var(--plaster); border-color: var(--rule-strong); color: var(--ink); }
 }
+.question-screen { gap: .6rem; }
+.question-screen .question-card { padding: .85rem; }
+.question-screen .answer-choices { margin-top: .65rem; gap: .4rem; }
+.question-screen .answer-choices label { padding: .5rem .7rem; margin: 0; }
+.question-navigation { margin: .75rem 0 0; }
+.question-navigation .previous-question { flex: 0 1 auto; min-width: 3rem; padding-inline: .65rem; }
+.question-screen details > summary { padding-block: .5rem; font-size: 1rem; cursor: pointer; }
+.question-screen details[open] > summary { margin-bottom: .8rem; }
+.tab-bar span { overflow-wrap: normal; word-break: keep-all; hyphens: none; }
+.tab-bar > * { min-width: 0; }
+@media print { .phone-app, .phone-main { height: auto; min-height: 0; overflow: visible; display: block; } }
+
+/* Room review: the scene is the primary content, with optional tools below it. */
+.phone-app .scan-panel { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.scan-stage { width: 100%; min-width: 0; }
+.scan-stage > p[role=status] { display: grid; place-items: center; height: clamp(260px, 42dvh, 440px); }
+.scan-stage .scan-scene, .scan-view-placeholder { width: 100%; height: clamp(260px, 42dvh, 440px); min-height: 260px; max-height: 440px; aspect-ratio: auto; }
+.scan-view-placeholder { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 1rem; padding: 1rem; border: .06rem solid var(--rule-strong); border-radius: var(--radius); background: var(--plaster); text-align: center; }
+.scan-source-note { font-size: 1rem; margin-block: .8rem; }
+.scan-panel > details { margin-block: .75rem; }
+.scan-camera-quick { display: grid; grid-template-columns: repeat(3, minmax(3rem, 1fr)); gap: .5rem; margin-block: .6rem; }
+.scan-camera-quick button { width: 100%; min-height: 3rem; padding: .4rem; }
+.scan-camera-quick button > span { font-size: 1.4rem; }
+.scan-center-pin { grid-column: 1 / -1; }
+.scan-camera-grid { display: grid; grid-template-columns: repeat(4, minmax(3rem, 1fr)); gap: .5rem; margin-block: .75rem; }
+.scan-camera-grid button { min-width: 0; width: 100%; padding-inline: .3rem; }
+.scan-panel .scan-suggestion .button-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: .5rem; }
+.scan-panel .scan-suggestion .button-row > button { width: auto; min-height: 3rem; flex: 1 1 7rem; }
+.scan-suggestion h5 { font-family: var(--font-display); font-size: 1.4rem; }
+.scan-suggestion .scan-frame-button { display: grid; gap: .5rem; width: 100%; padding: .5rem; margin-block: .75rem; color: var(--ink); }
+.scan-suggestion-frame { display: block; width: 100%; height: auto; max-height: none; border-radius: var(--radius-sm); }
+.scan-frame-button > span { font-size: 1rem; }
+.scan-score { font-size: 1rem; }
+.scan-method { margin-block: .5rem; }
+.scan-method[open] { padding-bottom: .5rem; }
+.scan-details .scan-local-demos { display: grid; gap: .5rem; }
+.scan-frame-dialog { position: fixed; inset: 0; width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: calc(1rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) calc(1rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); border: 0; background: var(--sheet); color: var(--ink); }
+.scan-frame-dialog[open] { display: flex; flex-direction: column; gap: 1rem; }
+.scan-frame-dialog .bar-top { flex: none; align-items: start; }
+.scan-frame-dialog h2 { font-size: 1.35rem; margin: 0; }
+.scan-frame-dialog img { display: block; flex: 1; min-height: 0; width: 100%; object-fit: contain; }
+.scan-frame-dialog::backdrop { background: var(--ink); }
+@media print { .scan-frame-dialog { display: none !important; } }
+.scan-frame-caption { font-size: 1.1rem; margin: 0; }
+/* iOS keyboard: the native shell reports the covered height so the app shell ends above the keyboard. */
+.keyboard-open .phone-app { height: calc(100dvh - var(--keyboard-inset, 0px)); }
+.keyboard-open .tab-bar { display: none; }
+.keyboard-open .phone-main { padding-bottom: 1.5rem; }
+.scan-scene, .scan-canvas-host, .scan-canvas-host canvas, .room-sketch__canvas-host { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
