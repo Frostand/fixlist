@@ -215,7 +215,6 @@ button.danger, button.destructive { color: var(--brick); background: var(--brick
 .setup-progress { display: grid; gap: .6rem; }
 .setup-progress .progress-dots { justify-content: center; }
 .setup-progress .plain { min-block-size: 2.75rem; padding-block: .25rem; padding-inline: .1rem; font-size: .9375rem; }
-.setup-progress .bar-top > span:first-child { inline-size: 2.75rem; }
 .setup-welcome { display: grid; justify-items: center; gap: 1rem; padding-block: .5rem 1rem; text-align: center; }
 .brand-icon { inline-size: 5rem; block-size: 5rem; }
 .setup-tagline { font-size: 1.375rem; line-height: 1.35; font-weight: 500; max-inline-size: 22rem; }
@@ -288,3 +287,14 @@ button:disabled { border: 0; }
   button:is(.list-row, .language-row, .role-card, .capture-flag-select):hover:not(:disabled) { background: var(--sheet-tint); color: var(--ink); }
   .segmented-control button:hover:not(:disabled) { background: var(--sheet); color: var(--moss); }
 }
+/* Keep setup progress centred even when either edge action is absent. */
+.setup-step-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: .5rem; align-items: center; }
+.setup-step-row > :first-child { justify-self: start; }
+.setup-step-row > :nth-child(2) { justify-self: center; text-align: center; }
+.setup-step-row > :last-child { justify-self: end; }
+.question-screen .answer-status { border: 0; border-radius: .65rem; padding: .65rem .8rem; background: var(--plaster); color: var(--graphite); font-size: .9375rem; }
+.question-card .confirm-box { border: 0; padding-block-start: .5rem; }
+.question-card .confirm-box button { margin-block-start: .6rem; }
+.question-card .question-navigation { flex-direction: row; }
+.card-title { font-size: 1.0625rem; line-height: 1.294; font-weight: 600; }
+.home-updates-empty { padding-inline: .25rem; font-size: .9375rem; }

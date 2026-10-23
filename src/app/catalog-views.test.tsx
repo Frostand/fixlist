@@ -34,7 +34,7 @@ describe('screen and printable catalog content', () => {
     expect(checklist).toContain('0 of 8 answered');
     expect(checklist).toContain('Stairs: 0 of 3 answered');
     expect(plan).toContain('0 of 8 answered');
-    expect(plan).toContain('An empty plan does not certify safety');
+    expect(plan).toContain('An empty fix list does not certify safety');
     expect(assistance.match(/<select/g)).toHaveLength(1);
     expect(assistance).toContain('id="fictional-profile"');
     expect(assistance).toContain('Unknown / not supplied');

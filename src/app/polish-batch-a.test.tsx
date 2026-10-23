@@ -37,10 +37,10 @@ describe('batch A presentation and explicit choices', () => {
     await (yes.props.onChange as () => Promise<void>)();
     expect(send).toHaveBeenLastCalledWith({ type: 'answer_checklist', checklistItemId: 'rug-check', answer: 'yes', position: 0 });
     expect(navigate).not.toHaveBeenCalled(); expect(p.state).toEqual(before); expect(computePlan(scenario, p.state)).toEqual([]);
-    await (elements(tree, 'button').find((button) => button.props.children === en['nav.next'])!.props.onClick as () => Promise<void>)();
+    await (elements(tree, 'button').find((button) => button.props.children === en['check.next'])!.props.onClick as () => Promise<void>)();
     expect(navigate).toHaveBeenLastCalledWith({ role: 'r', screen: 'question', id: scenario.checklist[1]!.id });
   });
-  it.each(['en', 'es'] as const)('uses See my plan only on the last question in %s', (language) => {
+  it.each(['en', 'es'] as const)('uses See fix list only on the last question in %s', (language) => {
     const p = props(), shared = { ...p, saved: true, suggestions: null, photoStillRecorded: () => false, onPhotoError: noop };
     expect(html(<ChecklistQuestion {...shared} questionId={scenario.checklist.at(-1)!.id} />, language)).toContain(translate(language, 'check.seePlan'));
     expect(html(<ChecklistQuestion {...shared} questionId="rug-check" />, language)).not.toContain(translate(language, 'check.seePlan'));
