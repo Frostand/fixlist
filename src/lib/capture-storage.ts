@@ -32,13 +32,17 @@ async function checked(record: StoredCapture): Promise<StoredCapture> {
   return { manifest: result.value, photos: new Map(record.photos), flags: flags?.ok ? flags.value : null };
 }
 type Change = (rooms: Map<string, StoredCapture>) => void;
-interface Backend { read(roomId: string): Promise<StoredCapture | null>; change(update: Change, reset?: boolean): Promise<void> }
+interface Backend { observeGeneration(): Promise<void>; read(roomId: string): Promise<StoredCapture | null>; change(update: Change, reset?: boolean): Promise<void> }
 function storeFromBackend(backend: Backend): CaptureStore {
   return serializeCaptureStore({
     read: async (roomId) => { const r = await backend.read(roomId); return r ? checked(r) : null; },
     writeCapture: async (manifest, photos, replaceConfirmed = false, isCurrent, expectedCaptureId) => {
       // Clone before awaiting: caller changes cannot alter queued data or bypass validation.
-      const record = await checked({ manifest: structuredClone(manifest), photos: new Map(photos), flags: null });
+      const snapshot: StoredCapture = { manifest: structuredClone(manifest), photos: new Map(photos), flags: null };
+      // Observe the durable reset generation before reading/hashing photo bytes.
+      // A client's first write must not adopt a reset that occurs during validation.
+      await backend.observeGeneration();
+      const record = await checked(snapshot);
       await backend.change((rooms) => {
         assertCurrent(isCurrent);
         if (expectedCaptureId !== undefined && (rooms.get(record.manifest.roomId)?.manifest.captureId ?? null) !== expectedCaptureId) throw new CaptureError('CAPTURE_MISMATCH', 'This walk-through changed. Reload before replacing.');
@@ -68,7 +72,7 @@ function capacity(rooms: Map<string, StoredCapture>, budget: number) {
 }
 export function createMemoryCaptureStore(budget = MAX_CAPTURE_STORAGE_BYTES): CaptureStore {
   let rooms = new Map<string, StoredCapture>();
-  return storeFromBackend({ read: async (id) => structuredClone(rooms.get(id) ?? null), change: async (update) => {
+  return storeFromBackend({ observeGeneration: async () => {}, read: async (id) => structuredClone(rooms.get(id) ?? null), change: async (update) => {
     const next = new Map(rooms); update(next); capacity(next, budget); rooms = structuredClone(next);
   } });
 }
@@ -89,7 +93,9 @@ export function createIndexedDbCaptureStore(factory: IDBFactory | undefined): Ca
       request.onsuccess = () => { clearTimeout(timer); if (abandoned) { request.result.close(); return; } request.result.onversionchange = () => request.result.close(); resolve(request.result); };
     });
   }
-  async function transaction<T>(mode: IDBTransactionMode, run: (rooms: Map<string, StoredCapture>) => T, reset = false): Promise<T> {
+  function transaction(mode: 'readonly', run: null): Promise<void>;
+  function transaction<T>(mode: IDBTransactionMode, run: (rooms: Map<string, StoredCapture>) => T, reset?: boolean): Promise<T>;
+  async function transaction<T>(mode: IDBTransactionMode, run: ((rooms: Map<string, StoredCapture>) => T) | null, reset = false): Promise<T | void> {
     const expectedGeneration = observedGeneration, db = await open();
     try { return await new Promise<T>((resolve, reject) => {
       const tx = db.transaction(STORE, mode), s = tx.objectStore(STORE);
@@ -102,6 +108,9 @@ export function createIndexedDbCaptureStore(factory: IDBFactory | undefined): Ca
         const current: unknown = generation.result ?? 0;
         if (!Number.isSafeInteger(current) || (current as number) < 0 || mode === 'readwrite' && !reset && expectedGeneration !== undefined && current !== expectedGeneration) { reject(stale()); tx.abort(); return; }
         commitGeneration = current as number;
+        // A generation-only barrier waits for transaction completion without
+        // requesting or cloning any room manifests or photo Blobs.
+        if (run === null) return;
         const keys = s.getAllKeys(), records = s.getAll();
         records.onsuccess = () => {
           try {
@@ -119,7 +128,7 @@ export function createIndexedDbCaptureStore(factory: IDBFactory | undefined): Ca
       };
     }); } finally { db.close(); }
   }
-  return storeFromBackend({ read: (id) => transaction('readonly', (rooms) => rooms.get(id) ?? null), change: (update, reset) => transaction('readwrite', update, reset) });
+  return storeFromBackend({ observeGeneration: () => transaction('readonly', null), read: (id) => transaction('readonly', (rooms) => rooms.get(id) ?? null), change: (update, reset) => transaction('readwrite', update, reset) });
 }
 /** Invalidate immediately; clear waits for already running operations, then removes them. */
 export function serializeCaptureStore(store: CaptureStore): CaptureStore {

@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F17A20261023000200000002 /* FixListAssistantPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000200000001 /* FixListAssistantPlugin.swift */; };
+		F17A20261023000100000002 /* FixListHazardsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000001 /* FixListHazardsPlugin.swift */; };
+		F17A20261023000100000004 /* HazardImageEncoder.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000003 /* HazardImageEncoder.mlpackage */; };
+		F17A20261023000100000006 /* hazard-prompts.json in Resources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000005 /* hazard-prompts.json */; };
 		C47A001020261018A1000004 /* FixListCaptureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261018A1000003 /* FixListCaptureViewController.swift */; };
 		C47A001020261018A1000002 /* FixListCapturePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261018A1000001 /* FixListCapturePlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -21,6 +25,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		F17A20261023000200000001 /* FixListAssistantPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListAssistantPlugin.swift; sourceTree = "<group>"; };
+		F17A20261023000100000001 /* FixListHazardsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListHazardsPlugin.swift; sourceTree = "<group>"; };
+		F17A20261023000100000003 /* HazardImageEncoder.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = HazardImageEncoder.mlpackage; sourceTree = "<group>"; };
+		F17A20261023000100000005 /* hazard-prompts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "hazard-prompts.json"; sourceTree = "<group>"; };
 		C47A001020261018A1000003 /* FixListCaptureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListCaptureViewController.swift; sourceTree = "<group>"; };
 		C47A001020261018A1000001 /* FixListCapturePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListCapturePlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -68,6 +76,9 @@
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
+				F17A20261023000100000001 /* FixListHazardsPlugin.swift */,
+				F17A20261023000200000001 /* FixListAssistantPlugin.swift */,
+				F17A20261023000100000007 /* HazardModel */,
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				C47A001020261018A1000003 /* FixListCaptureViewController.swift */,
 				C47A001020261018A1000001 /* FixListCapturePlugin.swift */,
@@ -81,6 +92,15 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		F17A20261023000100000007 /* HazardModel */ = {
+			isa = PBXGroup;
+			children = (
+				F17A20261023000100000003 /* HazardImageEncoder.mlpackage */,
+				F17A20261023000100000005 /* hazard-prompts.json */,
+			);
+			path = HazardModel;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -148,6 +168,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F17A20261023000100000006 /* hazard-prompts.json in Resources */,
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
@@ -164,6 +185,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F17A20261023000100000002 /* FixListHazardsPlugin.swift in Sources */,
+				F17A20261023000200000002 /* FixListAssistantPlugin.swift in Sources */,
+				F17A20261023000100000004 /* HazardImageEncoder.mlpackage in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				C47A001020261018A1000004 /* FixListCaptureViewController.swift in Sources */,

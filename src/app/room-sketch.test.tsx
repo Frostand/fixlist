@@ -38,7 +38,7 @@ describe('room sketch static UI', () => {
       { ...capture, mode: 'photos' as const, floorY: null, outline: null, doors: [], photos: capture.photos.map((p) => ({ ...p, camera: null })) },
     ]) {
       const result = html({ capture: fallback, mode: '3d' });
-      expect(result).toContain('No room outline. Photos only.'); expect(result).not.toContain('<svg');
+      expect(result.match(/No room outline. Photos only./g)).toHaveLength(1); expect(result).not.toContain('Approximate room sketch. Not to scale for measuring.'); expect(result).not.toContain('<svg');
       expect(result).toContain('Review the rug in this photo'); expect(result).toContain('Photo only');
       expect(result).not.toContain('room-sketch__marker--flag'); expect(result).not.toContain('Loading the approximate 3D sketch');
     }
@@ -60,6 +60,18 @@ describe('room sketch static UI', () => {
     const result = html({ photoUrls: new Map(), capture: { ...capture, photos: [{ ...capture.photos[0]!, camera: { ...capture.photos[0]!.camera!, tracking: 'limited' } }] } });
     expect(result).toContain('Photo preview unavailable'); expect(result).toContain('Camera tracking was limited; flags stay with this photo.');
     expect(result).toContain('aria-label="Photo 1; Photo only: 2"'); expect(result).not.toContain('room-sketch__marker--flag');
+  });
+  it('keeps gallery flag labels compact while preserving global numbering and full accessible detail', () => {
+    const secondPhoto = { ...capture.photos[0]!, photoId: 'p02', sha256: '1'.repeat(64) };
+    const secondFlag = { ...flags[0]!, id: 'second-photo-flag', photoId: 'p02', label: 'Review the distant rug in this photo' };
+    const result = html({ capture: { ...capture, photos: [...capture.photos, secondPhoto] }, flags: [...flags, secondFlag] });
+    const button = result.match(/<button[^>]*class="room-sketch__flag-link secondary"[^>]*title="Review the distant rug in this photo"[\s\S]*?<\/button>/)?.[0];
+    expect(result).toContain(`class="room-sketch__photos" role="group" aria-label="${roomSketchCopy('en').photos}"`);
+    expect(result).toContain('<span>Photo 2</span>');
+    expect(button).toContain('aria-label="Review flag 3: Review the distant rug in this photo. Approximate spot from one photo"');
+    expect(button).toContain('<span class="room-sketch__flag-label"><span aria-hidden="true">◆ </span>Review flag 3</span>');
+    expect(button).toContain('<span class="small-text">Approximate spot from one photo</span>');
+    expect(button).not.toContain('>Review the distant rug in this photo</span>');
   });
   it('filters both excluded checklist flags and flags for unknown photos defensively', () => {
     const result = html({ flags: [

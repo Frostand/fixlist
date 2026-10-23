@@ -1,4 +1,4 @@
-# Required checks from AGENTS.md. A red step is a failure; nothing here deploys, uploads or publishes.
+# Required checks: typecheck, tests and build. Nothing here deploys, uploads or publishes.
 name: CI
 
 on:

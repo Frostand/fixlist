@@ -5,6 +5,7 @@ import { computePlan, createInitialState } from '../domain/workflow';
 import { suggestionDocumentFixture, suggestionCatalogFixture as catalog, suggestionLayerFixture as layer, suggestionsV2Fixture } from '../lib/scan-suggestions.fixture';
 import { suggestionAnchor, suggestionId } from '../lib/scan-suggestions';
 import { ChecklistSection } from './WorkflowSections';
+import { en } from '../i18n/en';
 import { ScanSuggestions } from './ScanSuggestions';
 
 describe('accessible suggestion review path with no workflow mutation', () => {
@@ -14,7 +15,7 @@ describe('accessible suggestion review path with no workflow mutation', () => {
     const html = renderToStaticMarkup(<ChecklistSection scenario={demoScenario} state={state} onCommand={onCommand} scanSuggestions={suggestions} />);
     expect(html).toContain(`href="#${suggestionAnchor(item)}"`);
     expect(html).toContain('AI review suggested · score 0.86');
-    expect(html).toContain('0 of 8 answered (0 not sure); 8 not answered');
+    expect(html).toContain('0 of 8 answered');
     expect(html).toContain('Confirmation is enabled only when every backing checklist answer is yes');
     expect(onCommand).not.toHaveBeenCalled();
     expect(state).toEqual(before);
@@ -30,13 +31,13 @@ describe('accessible suggestion review path with no workflow mutation', () => {
   });
   it('labels probabilities and thumbnails as model evidence, supplies disabled reasons and uses the canonical question', () => {
     const html = renderToStaticMarkup(<ScanSuggestions asset={suggestionDocumentFixture().asset} layer={layer()} catalog={catalog} viewerReady={false} canAddPin onShow={vi.fn()} onPin={vi.fn()} onDismiss={vi.fn()} />);
-    expect(html).toContain('Suggested by a local AI model (StartLux-Decision). Areas to review — not findings. They never answer or confirm the checklist.');
+    expect(html).toContain(en['scan.notice']); expect(html.split(en['scan.notice'])).toHaveLength(2); expect(html).not.toContain(en['legacy.scansuggestions.27']);
     expect(html).toContain('Experimental model score 0.86 (uncalibrated; not a probability)');
     expect(html).toContain('1 of 2 frames above threshold');
-    expect(html).toContain('Model suggestions are areas to review, not findings. They never answer or confirm a checklist item.');
+    expect(html).toContain('Experimental AI score 0.86 · may be wrong · not a finding');
     expect(html).not.toContain('Only confirmed concerns enter your plan');
     expect(html).toContain('Frame the local AI model looked at when suggesting review');
-    expect(html).toContain(`<h5>${catalog.get('rug-check')!.question}</h5>`);
+    expect(html).toContain(`<h5>${en['catalog.check.rug-check']}</h5>`); expect(html).toContain(`<p lang="en">${catalog.get('rug-check')!.question}</p>`);
     expect(html).toContain(catalog.get('rug-check')!.limitation);
     expect(html).toContain('Related checklist question: Does a rug edge obstruct the walking route?');
     expect(html).not.toMatch(/likely|%/i);
@@ -63,13 +64,13 @@ describe('accessible suggestion review path with no workflow mutation', () => {
 
 describe('v2 score wording and relevance grouping', () => {
   const render = (data: ReturnType<typeof suggestionsV2Fixture>) => renderToStaticMarkup(<ScanSuggestions asset={suggestionDocumentFixture().asset} layer={{ data, dismissed: [], pinned: [], droppedItems: 0 }} catalog={catalog} viewerReady canAddPin onShow={vi.fn()} onPin={vi.fn()} onDismiss={vi.fn()} />);
-  it('renders the trusted photo question and limitation rather than replacing it with the checklist prompt', () => {
+  it('uses a plain checklist heading while preserving the exact photo question and limitation', () => {
     const data = suggestionsV2Fixture(), item = data.items[0]!;
     const html = render(data);
-    expect(html).toContain(`<h5>${item.question}</h5>`);
+    expect(html).toContain(`<p lang="en">${item.question}</p>`); expect(html).toContain(en['scan.asked']);
     expect(html).toContain(item.limitation);
     expect(html).toContain('Related checklist question: Does a rug edge obstruct the walking route?');
-    expect(html).not.toContain('<h5>Does a rug edge obstruct the walking route?</h5>');
+    expect(html).toContain('<h5>Does a rug edge obstruct the walking route?</h5>');
     expect(html).toContain('Experimental model score 0.86 (uncalibrated; not a probability)');
     expect(html).not.toMatch(/likely|%/i);
   });

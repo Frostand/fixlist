@@ -1,3 +1,4 @@
+import type { Translator } from '../i18n';
 import { computeCoverage } from '../domain/coverage';
 import type { DemoState, ChecklistAnswer } from '../domain/workflow';
 import type { DemoScenario } from '../domain/types';
@@ -19,3 +20,5 @@ export function checklistPresentation(scenario: DemoScenario, state: DemoState) 
   const coverage = computeCoverage(scenario, state);
   return { ...coverage, ...checklistAnswerCounts(scenario.checklist, state), rooms: coverage.rooms.map((room) => ({ ...room, ...checklistAnswerCounts(scenario.checklist.filter((item) => item.roomId === room.roomId), state) })) };
 }
+
+export function progressText(t: Translator, counts: { answered: number; total: number; notSure: number; unanswered: number }): string { return t(counts.notSure ? 'home.progressUncertain' : 'home.progress', counts); }

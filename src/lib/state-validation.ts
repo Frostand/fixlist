@@ -1,6 +1,6 @@
 import type { DemoScenario, HumanConfirmation } from '../domain/types';
 import type { Attribution, HelpRequest, Person } from '../domain/roles';
-import { MAX_HOUSEHOLD_PHOTOS, MAX_REMOVED_PHOTO_HISTORY, MAX_REQUEST_HISTORY, remainingPrivacyEvents, sharingFields } from '../domain/roles';
+import { LANGUAGE_CODES, MAX_HOUSEHOLD_PHOTOS, MAX_REMOVED_PHOTO_HISTORY, MAX_REQUEST_HISTORY, remainingPrivacyEvents, sharingFields } from '../domain/roles';
 import { attributionLabel, canConfirmConcern, createInitialState, isChecklistAnswer, isIsoTimestamp, requestIdForAction, validId, validText, type DemoState } from '../domain/workflow';
 import { demoPeople, LEGACY_ACTOR_ID, LEGACY_LABEL } from '../data/demo-people';
 
@@ -59,7 +59,7 @@ export function reconstructState(value: unknown, scenario: DemoScenario, version
     const guides = obj(p.onboarding, guideKeys);
     const onboarding = Object.fromEntries(guideKeys.map((k) => { const g = obj(guides[k], ['stepIndex', 'completed']); return [k, { stepIndex: int(g.stepIndex, 0, 3), completed: bool(g.completed) }]; }));
     if (p.fictional !== true || p.selfReportLabel !== 'Self-reported, not verified') reject('Demo profiles must retain their fictional and unverified labels.');
-    return { id: id(p.id), name: text(p.name, 40), role: one(p.role, ['resident', 'family_helper', 'volunteer']), fictional: true, language: one(p.language, ['en', 'es']), onboarding, checklistPosition: int(p.checklistPosition, 0, scenario.checklist.length - 1), skills: unique(arr(p.skills, 10).map((s) => text(s, 80)), (s) => s), availability: text(p.availability, 280, true), selfReportLabel: 'Self-reported, not verified', createdBy: attribution(p.createdBy), updatedBy: attribution(p.updatedBy) };
+    return { id: id(p.id), name: text(p.name, 40), role: one(p.role, ['resident', 'family_helper', 'volunteer']), fictional: true, language: one(p.language, LANGUAGE_CODES), onboarding, checklistPosition: int(p.checklistPosition, 0, scenario.checklist.length - 1), skills: unique(arr(p.skills, 10).map((s) => text(s, 80)), (s) => s), availability: text(p.availability, 280, true), selfReportLabel: 'Self-reported, not verified', createdBy: attribution(p.createdBy), updatedBy: attribution(p.updatedBy) };
   });
   const activePersonId = id(root.activePersonId);
   if (!personRole(activePersonId)) reject('Unknown active person.');

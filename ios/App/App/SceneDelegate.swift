@@ -25,9 +25,41 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 /// Registers app-local native plugins on the Capacitor bridge.
 class FixListBridgeViewController: CAPBridgeViewController {
+    private var offsetObservation: NSKeyValueObservation?
+
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(FixListPrintPlugin())
         bridge?.registerPluginInstance(FixListCapturePlugin())
+        bridge?.registerPluginInstance(FixListHazardsPlugin())
+        bridge?.registerPluginInstance(FixListAssistantPlugin())
+
+        // The app scrolls inside its own shell. Pin the outer page so iOS cannot pan the
+        // fixed header under the status bar when the keyboard opens.
+        if let scrollView = bridge?.webView?.scrollView {
+            scrollView.isScrollEnabled = false
+            offsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { scrollView, _ in
+                if scrollView.contentOffset != .zero { scrollView.contentOffset = .zero }
+            }
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillChangeFrame(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    @objc private func keyboardWillChangeFrame(_ notification: Notification) {
+        guard let webView = bridge?.webView,
+              let end = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+        let keyboard = webView.convert(end, from: nil)
+        setKeyboardInset(max(0, webView.bounds.maxY - keyboard.minY))
+    }
+
+    @objc private func keyboardWillHide(_ notification: Notification) {
+        setKeyboardInset(0)
+    }
+
+    /// Tells the page how much of the screen the keyboard covers; the CSS shrinks the app shell to fit.
+    private func setKeyboardInset(_ inset: CGFloat) {
+        let height = Int(inset.rounded())
+        bridge?.webView?.evaluateJavaScript("document.documentElement.style.setProperty('--keyboard-inset','\(height)px');document.documentElement.classList.toggle('keyboard-open',\(height > 0))")
     }
 }
 

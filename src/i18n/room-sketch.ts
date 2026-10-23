@@ -1,42 +1,6 @@
-/** Sketch-only copy, using the app's current language. Spanish awaits human review. */
-const en = {
-  title: 'Room photos and sketch',
-  approximate: 'Approximate room sketch. Not to scale for measuring.',
-  assumptions: 'Wall height and door openings are drawing assumptions. Room direction is arbitrary.',
-  noOutline: 'No room outline. Photos only.',
-  invalidOutline: 'This outline cannot be drawn reliably. Photos only.',
-  openOutline: 'Open outline. Flags stay with their photos until a closed room outline is available.',
-  needsClosed: 'A closed room outline is needed for the 3D view.',
-  photo: 'Photo', photos: 'Room photos', photoMissing: 'Photo preview unavailable',
-  flag: 'Review flag', flags: 'Things to look at', photoOnly: 'Photo only', spot: 'Approximate spot from one photo',
-  unverified: 'Unverified model output. Flags never answer or confirm a checklist item.',
-  plan: 'Top-down room outline. Numbered circles are photos; diamond markers are review flags.',
-  legendPhoto: 'Numbered circle: photo', legendFlag: 'Diamond: review flag', legendDoor: 'Wall gap: approximate door opening',
-  limited: 'Camera tracking was limited; flags stay with this photo.',
-  loading: 'Loading the approximate 3D sketch…',
-  unavailable: 'The 3D view is unavailable. The room plan and photos are shown below.',
-  three: 'Approximate 3D room sketch', controls: '3D view controls',
-  help: 'Drag to orbit; pinch or scroll to zoom. Use the buttons or focus the view and use arrow keys, plus, minus, and Home. Photos and flags are also listed below.',
-  left: 'Orbit left', right: 'Orbit right', up: 'Orbit up', down: 'Orbit down', in: 'Zoom in', out: 'Zoom out', reset: 'Reset view',
-} as const;
-type Copy = { [K in keyof typeof en]: string };
-const es: Copy = {
-  title: 'Fotos y croquis de la habitación',
-  approximate: 'Croquis aproximado de la habitación. No usar para medir.',
-  assumptions: 'La altura de las paredes y las aberturas de las puertas son supuestos del dibujo. La orientación es arbitraria.',
-  noOutline: 'Sin contorno de la habitación. Solo fotos.',
-  invalidOutline: 'No se puede dibujar este contorno de forma fiable. Solo fotos.',
-  openOutline: 'Contorno abierto. Las marcas quedan con sus fotos hasta que haya un contorno cerrado.',
-  needsClosed: 'Se necesita un contorno cerrado para la vista 3D.',
-  photo: 'Foto', photos: 'Fotos de la habitación', photoMissing: 'Vista previa no disponible',
-  flag: 'Marca para revisar', flags: 'Cosas para revisar', photoOnly: 'Solo foto', spot: 'Ubicación aproximada a partir de una foto',
-  unverified: 'Resultado del modelo sin verificar. Las marcas nunca responden ni confirman un punto de la lista.',
-  plan: 'Contorno de la habitación visto desde arriba. Los círculos numerados son fotos; los rombos son marcas para revisar.',
-  legendPhoto: 'Círculo numerado: foto', legendFlag: 'Rombo: marca para revisar', legendDoor: 'Espacio en la pared: abertura aproximada de puerta',
-  limited: 'El seguimiento de la cámara fue limitado; las marcas quedan con esta foto.',
-  loading: 'Cargando el croquis 3D aproximado…', unavailable: 'La vista 3D no está disponible. El plano y las fotos se muestran abajo.',
-  three: 'Croquis 3D aproximado de la habitación', controls: 'Controles de la vista 3D',
-  help: 'Arrastre para girar; pellizque o desplace para acercar. Use los botones o enfoque la vista y use las flechas, más, menos e Inicio. Las fotos y las marcas también aparecen abajo.',
-  left: 'Girar a la izquierda', right: 'Girar a la derecha', up: 'Girar hacia arriba', down: 'Girar hacia abajo', in: 'Acercar', out: 'Alejar', reset: 'Restablecer vista',
-};
-export function roomSketchCopy(language: 'en' | 'es'): Copy { return language === 'es' ? es : en; }
+import type { Language } from '../domain/roles';
+import { translate } from './index';
+const keys = ["title","approximate","assumptions","noOutline","invalidOutline","openOutline","needsClosed","photo","photos","photoMissing","flag","flags","photoOnly","spot","unverified","plan","legendPhoto","legendFlag","legendDoor","limited","loading","unavailable","three","controls","help","left","right","up","down","in","out","reset"] as const;
+type Copy = Record<(typeof keys)[number], string>;
+/** Every sketch label uses the same per-key English fallback as the rest of the app. */
+export function roomSketchCopy(language: Language): Copy { return Object.fromEntries(keys.map((key) => [key, translate(language, `sketch.${key}`)])) as Copy; }

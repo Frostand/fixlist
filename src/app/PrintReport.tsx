@@ -1,4 +1,5 @@
 import { authored } from '../i18n/authored';
+import { DemoBanners } from './PhoneShell';
 import { PhotoImage } from './Photos';
 import { SharingSummary } from './RequestScreens';
 import { personLabel } from './view-model';
@@ -16,7 +17,7 @@ export function PrintReport({ scenario, snapshot }: { scenario: DemoScenario; sn
   const requests = getRequestViews(scenario, snapshot.state);
   return (
     <article className="print-report" aria-labelledby="report-title">
-      <header>
+      <header><DemoBanners printable />
         <p className="eyebrow">{t("legacy.printreport.1")}</p><h2 id="report-title">{t("legacy.printreport.2")}</h2><p><strong>{authored(t, scenario.title)}</strong></p>
         <p>{t("legacy.printreport.3")}<LocalTime iso={snapshot.generatedAt} />{t("legacy.printreport.4")}</p><p>{authored(t, scenario.disclosure)}</p>
         <p><strong>{t("legacy.printreport.5")}</strong>{t("legacy.printreport.6")}</p>

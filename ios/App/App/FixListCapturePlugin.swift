@@ -10,6 +10,24 @@ import UIKit
 
 let captureLog = OSLog(subsystem: "org.fixlist.app", category: "RoomCapture")
 
+#if DEBUG && targetEnvironment(simulator)
+/// Explicit, synthetic layout review only. Compiled out of Release and device builds.
+enum CaptureUIPreview {
+    static var enabled: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: "-FixListCaptureUIPreview"), index + 1 < args.count else { return false }
+        return args[index + 1] == "1"
+    }
+    /// Optional `-FixListCaptureUIPreviewState N` (0-4) starts the preview at a given state for screenshots.
+    static var initialState: Int {
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: "-FixListCaptureUIPreviewState"), index + 1 < args.count,
+              let value = Int(args[index + 1]), (0..<5).contains(value) else { return 0 }
+        return value
+    }
+}
+#endif
+
 struct CapturePrompt {
     let checklistItemId: String?
     let text: String
@@ -25,11 +43,25 @@ struct CaptureOptions {
     // Keep these keys in exact parity with NATIVE_CAPTURE_STRING_KEYS. Missing or
     // empty translations fall back individually; no native UI text is invented.
     static let english = [
+        "stepOutline": "Step 1 of 2 · Outline the floor",
+        "stepPhotos": "Step 2 of 2 · Photos",
+        "aimCorner": "Aim the dot at a floor corner, then tap +.",
+        "moreCorners": "Add more corners, or tap Done.",
+        "closeAtFirst": "Tap + to close the outline.",
+        "addCorner": "Add a corner at the centre dot",
+        "moreOptions": "More capture options",
+        "usePhoto": "Use photo",
+        "doorChip": "Door",
+        "approximateShort": "Approximate sketch · not a measurement.",
+        "previewNextState": "Preview: next state",
         "findFloor": "Point the phone at the floor and move it slowly.",
         "floorFound": "Floor found.",
         "trackingLimited": "Move slowly; point at something with texture.",
         "interrupted": "Room tracking was interrupted. Return to the same place.",
         "relocalizeFailed": "Room tracking restarted. The old outline and photo positions were cleared.",
+        "restartTracking": "Restart room tracking",
+        "restartConfirmTitle": "Restart room tracking?",
+        "restartConfirmMessage": "The outline and photo positions will be cleared. Your photos will be kept.",
         "tapCorners": "Tap each corner of the room on the floor.",
         "cornerCount": "{count} corners",
         "undo": "Undo", "closeOutline": "Close outline", "markDoor": "Mark a door",
@@ -41,6 +73,21 @@ struct CaptureOptions {
         "cancelConfirmMessage": "The photos from this walk-through will be removed.",
         "cancelConfirmStop": "Stop and remove photos", "cancelConfirmKeep": "Keep going"
     ]
+
+    #if DEBUG && targetEnvironment(simulator)
+    init(uiPreview: Void) {
+        captureId = "cap-ui-preview-only"
+        roomId = "living-room"
+        roomName = "Living room"
+        prompts = [
+            CapturePrompt(checklistItemId: nil, text: "Take a photo of the room."),
+            CapturePrompt(checklistItemId: nil, text: "Photograph the floor and the path through the room."),
+            CapturePrompt(checklistItemId: nil, text: "Photograph the doorway."),
+            CapturePrompt(checklistItemId: nil, text: "Take one more photo of the room.")
+        ]
+        strings = Self.english
+    }
+    #endif
 
     init?(call: CAPPluginCall) {
         guard let id = call.getString("captureId"), CaptureFiles.validId(id),
@@ -94,6 +141,44 @@ enum CaptureFiles {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         return formatter.string(from: date)
+    }
+}
+
+/// Selection is pure so changes in plane estimates can be checked without an
+/// AR session. Once a point or posed photo uses a floor, it is a drawing origin.
+enum CaptureFloorMath {
+    static func select(previous: Float?, heights: [Float], locked: Bool) -> Float? {
+        if locked { return previous }
+        return heights.min()
+    }
+
+    static func candidate(height: Float, cameraY: Float, classification: ARPlaneAnchor.Classification) -> Float? {
+        // ARKit's refined .none carries a classification Status; it is not
+        // Optional.none. Pattern matching also works before iOS 16, when this
+        // SDK enum did not yet provide its Equatable conformance.
+        switch classification {
+        case .floor, .none(_): break
+        default: return nil
+        }
+        guard height.isFinite, cameraY.isFinite, abs(height) <= 50, height < cameraY else { return nil }
+        return height
+    }
+
+    /// Extend the selected approximate floor, rather than whichever detected
+    /// plane happens to answer a later raycast (or no longer exists after merge).
+    static func intersection(origin: SIMD3<Float>, direction: SIMD3<Float>, floorY: Float) -> SIMD2<Float>? {
+        guard origin.x.isFinite, origin.y.isFinite, origin.z.isFinite,
+              direction.x.isFinite, direction.y.isFinite, direction.z.isFinite,
+              floorY.isFinite else { return nil }
+        let length = simd_length(direction)
+        guard length > 0.0001 else { return nil }
+        let ray = direction / length
+        guard ray.y < -0.0001, origin.y > floorY else { return nil }
+        let distance = (floorY - origin.y) / ray.y
+        guard distance >= 0.05, distance <= 15 else { return nil }
+        let hit = origin + ray * distance
+        guard hit.x.isFinite, hit.z.isFinite, abs(hit.x) <= 50, abs(hit.z) <= 50 else { return nil }
+        return SIMD2(hit.x, hit.z)
     }
 }
 
@@ -290,6 +375,9 @@ public class FixListCapturePlugin: CAPPlugin, CAPBridgedPlugin {
         CapturePortraitMath.selfTest()
         #endif
         #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.presentUIPreview() }
+        }
         // Opt-in integration probe for a Simulator with no WebKit inspector.
         // It invokes the actual JS bridge, never native methods directly. It
         // shares only synthetic text and waits for the tester to dismiss the
@@ -301,6 +389,23 @@ public class FixListCapturePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     #if DEBUG && targetEnvironment(simulator)
+    private func presentUIPreview(attempt: Int = 0) {
+        // Give the launch window time to appear; never interrupt another sheet.
+        guard CaptureUIPreview.enabled, let presenter = bridge?.viewController else { return }
+        guard presenter.viewIfLoaded?.window != nil else {
+            if attempt < 20 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.presentUIPreview(attempt: attempt + 1) }
+            }
+            return
+        }
+        guard presenter.presentedViewController == nil, activeCapture == nil else { return }
+        let controller = FixListCaptureViewController(options: CaptureOptions(uiPreview: ())) { [weak self] _ in
+            self?.activeCapture = nil
+        }
+        activeCapture = controller
+        presenter.present(controller, animated: true)
+    }
+
     private func runSimulatorBridgeProbe() {
         let script = """
         for (let attempt = 0; attempt < 50 && !window.Capacitor?.Plugins?.FixListCapture; attempt++) {
@@ -349,6 +454,9 @@ public class FixListCapturePlugin: CAPPlugin, CAPBridgedPlugin {
         case .notDetermined: permission = "not-determined"
         @unknown default: permission = "restricted"
         }
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { call.resolve(["arkit": true, "camera": permission]); return }
+        #endif
         call.resolve(["arkit": ARWorldTrackingConfiguration.isSupported, "camera": permission])
     }
 
@@ -360,6 +468,22 @@ public class FixListCapturePlugin: CAPPlugin, CAPBridgedPlugin {
             guard self.pendingCall == nil, !self.sharing else {
                 call.resolve(["status": "failed", "reason": "capture-busy"]); return
             }
+            #if DEBUG && targetEnvironment(simulator)
+            if CaptureUIPreview.enabled {
+                guard let presenter = self.bridge?.viewController, presenter.presentedViewController == nil,
+                      presenter.viewIfLoaded?.window != nil else {
+                    call.resolve(["status": "failed", "reason": "capture-view-unavailable"]); return
+                }
+                self.pendingCall = call
+                self.pendingId = options.captureId
+                let controller = FixListCaptureViewController(options: options) { [weak self] outcome in
+                    self?.resolveStart(call, outcome: outcome)
+                }
+                self.activeCapture = controller
+                presenter.present(controller, animated: true)
+                return
+            }
+            #endif
             guard ARWorldTrackingConfiguration.isSupported else { call.resolve(["status": "unavailable"]); return }
             self.pendingCall = call
             self.pendingId = options.captureId

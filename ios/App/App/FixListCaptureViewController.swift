@@ -11,23 +11,42 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private let options: CaptureOptions
     private let completion: ([String: Any]) -> Void
     private let createdAt = CaptureFiles.timestamp()
-    private let arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
+    private let arView: ARView
     private let overlay = AnchorEntity(world: .zero)
+    // Transient aiming geometry never enters the saved outline or its history.
+    private let aimOverlay = AnchorEntity(world: .zero)
+    private let aimRing = Entity()
+    private let aimLine = ModelEntity(mesh: .generateBox(size: SIMD3(0.009, 0.006, 1)),
+                                      materials: [UnlitMaterial(color: .white)])
+    private let coaching = ARCoachingOverlayView()
     private let statusLabel = UILabel()
-    private let resetLabel = UILabel()
     private let promptLabel = UILabel()
+    private let stepLabel = UILabel()
     private let countLabel = UILabel()
+    private let doorChip = UILabel()
+    private let instructionIcon = UIImageView()
+    private let reticle = UIImageView()
     private let preview = UIImageView()
-    private let buttons = UIStackView()
+    private let topChrome = UIStackView()
+    private let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
+    private let outlineControls = UIView()
+    private let photoControls = UIView()
+    private let reviewControls = UIStackView()
     private var undoButton = UIButton()
     private var closeButton = UIButton()
-    private var doorButton = UIButton()
-    private var skipOutlineButton = UIButton()
-    private var resetButton = UIButton()
+    private var addButton = UIButton()
+    private var menuButton = UIButton()
     private var shutterButton = UIButton()
     private var retakeButton = UIButton()
     private var skipButton = UIButton()
     private var nextButton = UIButton()
+    private var aimPosition: SIMD2<Float>?
+    private var aimSnapsToFirst = false
+    #if DEBUG && targetEnvironment(simulator)
+    private var uiPreviewState = 0
+    private var uiPreviewHasPhoto = false
+    private let uiPreviewGradient = CAGradientLayer()
+    #endif
     private var step = Step.floor
     private var floorY: Float?
     private var planeHeights: [UUID: Float] = [:]
@@ -59,6 +78,12 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     init(options: CaptureOptions, completion: @escaping ([String: Any]) -> Void) {
         self.options = options
         self.completion = completion
+        #if DEBUG && targetEnvironment(simulator)
+        arView = ARView(frame: .zero, cameraMode: CaptureUIPreview.enabled ? .nonAR : .ar,
+                        automaticallyConfigureSession: false)
+        #else
+        arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
+        #endif
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
         isModalInPresentation = true
@@ -80,15 +105,10 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             arView.leadingAnchor.constraint(equalTo: view.leadingAnchor), arView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             arView.topAnchor.constraint(equalTo: view.topAnchor), arView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-        // Disable ARView's automatic configuration: only the explicit horizontal
-        // plane configuration below may run, with no depth or reconstruction.
-        arView.session.delegateQueue = .main
-        arView.session.delegate = self
-        arView.scene.addAnchor(overlay)
         arView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
         arView.isAccessibilityElement = true
-        arView.accessibilityLabel = text("tapCorners")
-        arView.accessibilityCustomActions = [UIAccessibilityCustomAction(name: text("tapCorners"), target: self,
+        arView.accessibilityLabel = text("aimCorner")
+        arView.accessibilityCustomActions = [UIAccessibilityCustomAction(name: text("addCorner"), target: self,
                                                                        selector: #selector(placeAtCenter))]
 
         preview.translatesAutoresizingMaskIntoConstraints = false
@@ -103,6 +123,21 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             preview.topAnchor.constraint(equalTo: view.topAnchor), preview.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         makeControls()
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled {
+            makeUIPreview()
+            return // No AR session, lifecycle observer, camera access or capture files.
+        }
+        #endif
+        // Only this explicit horizontal-plane session may run; no depth or reconstruction.
+        arView.session.delegateQueue = .main
+        arView.session.delegate = self
+        arView.scene.addAnchor(overlay)
+        arView.scene.addAnchor(aimOverlay)
+        makeAimGeometry()
+        coaching.session = arView.session
+        coaching.goal = .horizontalPlane
+        coaching.activatesAutomatically = true
         let center = NotificationCenter.default
         observers = [
             center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -124,7 +159,17 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         guard !finished else { return }
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { return }
+        #endif
         arView.session.run(configuration())
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { uiPreviewGradient.frame = arView.bounds }
+        #endif
     }
 
     private func configuration() -> ARWorldTrackingConfiguration {
@@ -137,165 +182,348 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     }
 
     private func text(_ key: String) -> String { options.strings[key] ?? CaptureOptions.english[key] ?? key }
-    private func label(_ key: String, size: CGFloat = 18, weight: UIFont.Weight = .regular) -> UILabel {
-        let label = UILabel()
-        label.text = text(key)
+    private func styleLabel(_ label: UILabel, size: CGFloat = 17, weight: UIFont.Weight = .regular,
+                            style: UIFont.TextStyle = .body) {
         label.textColor = .white
         label.numberOfLines = 0
-        label.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: size, weight: weight))
-        label.adjustsFontForContentSizeCategory = true
-        return label
-    }
-    private func styleLabel(_ label: UILabel) {
-        label.textColor = .white
-        label.numberOfLines = 0
-        label.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 18, weight: .semibold))
+        label.font = UIFontMetrics(forTextStyle: style).scaledFont(for: .systemFont(ofSize: size, weight: weight))
         label.adjustsFontForContentSizeCategory = true
     }
-    private func button(_ key: String, action: Selector) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setTitle(text(key), for: .normal)
+
+    private func button(_ key: String, symbol: String? = nil, action: Selector? = nil,
+                        diameter: CGFloat? = nil) -> UIButton {
+        let button: UIButton = diameter == nil ? UIButton(type: .system) : CircularButton(type: .system)
+        var config = UIButton.Configuration.plain()
+        config.baseForegroundColor = .white
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+        if let symbol = symbol {
+            config.image = UIImage(systemName: symbol)
+            config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        } else { config.title = text(key) }
+        button.configuration = config
         button.accessibilityLabel = text(key)
-        button.titleLabel?.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 18, weight: .semibold))
+        button.titleLabel?.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold))
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.numberOfLines = 0
         button.titleLabel?.textAlignment = .center
-        button.setTitleColor(.white, for: .normal)
-        button.setTitleColor(.lightGray, for: .disabled)
-        button.backgroundColor = UIColor(red: 0.08, green: 0.20, blue: 0.42, alpha: 1)
-        button.layer.cornerRadius = 8
-        // Use configuration instead of deprecated contentEdgeInsets (iOS 15+).
-        var configuration = UIButton.Configuration.plain()
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
-        button.configuration = configuration
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
-        button.addTarget(self, action: action, for: .touchUpInside)
+        if let diameter = diameter {
+            button.widthAnchor.constraint(equalToConstant: diameter).isActive = true
+            button.heightAnchor.constraint(equalToConstant: diameter).isActive = true
+            button.layer.cornerRadius = diameter / 2
+            button.backgroundColor = UIColor(white: 1, alpha: 0.10)
+        }
+        if let action = action { button.addTarget(self, action: action, for: .touchUpInside) }
         return button
     }
 
-    private func panel(_ stack: UIStackView, top: Bool) {
-        let scroll = UIScrollView()
-        scroll.backgroundColor = UIColor(white: 0.035, alpha: 0.97)
-        scroll.layer.cornerRadius = 12
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(scroll)
-        stack.axis = .vertical
-        stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        scroll.addSubview(stack)
-        let desiredHeight = scroll.heightAnchor.constraint(equalTo: stack.heightAnchor, constant: 24)
-        desiredHeight.priority = .defaultHigh
+    private func material(_ style: UIBlurEffect.Style = .systemUltraThinMaterialDark) -> UIVisualEffectView {
+        let panel = UIVisualEffectView(effect: UIBlurEffect(style: style))
+        panel.layer.cornerRadius = 16
+        panel.clipsToBounds = true
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        return panel
+    }
+
+    private func pin(_ child: UIView, to parent: UIView, inset: CGFloat = 0) {
+        child.translatesAutoresizingMaskIntoConstraints = false
+        parent.addSubview(child)
         NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
-            scroll.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            scroll.heightAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.heightAnchor, multiplier: top ? 0.32 : 0.50),
-            desiredHeight,
-            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -12),
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 12),
-            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -12),
-            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -24)
+            child.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: inset),
+            child.trailingAnchor.constraint(equalTo: parent.trailingAnchor, constant: -inset),
+            child.topAnchor.constraint(equalTo: parent.topAnchor, constant: inset),
+            child.bottomAnchor.constraint(equalTo: parent.bottomAnchor, constant: -inset)
         ])
-        if top { scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4).isActive = true }
-        else { scroll.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4).isActive = true }
     }
 
     private func makeControls() {
-        let heading = UIStackView()
-        let cancel = button("cancel", action: #selector(cancelTapped))
-        let room = label("approximate", size: 22, weight: .bold)
-        room.text = options.roomName
-        room.accessibilityTraits = .header
-        styleLabel(statusLabel)
-        styleLabel(resetLabel)
-        resetLabel.text = text("relocalizeFailed")
-        heading.addArrangedSubview(cancel)
-        heading.addArrangedSubview(room)
-        heading.addArrangedSubview(label("approximate", size: 16))
-        heading.addArrangedSubview(statusLabel)
-        heading.addArrangedSubview(resetLabel)
-        panel(heading, top: true)
+        // Coaching sits behind the chrome, leaving Cancel and Skip outline reachable.
+        pin(coaching, to: view)
+        coaching.isUserInteractionEnabled = false
+        coaching.isHidden = true
+        view.bringSubviewToFront(preview)
+        topChrome.axis = .vertical
+        topChrome.spacing = 8
+        topChrome.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(topChrome)
 
+        let bar = material()
+        let cancel = button("cancel", symbol: "xmark", action: #selector(cancelTapped), diameter: 44)
+        menuButton = button("moreOptions", symbol: "ellipsis", diameter: 44)
+        menuButton.showsMenuAsPrimaryAction = true
+        menuButton.accessibilityIdentifier = "capture.moreOptions"
+        let room = UILabel()
+        styleLabel(room, size: 17, weight: .semibold, style: .headline)
+        room.text = options.roomName
+        room.numberOfLines = 1
+        room.lineBreakMode = .byTruncatingTail
+        room.textAlignment = .center
+        room.accessibilityTraits = .header
+        styleLabel(stepLabel, size: 12, weight: .medium, style: .caption1)
+        stepLabel.numberOfLines = 1
+        stepLabel.textAlignment = .center
+        stepLabel.backgroundColor = UIColor(white: 1, alpha: 0.12)
+        stepLabel.layer.cornerRadius = 8
+        stepLabel.clipsToBounds = true
+        let title = UIStackView(arrangedSubviews: [room, stepLabel])
+        title.axis = .vertical
+        title.spacing = 3
+        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let heading = UIStackView(arrangedSubviews: [cancel, title, menuButton])
+        heading.alignment = .center
+        heading.spacing = 10
+        pin(heading, to: bar.contentView, inset: 6)
+        bar.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        topChrome.addArrangedSubview(bar)
+
+        let instruction = material(.systemThinMaterialDark)
+        let scroll = UIScrollView()
+        scroll.alwaysBounceVertical = false
+        pin(scroll, to: instruction.contentView)
+        instructionIcon.tintColor = .white
+        instructionIcon.contentMode = .scaleAspectFit
+        instructionIcon.isAccessibilityElement = false
+        instructionIcon.translatesAutoresizingMaskIntoConstraints = false
+        instructionIcon.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        instructionIcon.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        styleLabel(statusLabel, weight: .semibold)
         styleLabel(promptLabel)
-        styleLabel(countLabel)
-        buttons.addArrangedSubview(countLabel)
-        buttons.addArrangedSubview(promptLabel)
-        undoButton = button("undo", action: #selector(undoTapped))
-        closeButton = button("closeOutline", action: #selector(closeTapped))
-        doorButton = button("markDoor", action: #selector(doorTapped))
-        skipOutlineButton = button("skipOutline", action: #selector(skipOutlineTapped))
-        resetButton = button("skipOutline", action: #selector(resetTapped))
-        resetButton.accessibilityHint = text("relocalizeFailed")
-        shutterButton = button("shutter", action: #selector(shutterTapped))
-        retakeButton = button("retake", action: #selector(retakeTapped))
+        let approximate = UILabel()
+        styleLabel(approximate, size: 12, style: .caption1)
+        approximate.text = text("approximateShort")
+        approximate.textColor = UIColor(white: 0.90, alpha: 1)
+        let instructions = UIStackView(arrangedSubviews: [statusLabel, promptLabel, approximate])
+        instructions.axis = .vertical
+        instructions.spacing = 3
+        let instructionRow = UIStackView(arrangedSubviews: [instructionIcon, instructions])
+        instructionRow.alignment = .top
+        instructionRow.spacing = 10
+        instructionRow.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(instructionRow)
+        let naturalHeight = instruction.heightAnchor.constraint(equalTo: instructionRow.heightAnchor, constant: 20)
+        naturalHeight.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            instructionRow.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 12),
+            instructionRow.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -12),
+            instructionRow.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 10),
+            instructionRow.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -10),
+            instructionRow.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -24),
+            instruction.heightAnchor.constraint(greaterThanOrEqualToConstant: 28), naturalHeight
+        ])
+        topChrome.addArrangedSubview(instruction)
+
+        reticle.image = UIImage(systemName: "scope", withConfiguration: UIImage.SymbolConfiguration(pointSize: 28, weight: .light))
+        reticle.tintColor = .white
+        reticle.layer.shadowColor = UIColor.black.cgColor
+        reticle.layer.shadowOpacity = 0.8
+        reticle.layer.shadowRadius = 2
+        reticle.layer.shadowOffset = .zero
+        reticle.isUserInteractionEnabled = false
+        reticle.isAccessibilityElement = false
+        reticle.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(reticle)
+
+        bottomBar.layer.cornerRadius = 24
+        bottomBar.clipsToBounds = true
+        bottomBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomBar)
+        styleLabel(countLabel, size: 12, weight: .semibold, style: .caption1)
+        countLabel.textAlignment = .center
+        styleLabel(doorChip, size: 12, weight: .semibold, style: .caption1)
+        doorChip.text = text("doorChip")
+        doorChip.textAlignment = .center
+        doorChip.backgroundColor = UIColor(white: 1, alpha: 0.14)
+        doorChip.layer.cornerRadius = 8
+        doorChip.clipsToBounds = true
+        doorChip.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(doorChip)
+
+        undoButton = button("undo", symbol: "arrow.uturn.backward", action: #selector(undoTapped), diameter: 48)
+        addButton = button("addCorner", symbol: "plus", action: #selector(addTapped), diameter: 72)
+        addButton.backgroundColor = .white
+        addButton.configuration?.baseForegroundColor = .black
+        addButton.configuration?.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
+        addButton.accessibilityIdentifier = "capture.addCorner"
+        closeButton = button("done", action: #selector(closeTapped))
+        closeButton.accessibilityHint = text("closeOutline")
+        layoutCameraControls(in: outlineControls, leading: undoButton, center: addButton, trailing: closeButton)
+        countLabel.translatesAutoresizingMaskIntoConstraints = false
+        outlineControls.addSubview(countLabel)
+        NSLayoutConstraint.activate([
+            countLabel.centerXAnchor.constraint(equalTo: outlineControls.centerXAnchor),
+            countLabel.topAnchor.constraint(equalTo: outlineControls.topAnchor, constant: 4),
+            countLabel.leadingAnchor.constraint(greaterThanOrEqualTo: outlineControls.leadingAnchor, constant: 8),
+            countLabel.trailingAnchor.constraint(lessThanOrEqualTo: outlineControls.trailingAnchor, constant: -8),
+            countLabel.bottomAnchor.constraint(lessThanOrEqualTo: addButton.topAnchor, constant: -3)
+        ])
+        shutterButton = button("shutter", action: #selector(shutterTapped), diameter: 72)
+        shutterButton.backgroundColor = .clear
+        shutterButton.layer.borderColor = UIColor.white.cgColor
+        shutterButton.layer.borderWidth = 3
+        let shutterDisc = UIView()
+        shutterDisc.backgroundColor = .white
+        shutterDisc.layer.cornerRadius = 29
+        shutterDisc.isUserInteractionEnabled = false
+        shutterDisc.isAccessibilityElement = false
+        pin(shutterDisc, to: shutterButton, inset: 7)
+        shutterButton.accessibilityIdentifier = "capture.shutter"
         skipButton = button("skip", action: #selector(skipTapped))
-        nextButton = button("next", action: #selector(nextTapped))
-        for button in [undoButton, closeButton, doorButton, skipOutlineButton, resetButton,
-                       shutterButton, retakeButton, skipButton, nextButton] { buttons.addArrangedSubview(button) }
-        panel(buttons, top: false)
+        layoutCameraControls(in: photoControls, leading: skipButton, center: shutterButton)
+
+        retakeButton = button("retake", action: #selector(retakeTapped))
+        nextButton = button("usePhoto", action: #selector(nextTapped))
+        nextButton.backgroundColor = .white
+        nextButton.configuration?.baseForegroundColor = .black
+        nextButton.layer.cornerRadius = 16
+        reviewControls.axis = .horizontal
+        reviewControls.distribution = .fillEqually
+        reviewControls.spacing = 12
+        pin(reviewControls, to: bottomBar.contentView, inset: 16)
+        reviewControls.addArrangedSubview(retakeButton)
+        reviewControls.addArrangedSubview(nextButton)
+
+        // Combined top/bottom chrome is capped at 30% of the viewport. Long
+        // prompts and larger Dynamic Type scroll inside the instruction card.
+        NSLayoutConstraint.activate([
+            topChrome.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            topChrome.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            topChrome.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            topChrome.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor, multiplier: 0.30, constant: -104),
+            bottomBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            bottomBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            bottomBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4),
+            bottomBar.heightAnchor.constraint(equalToConstant: 104),
+            reticle.centerXAnchor.constraint(equalTo: arView.centerXAnchor),
+            reticle.centerYAnchor.constraint(equalTo: arView.centerYAnchor),
+            reticle.widthAnchor.constraint(equalToConstant: 28), reticle.heightAnchor.constraint(equalToConstant: 28),
+            doorChip.centerXAnchor.constraint(equalTo: reticle.centerXAnchor),
+            doorChip.topAnchor.constraint(equalTo: reticle.bottomAnchor, constant: 12),
+            doorChip.heightAnchor.constraint(greaterThanOrEqualToConstant: 24),
+            doorChip.widthAnchor.constraint(greaterThanOrEqualToConstant: 64)
+        ])
+    }
+
+    private func layoutCameraControls(in container: UIView, leading: UIButton, center: UIButton, trailing: UIButton? = nil) {
+        pin(container, to: bottomBar.contentView)
+        container.addSubview(leading)
+        container.addSubview(center)
+        NSLayoutConstraint.activate([
+            leading.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            leading.centerYAnchor.constraint(equalTo: center.centerYAnchor),
+            center.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            center.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+            leading.trailingAnchor.constraint(lessThanOrEqualTo: center.leadingAnchor, constant: -8)
+        ])
+        if let trailing = trailing {
+            container.addSubview(trailing)
+            NSLayoutConstraint.activate([
+                trailing.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+                trailing.centerYAnchor.constraint(equalTo: center.centerYAnchor),
+                trailing.leadingAnchor.constraint(greaterThanOrEqualTo: center.trailingAnchor, constant: 8)
+            ])
+        }
+    }
+
+    private func updateMenu() {
+        let restart = UIAction(title: text("restartTracking"), image: UIImage(systemName: "arrow.clockwise"),
+                               attributes: .destructive) { [weak self] _ in self?.resetTapped() }
+        restart.accessibilityLabel = text("restartTracking")
+        restart.accessibilityHint = text("restartConfirmMessage")
+        var actions = [restart]
+        if step != .photos {
+            actions.append(UIAction(title: text("skipOutline"), image: UIImage(systemName: "arrow.right")) { [weak self] _ in
+                self?.skipOutlineTapped()
+            })
+        }
+        if step == .outline {
+            let door = UIAction(title: text("markDoor"), image: UIImage(systemName: "door.left.hand.open"),
+                                attributes: trackingNormal && !interrupted && doors.count < 8 ? [] : .disabled,
+                                state: doorMode ? .on : .off) { [weak self] _ in self?.doorTapped() }
+            actions.append(door)
+        }
+        menuButton.menu = UIMenu(children: actions)
     }
 
     private func refresh() {
         guard isViewLoaded, !finished else { return }
         let isPhotos = step == .photos
         let isOutline = step == .outline
-        let hasPhoto = pendingPhoto != nil
+        var hasPhoto = pendingPhoto != nil
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { hasPhoto = uiPreviewHasPhoto }
+        #endif
+        let progress = text("photoProgress").replacingOccurrences(of: "{current}", with: String(promptIndex + 1))
+            .replacingOccurrences(of: "{total}", with: String(prompts.count))
         let status: String
         if interrupted { status = text("interrupted") }
+        else if resetNotice && !trackingNormal { status = text("relocalizeFailed") }
+        else if step == .floor && !relocalizing { status = text("findFloor") }
         else if !trackingNormal { status = text("trackingLimited") }
-        else if step == .floor { status = text("findFloor") }
-        else if isOutline { status = (doorMode ? text("doorMode") : text("floorFound") + " " + text("tapCorners")) }
-        else { status = text("photoProgress").replacingOccurrences(of: "{current}", with: String(promptIndex + 1))
-                .replacingOccurrences(of: "{total}", with: String(prompts.count)) }
+        else if isOutline {
+            status = text(doorMode ? "doorMode" : aimSnapsToFirst ? "closeAtFirst" : corners.count >= 3 ? "moreCorners" : "aimCorner")
+        } else { status = progress }
+        styleLabel(statusLabel, size: isPhotos ? 13 : 17, weight: .semibold, style: isPhotos ? .caption1 : .body)
         statusLabel.text = status
         if status != lastStatus {
             lastStatus = status
             UIAccessibility.post(notification: .announcement, argument: status)
         }
-        resetLabel.isHidden = !resetNotice
-        countLabel.isHidden = !isOutline
+        stepLabel.text = text(isPhotos ? "stepPhotos" : "stepOutline")
+        instructionIcon.image = UIImage(systemName: interrupted || !trackingNormal && step != .floor ? "exclamationmark.triangle" :
+                                        isPhotos ? "camera" : step == .floor ? "viewfinder" : aimSnapsToFirst ? "checkmark.circle" : "plus.viewfinder")
+        instructionIcon.tintColor = aimSnapsToFirst && isOutline ? .systemGreen : .white
         countLabel.text = text("cornerCount").replacingOccurrences(of: "{count}", with: String(corners.count))
         promptLabel.isHidden = !isPhotos
         if isPhotos { promptLabel.text = prompts[promptIndex].text }
-        undoButton.isHidden = !isOutline
-        undoButton.isEnabled = !history.isEmpty
-        closeButton.isHidden = !isOutline
-        closeButton.isEnabled = corners.count >= 3 && trackingNormal && !interrupted
-        doorButton.isHidden = !isOutline
-        doorButton.isSelected = doorMode
-        doorButton.isEnabled = trackingNormal && !interrupted && doors.count < 8
-        doorButton.setTitle(text(doorMode ? "doorMode" : "markDoor"), for: .normal)
-        doorButton.accessibilityLabel = text(doorMode ? "doorMode" : "markDoor")
-        skipOutlineButton.isHidden = isPhotos || relocalizing
-        resetButton.isHidden = !relocalizing
-        shutterButton.isHidden = !isPhotos || hasPhoto
+        outlineControls.isHidden = isPhotos
+        photoControls.isHidden = !isPhotos || hasPhoto
+        reviewControls.isHidden = !isPhotos || !hasPhoto
+        countLabel.isHidden = !isOutline
+        undoButton.isEnabled = isOutline && !history.isEmpty
+        closeButton.isEnabled = isOutline && corners.count >= 3 && trackingNormal && !interrupted
+        addButton.isEnabled = isOutline && aimPosition != nil && trackingNormal && !interrupted &&
+            (doorMode ? doors.count < 8 : corners.count < 32 || aimSnapsToFirst)
+        addButton.alpha = addButton.isEnabled ? 1 : 0.45
+        addButton.accessibilityLabel = text(doorMode ? "markDoor" : aimSnapsToFirst ? "closeOutline" : "addCorner")
         shutterButton.isEnabled = trackingNormal && !interrupted && !saving
-        retakeButton.isHidden = !isPhotos || !hasPhoto
+        shutterButton.alpha = shutterButton.isEnabled ? 1 : 0.45
         retakeButton.isEnabled = !saving
-        skipButton.isHidden = !isPhotos
         skipButton.isEnabled = !saving
-        nextButton.isHidden = !isPhotos
-        nextButton.isEnabled = !saving && (hasPhoto || (promptIndex == prompts.count - 1 && !photos.isEmpty))
-        let nextKey = promptIndex == prompts.count - 1 ? "done" : "next"
-        nextButton.setTitle(text(nextKey), for: .normal)
+        nextButton.isEnabled = !saving && hasPhoto
+        let nextKey = promptIndex == prompts.count - 1 ? "done" : "usePhoto"
+        nextButton.configuration?.title = text(nextKey)
         nextButton.accessibilityLabel = text(nextKey)
         arView.isAccessibilityElement = !isPhotos
+        arView.accessibilityElementsHidden = hasPhoto
         preview.isHidden = !hasPhoto
+        doorChip.isHidden = !isOutline || !doorMode
+        reticle.isHidden = !isOutline || !trackingNormal || interrupted
+        aimOverlay.isEnabled = isOutline && trackingNormal && !interrupted && aimPosition != nil
+        reticle.tintColor = aimSnapsToFirst ? .systemGreen : .white
+        reticle.image = UIImage(systemName: aimSnapsToFirst ? "checkmark.circle" : "scope")
+        reticle.alpha = aimPosition == nil ? 0.45 : 1
+        coaching.isHidden = step != .floor || hasPhoto || interrupted
+        if coaching.isHidden { coaching.setActive(false, animated: false) }
+        updateMenu()
     }
 
     @objc private func tapped(_ gesture: UITapGestureRecognizer) { place(at: gesture.location(in: arView)) }
     @objc private func placeAtCenter() -> Bool {
-        place(at: CGPoint(x: arView.bounds.midX, y: arView.bounds.midY))
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { advanceUIPreview(); return true }
+        #endif
+        updateAim()
+        if aimSnapsToFirst && !doorMode { closeTapped() }
+        else { place(at: CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)) }
         return true
     }
+    @objc private func addTapped() { _ = placeAtCenter() }
     private func place(at point: CGPoint) {
         guard step == .outline, trackingNormal, !interrupted, let floor = floorY, !finished,
-              let query = arView.makeRaycastQuery(from: point, allowing: .existingPlaneInfinite, alignment: .horizontal)
-                ?? arView.makeRaycastQuery(from: point, allowing: .estimatedPlane, alignment: .horizontal) else { return }
-        guard let result = arView.session.raycast(query).first(where: { abs($0.worldTransform[3].y - floor) <= 0.15 }) else { return }
-        let position = SIMD2(result.worldTransform[3].x, result.worldTransform[3].z)
-        guard position.x.isFinite, position.y.isFinite, abs(position.x) <= 50, abs(position.y) <= 50 else { return }
+              let ray = arView.ray(through: point),
+              let position = CaptureFloorMath.intersection(origin: ray.origin, direction: ray.direction, floorY: floor) else { return }
         if doorMode {
             guard doors.count < 8 else { return }
             doors.append(position)
@@ -308,10 +536,77 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             corners.append(position)
             history.append(.corner)
         }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         drawOutline()
+        updateAim()
         refresh()
         UIAccessibility.post(notification: .announcement, argument: countLabel.text)
+    }
+
+    private func makeAimGeometry() {
+        // A reusable flat ring: no mesh allocation on frame callbacks.
+        let radius: Float = 0.085
+        let pieces = 32
+        for index in 0..<pieces {
+            let angle = Float(index) * 2 * .pi / Float(pieces)
+            let segment = ModelEntity(mesh: .generateBox(size: SIMD3(0.012, 0.004, 2 * .pi * radius / Float(pieces))),
+                                      materials: [UnlitMaterial(color: .white)])
+            segment.position = SIMD3(cos(angle) * radius, 0, sin(angle) * radius)
+            segment.orientation = simd_quatf(angle: -angle, axis: SIMD3(0, 1, 0))
+            aimRing.addChild(segment)
+        }
+        aimOverlay.addChild(aimRing)
+        aimOverlay.addChild(aimLine)
+        aimOverlay.isEnabled = false
+    }
+
+    private func shouldSnapToFirst(_ position: SIMD2<Float>) -> Bool {
+        !doorMode && corners.count >= 3 && corners.first.map { simd_distance($0, position) <= 0.25 } == true
+    }
+
+    private func updateAim() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled {
+            aimSnapsToFirst = aimPosition.map(shouldSnapToFirst) ?? false
+            refresh()
+            return
+        }
+        #endif
+        let oldHasAim = aimPosition != nil
+        let oldSnap = aimSnapsToFirst
+        aimPosition = nil
+        aimSnapsToFirst = false
+        if step == .outline, trackingNormal, !interrupted, !finished, let floor = floorY,
+           let ray = arView.ray(through: CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)),
+           let position = CaptureFloorMath.intersection(origin: ray.origin, direction: ray.direction, floorY: floor) {
+            // Raycast against the SAME saved plane as taps, even if ARKit has
+            // removed its anchors. It must not jump to a newly estimated plane.
+            aimSnapsToFirst = shouldSnapToFirst(position)
+            aimPosition = aimSnapsToFirst ? corners.first : position
+            if let target = aimPosition {
+                aimRing.position = SIMD3(target.x, floor + 0.012, target.y)
+                if oldSnap != aimSnapsToFirst {
+                    let color: UIColor = aimSnapsToFirst ? .systemGreen : .white
+                    for case let segment as ModelEntity in aimRing.children {
+                        segment.model?.materials = [UnlitMaterial(color: color)]
+                    }
+                }
+                aimLine.isEnabled = !doorMode && !corners.isEmpty
+                if let last = corners.last, !doorMode {
+                    let start = SIMD3(last.x, floor + 0.015, last.y)
+                    let end = SIMD3(target.x, floor + 0.015, target.y)
+                    let length = simd_distance(start, end)
+                    aimLine.isEnabled = length > 0.001
+                    if length > 0.001 {
+                        aimLine.position = (start + end) / 2
+                        aimLine.scale = SIMD3(1, 1, length)
+                        aimLine.orientation = simd_quatf(from: SIMD3(0, 0, 1), to: simd_normalize(end - start))
+                    }
+                }
+            }
+        }
+        aimOverlay.isEnabled = aimPosition != nil
+        if oldHasAim != (aimPosition != nil) || oldSnap != aimSnapsToFirst { refresh() }
     }
 
     private func drawOutline() {
@@ -343,12 +638,14 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         switch mark { case .corner: corners.removeLast(); case .door: doors.removeLast() }
         closed = false
         drawOutline()
+        updateAim()
         refresh()
     }
-    @objc private func doorTapped() { doorMode.toggle(); refresh() }
+    @objc private func doorTapped() { doorMode.toggle(); updateAim(); refresh() }
     @objc private func closeTapped() {
         guard corners.count >= 3, trackingNormal, !interrupted else { return }
         closed = true
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         drawOutline()
         beginPhotos()
     }
@@ -360,11 +657,17 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private func beginPhotos() {
         step = .photos
         doorMode = false
+        aimOverlay.isEnabled = false
+        aimPosition = nil
+        aimSnapsToFirst = false
         refresh()
         UIAccessibility.post(notification: .screenChanged, argument: promptLabel)
     }
 
     @objc private func shutterTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { setUIPreviewState(4, prompt: promptIndex); return }
+        #endif
         guard step == .photos, trackingNormal, !interrupted, !saving, pendingPhoto == nil, !finished,
               let frame = arView.session.currentFrame, case .normal = frame.camera.trackingState else { return }
         saving = true
@@ -401,8 +704,16 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         pendingPhoto = nil
         preview.image = nil
     }
-    @objc private func retakeTapped() { guard !saving else { return }; removePendingPhoto(); refresh() }
+    @objc private func retakeTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { setUIPreviewState(3, prompt: promptIndex); return }
+        #endif
+        guard !saving else { return }; removePendingPhoto(); refresh()
+    }
     @objc private func skipTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { advanceUIPreviewPhoto(); return }
+        #endif
         guard !saving else { return }
         // Skipping the final prompt with no retained photos closes as a benign
         // cancellation. Never emit an empty/invalid completed manifest.
@@ -415,6 +726,9 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         advance()
     }
     @objc private func nextTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { advanceUIPreviewPhoto(); return }
+        #endif
         guard !saving, !finished else { return }
         if let photo = pendingPhoto {
             photos.append(photo)
@@ -460,11 +774,20 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private func finish(_ outcome: [String: Any], keepFiles: Bool) {
         guard !finished else { return }
         finished = true
+        aimOverlay.isEnabled = false
+        coaching.setActive(false, animated: false)
         arView.session.pause()
         arView.session.delegate = nil
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
         let closed = {
+            #if DEBUG && targetEnvironment(simulator)
+            if CaptureUIPreview.enabled {
+                // Synthetic layout review cannot return or remove capture files.
+                self.completion(["status": "cancelled"])
+                return
+            }
+            #endif
             if keepFiles { self.completion(outcome) }
             else {
                 CaptureFiles.queue.async {
@@ -481,8 +804,23 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         } else { dismiss(animated: true, completion: closed) }
     }
 
-    @objc private func resetTapped() { resetWorld() }
+    @objc private func resetTapped() {
+        guard !finished, presentedViewController == nil else { return }
+        guard !corners.isEmpty || !doors.isEmpty || !photos.isEmpty || pendingPhoto != nil || saving else {
+            resetWorld()
+            return
+        }
+        let alert = UIAlertController(title: text("restartConfirmTitle"), message: text("restartConfirmMessage"), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: text("cancelConfirmKeep"), style: .cancel))
+        alert.addAction(UIAlertAction(title: text("restartTracking"), style: .destructive) { [weak self] _ in
+            self?.resetWorld()
+        })
+        present(alert, animated: true)
+    }
     private func resetWorld() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { setUIPreviewState(0); return }
+        #endif
         guard !finished else { return }
         worldGeneration += 1
         floorY = nil
@@ -526,7 +864,11 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             relocalizing = recovering
             if normal { interrupted = false }
             refresh()
+            // A plane may have been added while tracking was limited. Recheck
+            // only after the current world frame is usable again.
+            if normal { updatePlanes(frame.anchors) }
         }
+        updateAim()
     }
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) { updatePlanes(anchors) }
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) { updatePlanes(anchors) }
@@ -535,12 +877,23 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         updatePlanes([])
     }
     private func updatePlanes(_ anchors: [ARAnchor]) {
-        guard !finished else { return }
+        guard !finished, trackingNormal, !interrupted,
+              let cameraY = arView.session.currentFrame?.camera.transform[3].y else { return }
         for case let plane as ARPlaneAnchor in anchors where plane.alignment == .horizontal {
-            let y = plane.transform[3].y + plane.center.y
-            if y.isFinite, abs(y) <= 50 { planeHeights[plane.identifier] = y }
+            let y = (plane.transform * SIMD4(plane.center.x, plane.center.y, plane.center.z, 1)).y
+            planeHeights[plane.identifier] = CaptureFloorMath.candidate(height: y, cameraY: cameraY,
+                classification: plane.classification)
         }
-        guard let lowest = planeHeights.values.min() else { return }
+        let locked = step == .photos || !corners.isEmpty || !doors.isEmpty || !photos.isEmpty || pendingPhoto != nil || saving
+        guard let lowest = CaptureFloorMath.select(previous: floorY, heights: Array(planeHeights.values), locked: locked) else {
+            if !locked {
+                floorY = nil
+                if step == .outline { step = .floor }
+                drawOutline()
+                refresh()
+            }
+            return
+        }
         let first = floorY == nil
         floorY = lowest
         if step == .floor { step = .outline }
@@ -558,5 +911,69 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             trackingFailures += 1
             resetWorld()
         } else { finish(["status": "failed", "reason": "ar-session-failed"], keepFiles: false) }
+    }
+
+    #if DEBUG && targetEnvironment(simulator)
+    private func makeUIPreview() {
+        uiPreviewGradient.colors = [UIColor(white: 0.24, alpha: 1).cgColor, UIColor(white: 0.08, alpha: 1).cgColor]
+        uiPreviewGradient.startPoint = CGPoint(x: 0, y: 0)
+        uiPreviewGradient.endPoint = CGPoint(x: 1, y: 1)
+        arView.layer.addSublayer(uiPreviewGradient)
+        let nextState = button("previewNextState", action: #selector(advanceUIPreview))
+        nextState.backgroundColor = UIColor(white: 0, alpha: 0.7)
+        nextState.layer.cornerRadius = 12
+        nextState.accessibilityIdentifier = "capture.preview.nextState"
+        view.addSubview(nextState)
+        NSLayoutConstraint.activate([
+            nextState.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            nextState.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 84)
+        ])
+        setUIPreviewState(CaptureUIPreview.initialState)
+    }
+
+    @objc private func advanceUIPreview() { setUIPreviewState((uiPreviewState + 1) % 5) }
+
+    private func advanceUIPreviewPhoto() {
+        if promptIndex + 1 < prompts.count { setUIPreviewState(3, prompt: promptIndex + 1) }
+        else { setUIPreviewState(0) } // No synthetic completed capture leaves the preview.
+    }
+
+    private func setUIPreviewState(_ state: Int, prompt: Int? = nil) {
+        uiPreviewState = state
+        uiPreviewHasPhoto = state == 4
+        step = state == 0 ? .floor : state < 3 ? .outline : .photos
+        trackingNormal = state != 0
+        interrupted = false
+        resetNotice = false
+        floorY = state == 0 ? nil : -1.2
+        corners = state == 2 ? [SIMD2(0, 0), SIMD2(2, 0), SIMD2(2, 2), SIMD2(0, 2)] : []
+        history = corners.map { _ in .corner }
+        doors.removeAll()
+        closed = false
+        doorMode = false
+        aimPosition = step == .outline ? SIMD2(0, 0) : nil
+        aimSnapsToFirst = state == 2
+        promptIndex = state >= 3 ? min(prompt ?? 1, prompts.count - 1) : 0
+        if uiPreviewHasPhoto {
+            preview.image = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 800)).image { context in
+                UIColor(white: 0.27, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 600, height: 800))
+            }
+            preview.accessibilityLabel = prompts[promptIndex].text
+        } else { preview.image = nil }
+        refresh()
+        // ARCoachingOverlayView requires a real session: the finding-floor card
+        // is the Simulator representation, with no fake tracking claim.
+        coaching.isHidden = true
+    }
+    #endif
+}
+
+/// Keeps fixed-diameter capture controls circular; UIButton configuration updates can reset layer corners.
+private final class CircularButton: UIButton {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerCurve = .circular
+        layer.cornerRadius = min(bounds.width, bounds.height) / 2
     }
 }

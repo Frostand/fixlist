@@ -17,7 +17,10 @@
     "ios:sync": "npm run build && cap sync ios",
     "ios:demo": "npm run ios:demo:stage && npm run ios:sync && npm run ios:demo:install",
     "ios:demo:stage": "node scripts/ios-demo-scan.mjs --stage ios/DerivedData/fixlist-demo-scan-stage viennese-v2",
-    "ios:demo:install": "node scripts/ios-demo-scan.mjs --install-staged ios/DerivedData/fixlist-demo-scan-stage"
+    "ios:demo:install": "node scripts/ios-demo-scan.mjs --install-staged ios/DerivedData/fixlist-demo-scan-stage",
+    "i18n:status": "node scripts/i18n/cli.mjs status",
+    "i18n:export": "node scripts/i18n/cli.mjs export",
+    "i18n:import": "node scripts/i18n/cli.mjs import"
   },
   "dependencies": {
     "@capacitor/core": "8.5.3",
@@ -26,12 +29,14 @@
     "@fontsource/atkinson-hyperlegible-mono": "5.3.0",
     "@fontsource/zilla-slab": "5.3.0",
     "@sparkjsdev/spark": "2.3.1",
+    "leaflet": "1.9.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.186.1"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",
+    "@types/leaflet": "1.9.20",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

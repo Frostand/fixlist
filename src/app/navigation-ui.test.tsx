@@ -40,7 +40,7 @@ describe('routing UI regressions', () => {
     await skipGuide(state.people[0]!, send, onExit); expect(onExit).toHaveBeenCalledWith(true); expect(guideProgress(state.people[0]!)).toEqual({ stepIndex: 2, completed: false });
     const before = state; await openGuide(state.people[0]!, send, navigate); expect(state).toBe(before); expect(navigate).toHaveBeenCalledWith({ screen: 'guide' });
     const html = renderToStaticMarkup(<MoreScreen person={state.people[0]!} resident canViewScan navigate={navigate} dispatch={send} onReset={noop} />);
-    expect(html).toContain(en['routing.resumeGuide']);
+    expect(html).toContain(en['setup.how']);
     await send({ type: 'set_onboarding', guideId: 'resident-guide', stepIndex: 3, completed: true });
     await openGuide(state.people[0]!, send, navigate); expect(guideProgress(state.people[0]!)).toEqual({ stepIndex: 0, completed: false });
   });
@@ -48,17 +48,20 @@ describe('routing UI regressions', () => {
     const catalog = { ...scenario, concerns: scenario.concerns.filter((c) => c.id !== 'rug-concern') }, state = createInitialState(catalog);
     state.checklistAnswers['rug-check'] = 'yes'; const person = state.people[0]!;
     const html = renderToStaticMarkup(<ChecklistQuestion scenario={catalog} state={state} person={person} household={visibleHouseholdFor(catalog, state, person.id)!} dispatch={dispatch} navigate={noop} questionId="rug-check" saved suggestions={null} photoStillRecorded={() => false} onPhotoError={noop} />);
-    expect(html).toContain('Previous question'); expect(html).not.toContain(en['check.confirm']); expect(html).toContain('type="radio"');
+    // The first question has no previous question, so only the screen Back control is offered there.
+    expect(html).not.toContain('Previous question'); expect(html).not.toContain(en['check.confirm']); expect(html).toContain('type="radio"');
+    const second = renderToStaticMarkup(<ChecklistQuestion scenario={catalog} state={state} person={person} household={visibleHouseholdFor(catalog, state, person.id)!} dispatch={dispatch} navigate={noop} questionId={catalog.checklist[1]!.id} saved suggestions={null} photoStillRecorded={() => false} onPhotoError={noop} />);
+    expect(second).toContain('Previous question');
   });
-  it('marks the resources entry tab active and includes the Help return trigger', () => {
+  it('highlights Help for resources while keeping the contextual back control', () => {
     const person = createInitialState(scenario).people[0]!;
     const html = renderToStaticMarkup(<PhoneShell person={person} route={{ role: 'r', screen: 'resources' }} returnTo={{ role: 'r', screen: 'plan' }} title="Resources" navigate={noop} hasChecklist hasPlan><p /></PhoneShell>);
-    expect(html).toContain('href="#/r/plan" aria-current="page"'); expect(html).toContain(`id="${focusTarget('help-close')}"`); expect(html).toContain('href="#screen-heading"');
+    expect(html).toContain('href="#/r/requests" aria-current="page"'); expect(html).toContain('class="compact-bar"'); expect(html).toContain('href="#screen-heading"');
   });
   it('renders a labelled modal reset confirmation bounded above the tab bar, initially targeting Keep', () => {
     const html = renderToStaticMarkup(<I18nProvider language="es"><ResetConfirmation onReset={noop} onCancel={noop} /></I18nProvider>);
     expect(html).toContain('<dialog'); expect(html).toContain('aria-labelledby="reset-title"'); expect(html).toContain('aria-describedby="reset-description reset-bundled-description"');
-    expect(html).toContain('max-height:calc(100dvh - 10rem - env(safe-area-inset-bottom))'); expect(html).toContain('overflow-y:auto'); expect(html).toContain(`id="${focusTarget('reset-open')}"`);
+    expect(html).toContain('max-height:calc(100dvh - 10rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'); expect(html).toContain('overflow-y:auto'); expect(html).toContain(`id="${focusTarget('reset-open')}"`);
   });
 });
 

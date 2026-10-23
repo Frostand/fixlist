@@ -1,9 +1,31 @@
 import { en, type MessageKey } from './en';
-import { es } from './es';
+import { messages } from './messages';
 import type { Translator } from './index';
 import type { ScanFailureCode } from '../lib/scan-storage';
-const translatedValues = new Set<string>(Object.values(es));
 const authoredKeys = new Map<string, MessageKey>(Object.entries(en).map(([key, value]) => [value, key as MessageKey]));
+authoredKeys.set("synthetic", "source.synthetic");
+// Stable source aliases keep fixture provenance separate from presentation copy.
+authoredKeys.set("Do objects obstruct the sample stairs?", "catalog.check.stair-clutter-check");
+authoredKeys.set("Is the sample stair handrail loose?", "catalog.check.handrail-check");
+authoredKeys.set("Is a light or accessible switch missing for the sample stairs?", "catalog.check.stair-lighting-check");
+authoredKeys.set("Is the sample route from bed to bathroom dark?", "catalog.check.night-lighting-check");
+authoredKeys.set("Is the sample shower surface described as slippery?", "catalog.check.shower-surface-check");
+authoredKeys.set("Is support reported as missing where needed near the sample tub or toilet?", "catalog.check.bathroom-support-check");
+authoredKeys.set("Sample living room", "catalog.room.living-room");
+authoredKeys.set("Sample hallway", "catalog.room.hallway");
+authoredKeys.set("Sample stairs", "catalog.room.stairs");
+authoredKeys.set("Sample bedroom", "catalog.room.bedroom");
+authoredKeys.set("Sample bathroom", "catalog.room.bathroom");
+authoredKeys.set("Authored fictional fixture for the FixList demo", "authored.1");
+authoredKeys.set("Scripted sample observation: a rug edge crosses the walkway.", "authored.6");
+authoredKeys.set("Scripted sample observation: a lamp cord crosses the hallway.", "authored.8");
+authoredKeys.set("Scripted sample observation: a box occupies part of the stairs.", "authored.10");
+authoredKeys.set("Scripted sample observation: a stair handrail is described as loose.", "authored.13");
+authoredKeys.set("Scripted sample observation: the stairs lack a light and a switch at one end.", "authored.16");
+authoredKeys.set("Scripted sample observation: the bed-to-bathroom route is described as dark at night.", "authored.19");
+authoredKeys.set("Scripted sample observation: the shower floor is described as slippery.", "authored.22");
+authoredKeys.set("Scripted sample observation: support is reported as missing near the tub and toilet.", "authored.25");
+
 const scanStorageFallbackKeys = new Map<string, MessageKey>([
   ['No saved room scan in this browser.', 'scan.storage.empty'],
   ['Saved scan and pins loaded from this browser. Open the viewer to see them.', 'scan.storage.loaded'],
@@ -15,9 +37,9 @@ const scanStorageFallbackKeys = new Map<string, MessageKey>([
 /** Only call for authored catalog/domain copy, never names, notes, updates or visit/area text. */
 export function authored(t: Translator, input: string | number): string {
   const text = String(input);
-  const key = authoredKeys.get(text);
+  const key = authoredKeys.get(text) ?? authoredKeys.get(text.replace(/\bplan\b/g, 'fix list').replace(/\bPlan\b/g, 'Fix list'));
   if (key) return t(key);
-  if (t('check.yes') === en['check.yes']) return text;
+  if (t.language === 'en') return text;
   if (text === 'true' || text === 'false') return t(text === 'true' ? 'check.yes' : 'check.no');
   const group = /^(All |At least one of )(\d+) conditions (?:are|is) required\. (.*?)(?: Every child result is retained\.)?$/.exec(text);
   if (group) return t(group[1] === 'All ' ? 'screen.all' : 'screen.any', { count: group[2] }) + authored(t, group[3]!);
@@ -43,7 +65,8 @@ export function authored(t: Translator, input: string | number): string {
 export function scanMessage(t: Translator, message: string): string {
   const fallbackKey = scanStorageFallbackKeys.get(message);
   if (fallbackKey) return t(fallbackKey);
-  if (t('check.yes') === en['check.yes'] || translatedValues.has(message)) return message;
+  if (authoredKeys.has(message)) return authored(t, message);
+  if (t.language === 'en' || Object.entries(messages).some(([language, locale]) => language !== 'en' && Object.values(locale).includes(message))) return message;
   if (message.startsWith('Saved scan was not opened:')) return t('scan.storage.rejected');
   if (message.includes('dropped')) return t('scan.storage.dropped');
   const localized = authored(t, message);

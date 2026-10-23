@@ -91,14 +91,15 @@ class ArtifactTests(unittest.TestCase):
             (root/'scene.splat').write_bytes(bytes([1])*320)
             self.assertNotEqual(identity['sceneSHA256'], scene_identity(root, frames, Path(s.__file__))['sceneSHA256'])
 
-    def test_documented_default_reaches_loopback_endpoint_with_calibrated_think_mode(self):
+    def test_explicit_raw_run_reaches_loopback_endpoint(self):
         # Real CLI entry point, real generated COLMAP input, real HTTP opener.
         # Socket access may be denied here; connection failure is the expected result.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); make_scan(root/'synthetic')
             from io import StringIO
             with patch.object(s, 'SCAN_ROOT', root), patch('sys.stderr', new_callable=StringIO) as stderr:
-                result = s.main(['synthetic', '--url', 'http://127.0.0.1:1', '--timeout', '0.01', '--retries', '0'])
+                result = s.main(['synthetic', '--no-calibration', '--url', 'http://127.0.0.1:1',
+                                 '--timeout', '0.01', '--retries', '0'])
             self.assertEqual(result, 2)
             self.assertIn('Cannot reach the local StartLux server', stderr.getvalue())
             self.assertFalse((root/'synthetic/suggestions.json').exists())

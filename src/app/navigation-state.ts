@@ -31,7 +31,7 @@ export function loadNavigationState(storage: DemoStorage | null): NavigationStat
       pendingDestination = parseRoute(value.pendingDestination);
       if (!('role' in pendingDestination) || routeHash(pendingDestination) !== value.pendingDestination) return emptyNavigationState();
     }
-    return { ...value, pendingDestination, layout: value.layout ?? 'current' };
+    return { ...value, pendingDestination, layout: 'current' };
   } catch { return emptyNavigationState(); }
 }
 /** Read and transform inside the household lock so drafts cannot overwrite another tab's edits. */

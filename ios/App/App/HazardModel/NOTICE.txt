@@ -1,0 +1,15 @@
+FixList local relevance image encoder and text embeddings
+
+Model: OpenCLIP ViT-B-32, laion2b_s34b_b79k
+Publisher: LAION; model training credited to Romain Beaumont.
+Weights license: MIT, as marked by the publisher model card:
+https://huggingface.co/laion/CLIP-ViT-B-32-laion2B-s34B-b79K
+OpenCLIP implementation: https://github.com/mlfoundations/open_clip
+
+Converted image encoder and normalized prompt vectors are generated offline.
+The original weight SHA-256 and local runtime content pin are recorded in
+hazard-prompts.json. These content pins are not signatures or attestations.
+No private photographs, image embeddings, or household data are bundled here.
+
+This is unverified, experimental relevance output for photo review. It is not
+a hazard finding, checklist answer, safety assessment, or validated home test.

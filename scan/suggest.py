@@ -87,6 +87,16 @@ def reject_constant(value):
     raise SuggestionError(f'Nonfinite JSON constant: {value}.')
 
 
+def unique_object(pairs):
+    # A repeated score or model key is ambiguous evidence, not a last-wins
+    # update. Never let JSON decoding turn conflicting answers into a flag.
+    result = {}
+    for key, value in pairs:
+        require(key not in result, 'StartLux returned duplicate JSON object keys.')
+        result[key] = value
+    return result
+
+
 def load_questions():
     catalog = read_json(QUESTIONS_PATH, 64_000)
     exact(catalog, ['format', 'version', 'items'], 'question catalog')
@@ -203,7 +213,13 @@ class DecisionClient:
             raise SuggestionError('Invalid local StartLux URL.') from error
         number(timeout, 'timeout', .001, 3600)
         integer(retries, 'retries', 0, 5)
-        self.url = url.rstrip('/') + '/v1/systemone'
+        # Pin the accepted host name before opening a socket. Proxy/redirect
+        # guards do not prevent localhost from resolving to a non-loopback host.
+        host = '127.0.0.1' if parsed.hostname == 'localhost' else parsed.hostname
+        authority = '[::1]' if host == '::1' else host
+        if parsed.port is not None:
+            authority += f':{parsed.port}'
+        self.url = f'http://{authority}/v1/systemone'
         self.timeout, self.retries = timeout, retries
         # Ignore proxy environment variables; never follow a redirect to a remote host.
         self.opener = build_opener(ProxyHandler({}), NoRedirects())
@@ -219,8 +235,8 @@ class DecisionClient:
                     raw = response.read(2_000_001)
                 require(len(raw) <= 2_000_000, 'StartLux response exceeds 2 MB.')
                 try:
-                    return json.loads(raw, parse_constant=reject_constant)
-                except (json.JSONDecodeError, UnicodeError) as error:
+                    return json.loads(raw, parse_constant=reject_constant, object_pairs_hook=unique_object)
+                except (json.JSONDecodeError, UnicodeError, RecursionError) as error:
                     raise SuggestionError('StartLux returned invalid JSON.') from error
             except HTTPError as error:
                 error.close()
@@ -485,6 +501,8 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
     probability(location_threshold, 'location threshold')
     require(think_mode in {'auto', 'never'}, 'think-mode must be auto or never.')
     require(type(dry_run) is bool, 'dry_run must be boolean.')
+    require((model_dir is None) == (runtime_dir is None),
+            'Provide both --model-dir and --runtime-dir for a content identity, or neither.')
     client = DecisionClient(url, timeout, retries)
     scan_dir = Path(scan_dir).resolve()
     output = scan_dir / 'suggestions.json'
@@ -500,6 +518,12 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
                                             catalog=catalog, think_mode=think_mode)
     calibration_block = None if calibration_document is None else calibration_document['calibration']
     identity = inference_identity(model_dir, runtime_dir)
+    # Reject an unusable fit before reading/preprocessing photos or waiting for
+    # inference. The response can verify a model name, never missing byte pins.
+    if calibration_document is not None and not dry_run:
+        require(identity is not None and calibration_document.get('modelIdentity') == identity,
+                'Calibration lacks matching weight/runtime content identity. Refit with pinned local directories; '
+                'no calibration transfers by model name. No output written.\n' + calibration_recovery_commands(scan_dir.name))
     splat_count, frames, align_rotation, center = load_scan(scan_dir, keyframes)
     capture_identity = scene_identity(scan_dir, frames, Path(__file__))
     integer(min_frames, 'minFrames', 1, len(frames))
@@ -522,10 +546,6 @@ def run_scan(scan_dir, *, url=DEFAULT_URL, keyframes=32, threshold=.6, location_
             require(calibration_document['model'] == name,
                     f'Calibration model {calibration_document["model"]!r} differs from response model {name!r}; '
                     'use a matching calibration or --no-calibration; no output written.')
-            if not dry_run:
-                require(identity is not None and calibration_document.get('modelIdentity') == identity,
-                        'Calibration lacks matching weight/runtime content identity. Refit with pinned local directories; '
-                        'no calibration transfers by model name. No output written.\n' + calibration_recovery_commands(scan_dir.name))
         model_name = name
         return answers
 

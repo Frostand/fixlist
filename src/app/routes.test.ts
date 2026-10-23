@@ -33,13 +33,13 @@ describe('navigation regression decisions', () => {
     expect(launchNavigation('', '', homeRoute('resident')).route).toEqual(homeRoute('resident'));
     expect(launchNavigation('', '?localScan=sample', null).route).toEqual({ role: 'r', screen: 'scan' });
   });
-  it.each<Route>([{ role: 'r', screen: 'home' }, { role: 'r', screen: 'plan' }, { role: 'r', screen: 'help' }])('returns resources to $screen and keeps that tab active', (entry) => {
+  it.each<Route>([{ role: 'r', screen: 'home' }, { role: 'r', screen: 'plan' }, { role: 'r', screen: 'help' }])('returns resources to $screen and highlights Help', (entry) => {
     const context = resourceReturnTo(resources, entry, null);
-    expect(parentRoute(resources, 'resident', context)).toEqual(entry); expect(activeTab(resources, context)).toBe(entry.screen);
+    expect(parentRoute(resources, 'resident', context)).toEqual(entry); expect(activeTab(resources, context)).toBe('requests');
     expect(resourceReturnTo(resources, resources, context)).toBe(context);
   });
   it('gives a direct resources link a useful parent and active tab', () => {
-    expect(parentRoute(resources, 'family_helper')).toEqual({ role: 'r', screen: 'help' }); expect(activeTab(resources)).toBe('help');
+    expect(parentRoute(resources, 'family_helper')).toEqual({ role: 'r', screen: 'requests' }); expect(activeTab(resources)).toBe('requests');
   });
   it('keeps the guide outside the regular tab shell', () => {
     expect(usesTabShell({ screen: 'guide' })).toBe(false); expect(usesTabShell(question)).toBe(true);

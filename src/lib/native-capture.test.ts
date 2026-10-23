@@ -38,6 +38,31 @@ describe('native capture bridge boundaries (mocked plugin; no device claim)', ()
     expect((await runNativeCapture({ ...options, store: createMemoryCaptureStore(), isCurrent: () => false })).status).toBe('cancelled');
     expect(mock.start).not.toHaveBeenCalled();
   });
+  it('cleans up a completed native callback without reading its photos after the view expires', async () => {
+    let current = true;
+    const store = createMemoryCaptureStore();
+    mock.start.mockImplementation(async (args) => {
+      current = false;
+      return { status: 'completed', capture: { ...bundle, captureId: args.captureId, roomId: args.roomId, photos: bundle.photos.map(({ jpeg: _jpeg, ...p }) => p), files: Object.fromEntries(bundle.photos.map((p) => [p.photoId, `file:///var/app/Library/Caches/fixlist-captures/${args.captureId}/${p.photoId}.jpg`])) } };
+    });
+    const fetchPhoto = vi.fn(async () => new Response('expired view must not read photos'));
+    vi.stubGlobal('fetch', fetchPhoto);
+    expect((await runNativeCapture({ ...options, store, isCurrent: () => current })).status).toBe('cancelled');
+    expect(fetchPhoto).not.toHaveBeenCalled(); expect(mock.discard).toHaveBeenCalledOnce(); expect(await store.read(options.roomId)).toBe(null);
+  });
+  it('stops reading later native photos if the view expires during the first read', async () => {
+    let current = true;
+    const store = createMemoryCaptureStore();
+    mock.start.mockImplementation(async (args) => ({ status: 'completed', capture: { ...bundle, captureId: args.captureId, roomId: args.roomId, photos: bundle.photos.map(({ jpeg: _jpeg, ...p }) => p), files: Object.fromEntries(bundle.photos.map((p) => [p.photoId, `file:///var/app/Library/Caches/fixlist-captures/${args.captureId}/${p.photoId}.jpg`])) } }));
+    const fetchPhoto = vi.fn(async (url: string) => {
+      current = false;
+      const photo = bundle.photos.find((p) => url.endsWith(`${p.photoId}.jpg`))!;
+      return new Response(Uint8Array.from(atob(photo.jpeg), (c) => c.charCodeAt(0)));
+    });
+    vi.stubGlobal('fetch', fetchPhoto);
+    expect((await runNativeCapture({ ...options, store, isCurrent: () => current })).status).toBe('cancelled');
+    expect(fetchPhoto).toHaveBeenCalledOnce(); expect(mock.discard).toHaveBeenCalledOnce(); expect(await store.read(options.roomId)).toBe(null);
+  });
   it('refuses mismatched JPEG bytes and still discards', async () => {
     const store = createMemoryCaptureStore();
     mock.start.mockImplementation(async (args) => ({ status: 'completed', capture: { ...bundle, captureId: args.captureId, photos: bundle.photos.map(({ jpeg: _jpeg, ...p }) => p), files: Object.fromEntries(bundle.photos.map((p) => [p.photoId, `file:///var/app/Library/Caches/fixlist-captures/${args.captureId}/${p.photoId}.jpg`])) } }));

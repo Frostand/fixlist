@@ -1,0 +1,456 @@
+{
+  "s04-check": {
+    "sourceSha256": "e65636f4b81fdb391fccaf80cb69f635389da67cc7d7f423dd927851eedeedfe",
+    "sidecarSha256": "71949c9d212f982562e8cea43f2ba3245a390bab13414228063286e7aa7613f6",
+    "events": [
+      {
+        "index": 0,
+        "status": "reviewed",
+        "videoTime": 3.15,
+        "changeTime": 3.4,
+        "note": "Viewed before/after pair 0 on work/retime/s04-check/review-00.png; control and resulting UI state match Continue. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s04-check/00-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s04-check/00-after.png",
+          "beforeTime": 3,
+          "afterTime": 3.65
+        }
+      },
+      {
+        "index": 1,
+        "status": "reviewed",
+        "videoTime": 6.216667,
+        "changeTime": 6.466667,
+        "note": "Viewed before/after pair 1 on work/retime/s04-check/review-00.png; control and resulting UI state match Yes. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s04-check/01-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s04-check/01-after.png",
+          "beforeTime": 6.066667,
+          "afterTime": 6.716667
+        }
+      },
+      {
+        "index": 2,
+        "status": "reviewed",
+        "videoTime": 36.05,
+        "changeTime": 36.3,
+        "note": "Viewed before/after pair 2 on work/retime/s04-check/review-00.png; control and resulting UI state match Plan. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s04-check/02-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s04-check/02-after.png",
+          "beforeTime": 35.9,
+          "afterTime": 36.55
+        }
+      },
+      {
+        "index": 3,
+        "status": "reviewed",
+        "videoTime": 39.75,
+        "changeTime": 40,
+        "note": "Viewed before/after pair 3 on work/retime/s04-check/review-00.png; control and resulting UI state match Add to my plan. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s04-check/03-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s04-check/03-after.png",
+          "beforeTime": 39.6,
+          "afterTime": 40.25
+        }
+      }
+    ]
+  },
+  "s05-help": {
+    "sourceSha256": "02371307a593637661dc4f149dcc1b8dbd7bb5f8fd3f2d69023fc4966d04bd45",
+    "sidecarSha256": "f42ae168aacc560cd275a92b94f7ef85d63a85ba1444ec1e2cec0cfa8fad9f8b",
+    "events": [
+      {
+        "index": 0,
+        "status": "reviewed",
+        "videoTime": 2.883333,
+        "changeTime": 3.133333,
+        "note": "Viewed before/after pair 0 on work/retime/s05-help/review-00.png; control and resulting UI state match Ask for help. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/00-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/00-after.png",
+          "beforeTime": 2.733333,
+          "afterTime": 3.383333
+        }
+      },
+      {
+        "index": 1,
+        "status": "reviewed",
+        "videoTime": 6.116667,
+        "changeTime": 6.366667,
+        "note": "Viewed before/after pair 1 on work/retime/s05-help/review-00.png; control and resulting UI state match Room name Shows which room the task is in.. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/01-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/01-after.png",
+          "beforeTime": 5.966666999999999,
+          "afterTime": 6.616667
+        }
+      },
+      {
+        "index": 2,
+        "status": "reviewed",
+        "videoTime": 11.516667,
+        "changeTime": 11.766667,
+        "note": "Viewed before/after pair 2 on work/retime/s05-help/review-00.png; control and resulting UI state match Continue. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/02-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/02-after.png",
+          "beforeTime": 11.366667,
+          "afterTime": 12.016667
+        }
+      },
+      {
+        "index": 3,
+        "status": "reviewed",
+        "videoTime": 14.583333,
+        "changeTime": 14.833333,
+        "note": "Viewed before/after pair 3 on work/retime/s05-help/review-00.png; control and resulting UI state match Choose Alex. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/03-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/03-after.png",
+          "beforeTime": 14.433333,
+          "afterTime": 15.083333
+        }
+      },
+      {
+        "index": 4,
+        "status": "reviewed",
+        "videoTime": 20.316667,
+        "changeTime": 20.566667,
+        "note": "Viewed before/after pair 4 on work/retime/s05-help/review-01.png; control and resulting UI state match Invite Alex. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/04-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/04-after.png",
+          "beforeTime": 20.166667,
+          "afterTime": 20.816667
+        }
+      },
+      {
+        "index": 5,
+        "status": "reviewed",
+        "videoTime": 101.35,
+        "changeTime": 101.6,
+        "note": "Viewed before/after pair 5 on work/retime/s05-help/review-01.png; control and resulting UI state match Switch person: Margaret. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/05-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/05-after.png",
+          "beforeTime": 101.19999999999999,
+          "afterTime": 101.85
+        }
+      },
+      {
+        "index": 6,
+        "status": "reviewed",
+        "videoTime": 104.083333,
+        "changeTime": 104.333333,
+        "note": "Viewed before/after pair 6 on work/retime/s05-help/review-01.png; control and resulting UI state match Alex Volunteer. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/06-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/06-after.png",
+          "beforeTime": 103.93333299999999,
+          "afterTime": 104.583333
+        }
+      },
+      {
+        "index": 7,
+        "status": "reviewed",
+        "videoTime": 107.05,
+        "changeTime": 107.3,
+        "note": "Viewed before/after pair 7 on work/retime/s05-help/review-01.png; control and resulting UI state match Continue. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/07-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/07-after.png",
+          "beforeTime": 106.89999999999999,
+          "afterTime": 107.55
+        }
+      },
+      {
+        "index": 8,
+        "status": "reviewed",
+        "videoTime": 110.583333,
+        "changeTime": 110.833333,
+        "note": "Viewed before/after pair 8 on work/retime/s05-help/review-02.png; control and resulting UI state match Accept invitation. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/08-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/08-after.png",
+          "beforeTime": 110.43333299999999,
+          "afterTime": 111.083333
+        }
+      },
+      {
+        "index": 9,
+        "status": "dropped",
+        "videoTime": null,
+        "changeTime": null,
+        "note": "Typing spans focus, text fill and keyboard dismissal; omit tap indicator rather than infer a tap."
+      },
+      {
+        "index": 10,
+        "status": "reviewed",
+        "videoTime": 120.55,
+        "changeTime": 120.8,
+        "note": "Viewed before/after pair 10 on work/retime/s05-help/review-02.png; control and resulting UI state match Propose a time. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/10-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/10-after.png",
+          "beforeTime": 120.39999999999999,
+          "afterTime": 121.05
+        }
+      },
+      {
+        "index": 11,
+        "status": "reviewed",
+        "videoTime": 197.916667,
+        "changeTime": 198.166667,
+        "note": "Viewed before/after pair 11 on work/retime/s05-help/review-02.png; control and resulting UI state match Switch person: Alex. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/11-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/11-after.png",
+          "beforeTime": 197.76666699999998,
+          "afterTime": 198.416667
+        }
+      },
+      {
+        "index": 12,
+        "status": "reviewed",
+        "videoTime": 200.683333,
+        "changeTime": 200.933333,
+        "note": "Viewed before/after pair 12 on work/retime/s05-help/review-03.png; control and resulting UI state match Margaret Resident. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/12-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/12-after.png",
+          "beforeTime": 200.533333,
+          "afterTime": 201.183333
+        }
+      },
+      {
+        "index": 13,
+        "status": "reviewed",
+        "videoTime": 203.75,
+        "changeTime": 204,
+        "note": "Viewed before/after pair 13 on work/retime/s05-help/review-03.png; control and resulting UI state match Continue. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/13-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/13-after.png",
+          "beforeTime": 203.6,
+          "afterTime": 204.25
+        }
+      },
+      {
+        "index": 14,
+        "status": "reviewed",
+        "videoTime": 206.883333,
+        "changeTime": 207.133333,
+        "note": "Viewed before/after pair 14 on work/retime/s05-help/review-03.png; control and resulting UI state match Agree to this time. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/14-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/14-after.png",
+          "beforeTime": 206.733333,
+          "afterTime": 207.383333
+        }
+      },
+      {
+        "index": 15,
+        "status": "reviewed",
+        "videoTime": 285.816667,
+        "changeTime": 286.066667,
+        "note": "Viewed before/after pair 15 on work/retime/s05-help/review-03.png; control and resulting UI state match Switch person: Margaret. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/15-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/15-after.png",
+          "beforeTime": 285.666667,
+          "afterTime": 286.316667
+        }
+      },
+      {
+        "index": 16,
+        "status": "reviewed",
+        "videoTime": 288.516667,
+        "changeTime": 288.766667,
+        "note": "Viewed before/after pair 16 on work/retime/s05-help/review-04.png; control and resulting UI state match Alex Volunteer. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/16-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/16-after.png",
+          "beforeTime": 288.366667,
+          "afterTime": 289.016667
+        }
+      },
+      {
+        "index": 17,
+        "status": "reviewed",
+        "videoTime": 291.516667,
+        "changeTime": 291.766667,
+        "note": "Viewed before/after pair 17 on work/retime/s05-help/review-04.png; control and resulting UI state match Continue. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/17-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/17-after.png",
+          "beforeTime": 291.366667,
+          "afterTime": 292.016667
+        }
+      },
+      {
+        "index": 18,
+        "status": "dropped",
+        "videoTime": null,
+        "changeTime": null,
+        "note": "Typing spans focus, text fill and keyboard dismissal; omit tap indicator rather than infer a tap."
+      },
+      {
+        "index": 19,
+        "status": "reviewed",
+        "videoTime": 340.383333,
+        "changeTime": 340.633333,
+        "note": "Viewed before/after pair 19 on work/retime/s05-help/review-04.png; control and resulting UI state match Post an update. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/19-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/19-after.png",
+          "beforeTime": 340.233333,
+          "afterTime": 340.883333
+        }
+      },
+      {
+        "index": 20,
+        "status": "reviewed",
+        "videoTime": 349.95,
+        "changeTime": 350.2,
+        "note": "Viewed before/after pair 20 on work/retime/s05-help/review-05.png; control and resulting UI state match Report done. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/20-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/20-after.png",
+          "beforeTime": 349.8,
+          "afterTime": 350.45
+        }
+      },
+      {
+        "index": 21,
+        "status": "reviewed",
+        "videoTime": 455.216667,
+        "changeTime": 455.466667,
+        "note": "Viewed before/after pair 21 on work/retime/s05-help/review-05.png; control and resulting UI state match Yes, it's done. Tap placed 0.25 s before the observed transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/21-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s05-help/21-after.png",
+          "beforeTime": 455.066667,
+          "afterTime": 455.716667
+        }
+      }
+    ]
+  },
+  "s06-scan": {
+    "sourceSha256": "99199a175a885b393f0b5944a58d34b4c92dc0753c0b1e8e466e2be5a480ffad",
+    "sidecarSha256": "5b58090ed44671ea7b66c82ffd17667234f4535778f28d08f8815bc17aa3cb6a",
+    "events": [
+      {
+        "index": 0,
+        "status": "reviewed",
+        "videoTime": 20.916667,
+        "changeTime": 21.166667,
+        "note": "Viewed s06-scan/review-00.png before/after: enlarged model-photo dialog opens or closes as labelled; tap placed 0.25 s before visible transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s06-scan/00-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s06-scan/00-after.png",
+          "beforeTime": 20.766667,
+          "afterTime": 21.416667
+        }
+      },
+      {
+        "index": 1,
+        "status": "reviewed",
+        "videoTime": 105.416667,
+        "changeTime": 105.666667,
+        "note": "Viewed s06-scan/review-00.png before/after: enlarged model-photo dialog opens or closes as labelled; tap placed 0.25 s before visible transition.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s06-scan/01-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s06-scan/01-after.png",
+          "beforeTime": 105.266667,
+          "afterTime": 105.75666700000001
+        }
+      }
+    ]
+  },
+  "s07-report": {
+    "sourceSha256": "c05467db45e9add1083ae0d0df279196e4a0367622a6c37a4a9c4533d0de7bd1",
+    "sidecarSha256": "ab0589eb07fd9be9c61e87c8bcea3bc6cb57455767028d7fa394b2ac479a7fb3",
+    "events": [
+      {
+        "index": 0,
+        "status": "reviewed",
+        "videoTime": 12.716667,
+        "changeTime": 12.966667,
+        "note": "Viewed final-take s07-report/review-00.png before/after: Print current report matches the control coordinates and visible result, including native X at (38,100) and selected Spanish state. Tap placed 0.25 s before the observed change.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/00-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/00-after.png",
+          "beforeTime": 12.566666999999999,
+          "afterTime": 13.216667
+        }
+      },
+      {
+        "index": 1,
+        "status": "reviewed",
+        "videoTime": 13.516667,
+        "changeTime": 13.766667,
+        "note": "Viewed final-take s07-report/review-00.png before/after: Close print options matches the control coordinates and visible result, including native X at (38,100) and selected Spanish state. Tap placed 0.25 s before the observed change.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/01-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/01-after.png",
+          "beforeTime": 13.366667,
+          "afterTime": 14.016667
+        }
+      },
+      {
+        "index": 2,
+        "status": "reviewed",
+        "videoTime": 34.616667,
+        "changeTime": 34.866667,
+        "note": "Viewed final-take s07-report/review-00.png before/after: More matches the control coordinates and visible result, including native X at (38,100) and selected Spanish state. Tap placed 0.25 s before the observed change.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/02-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/02-after.png",
+          "beforeTime": 34.466667,
+          "afterTime": 35.116667
+        }
+      },
+      {
+        "index": 3,
+        "status": "reviewed",
+        "videoTime": 37.383333,
+        "changeTime": 37.633333,
+        "note": "Viewed final-take s07-report/review-00.png before/after: Language matches the control coordinates and visible result, including native X at (38,100) and selected Spanish state. Tap placed 0.25 s before the observed change.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/03-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/03-after.png",
+          "beforeTime": 37.233333,
+          "afterTime": 37.883333
+        }
+      },
+      {
+        "index": 4,
+        "status": "reviewed",
+        "videoTime": 40.116667,
+        "changeTime": 40.366667,
+        "note": "Viewed final-take s07-report/review-01.png before/after: Español matches the control coordinates and visible result, including native X at (38,100) and selected Spanish state. Tap placed 0.25 s before the observed change.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/04-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/04-after.png",
+          "beforeTime": 39.966667,
+          "afterTime": 40.616667
+        }
+      },
+      {
+        "index": 5,
+        "status": "reviewed",
+        "videoTime": 119.45,
+        "changeTime": 119.7,
+        "note": "Viewed final-take s07-report/review-01.png before/after: Inicio matches the control coordinates and visible result, including native X at (38,100) and selected Spanish state. Tap placed 0.25 s before the observed change.",
+        "evidence": {
+          "before": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/05-before.png",
+          "after": "/Users/al1234/.t3-custom/projects/fixlist/recordings/cac-video/work/retime/s07-report/05-after.png",
+          "beforeTime": 119.3,
+          "afterTime": 119.95
+        }
+      }
+    ]
+  }
+}

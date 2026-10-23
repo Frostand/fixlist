@@ -26,10 +26,12 @@ export async function runNativeCapture(options: RunCaptureOptions): Promise<Nati
   if (options.isCurrent && !options.isCurrent()) return { status: 'cancelled' };
   let result: NativeCaptureOutcome = { status: 'failed' };
   const captureId = newCaptureId(), store = options.store ?? getCaptureStore();
+  const requireCurrent = () => { if (options.isCurrent && !options.isCurrent()) throw new CaptureError('CANCELLED', 'Capture cancelled before saving.'); };
   try {
     const strings = Object.fromEntries(NATIVE_CAPTURE_STRING_KEYS.map((key) => [key, translate(options.language, `capture.native.${key}`)]));
     const start: NativeCaptureStartOptions = { captureId, roomId: options.roomId, roomName: options.roomName, language: options.language, prompts: options.prompts, strings };
     const outcome = await FixListCapture.start(start);
+    requireCurrent();
     if (outcome.status !== 'completed') result = outcome;
     else {
       const parsed = validateNativeCaptureResult(outcome.capture);
@@ -40,13 +42,17 @@ export async function runNativeCapture(options: RunCaptureOptions): Promise<Nati
       if (!valid.ok) throw new CaptureError(valid.code, valid.error);
       const photos = new Map<string, Blob>();
       for (const p of valid.value.photos) {
+        requireCurrent();
         const response = await fetch(Capacitor.convertFileSrc(files[p.photoId]!));
+        requireCurrent();
         if (!response.ok) throw new CaptureError('INVALID_CAPTURE', 'A captured photo could not be read.');
         const bytes = await response.arrayBuffer(), blob = new Blob([bytes], { type: 'image/jpeg' });
+        requireCurrent();
         if (!isJpegBytes(new Uint8Array(bytes)) || await sha256Blob(blob) !== p.sha256) throw new CaptureError('INVALID_CAPTURE', 'A captured photo does not match its SHA-256.');
+        requireCurrent();
         photos.set(p.photoId, blob);
       }
-      if (options.isCurrent && !options.isCurrent()) throw new CaptureError('CANCELLED', 'Capture cancelled before saving.');
+      requireCurrent();
       await store.writeCapture(valid.value, photos, options.replaceConfirmed ?? false, options.isCurrent, options.expectedCaptureId);
       result = { status: 'completed' };
     }

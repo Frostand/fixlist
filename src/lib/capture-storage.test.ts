@@ -76,6 +76,19 @@ describe('capture storage atomicity and reset', () => {
     await fresh.writeCapture(manifest, photos);
     expect((await fresh.read(manifest.roomId))?.manifest.captureId).toBe(manifest.captureId);
   });
+  it('observes only generation before photo validation and cannot adopt an intervening reset', async () => {
+    const reads: string[] = [];
+    const factory = databaseFactory((method, key) => reads.push(key ? `${method}:${key}` : method)), writing = createIndexedDbCaptureStore(factory), resetting = createIndexedDbCaptureStore(factory), { manifest, photos } = await data();
+    const photo = photos.get('p01')!, bytes = await photo.arrayBuffer();
+    let started!: () => void, release!: () => void;
+    const began = new Promise<void>((resolve) => { started = resolve; }), blocked = new Promise<void>((resolve) => { release = resolve; });
+    photo.arrayBuffer = async () => { started(); await blocked; return bytes; };
+    const pending = writing.writeCapture(manifest, photos).catch((error: unknown) => error);
+    await began; const preflightReads = [...reads]; await resetting.clear(); release();
+    expect(await pending).toMatchObject({ code: 'CANCELLED' });
+    expect(preflightReads).toEqual(['get:__reset_generation']);
+    expect(await createIndexedDbCaptureStore(factory).read(manifest.roomId)).toBe(null);
+  });
   it('waits for an active write, rejects queued and late writes, and clears bytes on reset', async () => {
     const { manifest, photos } = await data(), underlying = createMemoryCaptureStore();
     let start!: () => void, release!: () => void;
@@ -102,7 +115,7 @@ describe('capture storage atomicity and reset', () => {
 });
 
 /** Minimal transactional IDB harness: independent store clients share durable records. */
-function databaseFactory(): IDBFactory {
+function databaseFactory(onRead?: (method: 'get' | 'getAllKeys' | 'getAll', key?: string) => void): IDBFactory {
   const records = new Map<string, Map<string, unknown>>();
   const tails = new Map<string, Promise<void>>();
   return { open(name: string) {
@@ -129,9 +142,9 @@ function databaseFactory(): IDBFactory {
         }
         function request(work: () => unknown) { const req: any = {}; jobs.push(() => { req.result = work(); req.onsuccess?.(); }); flush(); return req; }
         tx.objectStore = () => ({
-          get: (key: string) => request(() => local.get(key)),
-          getAllKeys: () => request(() => [...local.keys()]),
-          getAll: () => request(() => [...local.values()]),
+          get: (key: string) => { onRead?.('get', key); return request(() => local.get(key)); },
+          getAllKeys: () => { onRead?.('getAllKeys'); return request(() => [...local.keys()]); },
+          getAll: () => { onRead?.('getAll'); return request(() => [...local.values()]); },
           put: (value: unknown, key: string) => request(() => { local.set(key, value); return key; }),
           delete: (key: string) => request(() => local.delete(key)),
           clear: () => request(() => local.clear()),

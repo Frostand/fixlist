@@ -139,6 +139,29 @@ class RequestTests(unittest.TestCase):
             with self.subTest(url=url), self.assertRaises(s.SuggestionError):
                 s.DecisionClient(url)
 
+    def test_localhost_is_pinned_to_numeric_loopback_before_transport(self):
+        # A host-name allowlist alone still delegates the image destination to
+        # name resolution. Keep localhost's usual IPv4 endpoint and custom port
+        # while avoiding that dependency entirely.
+        for url, expected in [('http://localhost:8091/', 'http://127.0.0.1:8091/v1/systemone'),
+                              ('http://localhost', 'http://127.0.0.1/v1/systemone'),
+                              ('http://[::1]:8092', 'http://[::1]:8092/v1/systemone')]:
+            with self.subTest(url=url):
+                self.assertEqual(s.DecisionClient(url).url, expected)
+
+    def test_ambiguous_or_deeply_nested_json_response_is_refused(self):
+        # These bytes are invalid/ambiguous model outputs, not low scores. In
+        # particular the second noul must never override the first into a flag.
+        payloads = [b'{"model":"one","model":"two","answers":{}}',
+                    b'{"model":"one","answers":{"rug-check":{"type":"noul","noul":0,"noul":1}}}',
+                    b'[' * 20000 + b'0' + b']' * 20000]
+        client = s.DecisionClient(retries=0)
+        request = s.build_review_request(self.catalog, 'unused synthetic photo', 'never')
+        for raw in payloads:
+            with self.subTest(raw=raw[:100]), patch.object(client.opener, 'open', return_value=BytesIO(raw)):
+                with self.assertRaises(s.SuggestionError):
+                    client.decide(request)
+
 
 class GeometryTests(unittest.TestCase):
     def frame(self, points, rotation=None, translation=None):
@@ -398,7 +421,8 @@ class PipelineTests(unittest.TestCase):
         client, seen = self.mock_client(fixture_response)  # returns fake-http-model
         with patch.object(s, 'DecisionClient', return_value=client):
             with self.assertRaisesRegex(s.SuggestionError, 'Calibration model.*no output written'):
-                s.run_scan(self.root, keyframes=2, calibration=path, progress=lambda _: None)
+                s.run_scan(self.root, keyframes=2, calibration=path, progress=lambda _: None,
+                           model_dir=self.root / 'model', runtime_dir=self.root / 'runtime')
         self.assertEqual(len(seen), 1)
         self.assertFalse((self.root / 'suggestions.json').exists())
 
@@ -410,7 +434,8 @@ class PipelineTests(unittest.TestCase):
         client, _ = self.mock_client(fixture_response)
         with patch.object(s, 'DecisionClient', return_value=client):
             with self.assertRaisesRegex(s.SuggestionError, 'Calibration model'):
-                s.run_scan(self.root, keyframes=1, calibration=path, progress=lambda _: None)
+                s.run_scan(self.root, keyframes=1, calibration=path, progress=lambda _: None,
+                           model_dir=self.root / 'model', runtime_dir=self.root / 'runtime')
         self.assertEqual(output.read_bytes(), b'Previous result must remain unchanged.')
 
     def test_calibration_think_mode_mismatch_aborts_before_model_and_no_calibration_works(self):
@@ -461,6 +486,40 @@ class PipelineTests(unittest.TestCase):
                 s.run_scan(self.root, keyframes=1, calibration=path, model_dir=self.root/'model',
                            runtime_dir=self.root/'runtime', progress=lambda _: None)
         self.assertFalse((self.root/'suggestions.json').exists())
+
+    def test_unusable_calibration_identity_fails_before_reading_or_requesting_photos(self):
+        path = self.root / 'test-calibration.json'
+        output = self.root / 'suggestions.json'
+        output.write_bytes(b'PRIOR')
+        for kind in ('missing-directories', 'legacy-default', 'mismatched-content'):
+            document = self.calibration_document(model='fake-http-model')
+            options = {'calibration': path, 'model_dir': self.root / 'model', 'runtime_dir': self.root / 'runtime'}
+            if kind == 'missing-directories':
+                options.pop('model_dir')
+                options.pop('runtime_dir')
+            elif kind == 'legacy-default':
+                document.pop('modelIdentity')
+                options.pop('calibration')
+            else:
+                document['modelIdentity']['weightsSHA256'] = '0' * 64
+            path.write_text(json.dumps(document))
+            client, seen = self.mock_client(fixture_response)
+            with self.subTest(kind=kind), patch.object(s, 'DEFAULT_CALIBRATION', path), \
+                    patch.object(s, 'DecisionClient', return_value=client), \
+                    patch.object(s, 'load_scan', wraps=s.load_scan) as loaded:
+                with self.assertRaisesRegex(s.SuggestionError, 'weight/runtime content identity'):
+                    s.run_scan(self.root, keyframes=1, progress=lambda _: None, **options)
+                self.assertEqual(len(seen), 0)
+                loaded.assert_not_called()
+                self.assertEqual(output.read_bytes(), b'PRIOR')
+
+    def test_partial_model_identity_configuration_is_refused(self):
+        client, seen = self.mock_client(fixture_response)
+        with patch.object(s, 'DecisionClient', return_value=client):
+            with self.assertRaisesRegex(s.SuggestionError, 'Provide both'):
+                s.run_scan(self.root, keyframes=1, no_calibration=True,
+                           model_dir=self.root / 'model', progress=lambda _: None)
+        self.assertEqual(len(seen), 0)
 
     def test_calibration_conditions_and_missing_provenance_fail_closed_even_with_force(self):
         for mutate in [lambda d: d.pop('model'), lambda d: d.pop('scoringConditions'),

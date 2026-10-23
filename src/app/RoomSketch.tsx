@@ -64,7 +64,7 @@ export function RoomSketch(props: RoomSketchProps) {
 
   return <section className="room-sketch" aria-labelledby={titleId} lang={language}>
     <h3 id={titleId}>{copy.title}</h3>
-    <p className="room-sketch__notice">{copy.approximate}</p>
+    {outline ? <p className="room-sketch__notice">{copy.approximate}</p> : null}
     {!outline ? <p role="status">{capture.mode === 'arkit' && capture.outline ? copy.invalidOutline : copy.noOutline}</p> : <>
       {!outline.closed ? <p className="small-text">{copy.openOutline}</p> : null}
       <p className="small-text">{copy.assumptions}</p>
@@ -82,7 +82,13 @@ export function RoomSketch(props: RoomSketchProps) {
             <span>{copy.photo} {index + 1}</span>
           </button>
           {photo.camera?.tracking === 'limited' ? <p className="small-text">{copy.limited}</p> : null}
-          {photoFlags.map((flag) => <button key={flag.id} className="room-sketch__flag-link secondary" type="button" aria-pressed={selectedId === flag.id} onClick={() => onSelect(flag.id)}><span aria-hidden="true">◆ </span>{flag.label}<span className="small-text">{placed.get(flag.id) ? copy.spot : copy.photoOnly}</span></button>)}
+          {photoFlags.map((flag) => {
+            const flagIndex = flags.findIndex((candidate) => candidate.id === flag.id), placement = placed.get(flag.id) ? copy.spot : copy.photoOnly;
+            return <button key={flag.id} className="room-sketch__flag-link secondary" type="button" title={flag.label} aria-label={`${copy.flag} ${flagIndex + 1}: ${flag.label}. ${placement}`} aria-pressed={selectedId === flag.id} onClick={() => onSelect(flag.id)}>
+              <span className="room-sketch__flag-label"><span aria-hidden="true">◆ </span>{copy.flag} {flagIndex + 1}</span>
+              <span className="small-text">{placement}</span>
+            </button>;
+          })}
         </div>;
       })}
     </div>

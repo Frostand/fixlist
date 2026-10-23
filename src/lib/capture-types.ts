@@ -1,3 +1,4 @@
+import type { Language } from '../domain/roles';
 /** Shared types for room capture v1. Binding format: docs/capture-v1-contract.md. Validation lives in capture-model.ts. */
 export type Vec2 = readonly [number, number];
 export type Matrix4 = readonly number[]; // 16 numbers, column-major camera-to-world
@@ -57,8 +58,9 @@ export interface CaptureSuggestionsFile {
   version: 1;
   createdAt: string;
   capture: { captureId: string; roomId: string; photos: readonly { photoId: string; sha256: string }[] };
-  model: { name: string; backend: 'mlx'; engine: 'startlux-decision'; license: string; identity: null | { version: 1; weightsSHA256: string; runtimeSHA256: string } };
-  thresholds: { suggestion: number; relevance: number; location: number };
+  model: { name: string; backend: 'mlx' | 'coreml'; engine: 'startlux-decision' | 'clip-zero-shot'; license: string; identity: null | { version: 1; weightsSHA256: string; runtimeSHA256: string } };
+  /** Per-item relevance thresholds are required only for the pinned Core ML backend. */
+  thresholds: { suggestion: number; relevance: number; location: number; perItem?: Readonly<Record<string, number>> };
   calibration: null | Record<string, unknown>;
   notice: string;
   items: readonly CaptureSuggestionItem[];
@@ -86,7 +88,7 @@ export interface NativeCaptureStartOptions {
   captureId: string;
   roomId: string;
   roomName: string;
-  language: 'en' | 'es';
+  language: Language;
   prompts: readonly { checklistItemId: string | null; text: string }[];
   strings: Readonly<Record<string, string>>;
 }
@@ -105,7 +107,10 @@ export interface FixListCapturePlugin {
  * Placeholders: {current}, {total}, {count}.
  */
 export const NATIVE_CAPTURE_STRING_KEYS = [
+  'stepOutline', 'stepPhotos', 'aimCorner', 'moreCorners', 'closeAtFirst', 'addCorner',
+  'moreOptions', 'usePhoto', 'doorChip', 'approximateShort', 'previewNextState',
   'findFloor', 'floorFound', 'trackingLimited', 'interrupted', 'relocalizeFailed',
+  'restartTracking', 'restartConfirmTitle', 'restartConfirmMessage',
   'tapCorners', 'cornerCount', 'undo', 'closeOutline', 'markDoor', 'doorMode', 'skipOutline', 'approximate',
   'photoProgress', 'shutter', 'retake', 'skip', 'next', 'done',
   'cancel', 'cancelConfirmTitle', 'cancelConfirmMessage', 'cancelConfirmStop', 'cancelConfirmKeep',

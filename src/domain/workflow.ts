@@ -1,7 +1,7 @@
 import type { FailureCode } from './failures';
 import type { DemoScenario, FictionalProfile, HumanConfirmation } from './types';
 import type { Attribution, Delegation, DelegationScope, HelpRequest, Household, HouseholdPhoto, Language, Person, PersonRole, RequestSharing, SharingField } from './roles';
-import { MAX_HOUSEHOLD_PHOTOS, MAX_REMOVED_PHOTO_HISTORY, noSharing, REQUEST_HISTORY_LIMIT, sharingFields } from './roles';
+import { isLanguage, MAX_HOUSEHOLD_PHOTOS, MAX_REMOVED_PHOTO_HISTORY, noSharing, REQUEST_HISTORY_LIMIT, sharingFields } from './roles';
 import { demoPeople, RESIDENT_ID } from '../data/demo-people';
 import { computePlan } from './plan';
 import { canConfirmConcern, isChecklistAnswer, isIsoTimestamp, REQUEST_HISTORY_NOTICE, requestIdForAction } from './rules';
@@ -134,14 +134,14 @@ export function applyCommand(scenario: DemoScenario, state: DemoState, c: DemoCo
     case 'create_person': {
       if (!validId(c.personId) || state.people.some((p) => p.id === c.personId) || c.personId === 'family-before-roles') return fail('Choose a new demo person ID.');
       if (state.people.length >= 20 || !validText(c.name, 40)) return fail('Use a name of 1–40 characters; this demo supports up to 20 people.');
-      if (!['resident', 'family_helper', 'volunteer'].includes(c.role) || !['en', 'es'].includes(c.language)) return fail('Choose a supported role and language.');
+      if (!['resident', 'family_helper', 'volunteer'].includes(c.role) || !isLanguage(c.language)) return fail('Choose a supported role and language.');
       if (c.role === 'resident' && state.people.some((p) => p.role === 'resident')) return fail('Maple House already has its one resident. A new profile cannot take over the household.');
       const person: Person = { id: c.personId, name: c.name, role: c.role, fictional: true, language: c.language, onboarding: {}, checklistPosition: 0, skills: [], availability: '', selfReportLabel: 'Self-reported, not verified', createdBy: by, updatedBy: by };
       return ok({ ...state, people: [...state.people, person] });
     }
     case 'select_person':
       return state.people.some((p) => p.id === c.personId) ? ok({ ...state, activePersonId: c.personId }) : fail('Unknown demo person.');
-    case 'set_language': return ['en', 'es'].includes(c.language) ? editPerson({ language: c.language }) : fail('Choose English or Spanish.');
+    case 'set_language': return isLanguage(c.language) ? editPerson({ language: c.language }) : fail('Choose a supported language.');
     case 'set_onboarding':
       if (!validId(c.guideId) || !Number.isInteger(c.stepIndex) || c.stepIndex < 0 || c.stepIndex > 3 || typeof c.completed !== 'boolean' || Object.keys(actor.onboarding).length >= 8 && !Object.hasOwn(actor.onboarding, c.guideId)) return fail('Choose a valid guide and step from 0 to 3.');
       return editPerson({ onboarding: { ...actor.onboarding, [c.guideId]: { stepIndex: c.stepIndex, completed: c.completed } } });

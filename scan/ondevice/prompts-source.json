@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "score": "sigmoid(logitScale * (mean positive cosine - mean neutral cosine)); maximum of full image and nine overlapping crops",
+  "neutral": [
+    "A close-up photo of a blank wall.",
+    "A close-up photo of furniture upholstery.",
+    "A photo of a ceiling.",
+    "A close-up photo of objects on a table.",
+    "A photo looking out of a window.",
+    "A close-up photo of a kitchen counter."
+  ],
+  "items": {
+    "rug-check": ["A photo of a rug on a room floor.", "A photo of a floor mat on a walking path.", "A photo of a carpet rug and its edges."],
+    "cord-check": ["A photo of an open floor walking path in a room.", "A photo of a walkway across an indoor floor.", "A photo of floor space where people walk."],
+    "stair-clutter-check": ["A photo of indoor stairs and stair treads.", "A photo of a staircase and its landing.", "A photo of steps used for walking."],
+    "handrail-check": ["A photo of a stair handrail attached to a wall.", "A photo of a railing and its attachment to the stairs.", "A photo of a staircase handrail and brackets."],
+    "stair-lighting-check": ["A photo of indoor stairs and stair treads.", "A photo of a staircase and its landing.", "A photo of steps used for walking."],
+    "night-lighting-check": ["A photo of a bed with floor space beside it.", "A photo of a bedroom doorway and walking path.", "A photo of a walking route next to a bed."],
+    "shower-surface-check": ["A photo of the standing surface of a shower.", "A photo of a bathtub floor.", "A photo of a shower tray and its floor."],
+    "bathroom-support-check": ["A photo of a toilet and the wall beside it.", "A photo of a bathtub and its adjoining wall.", "A photo of a shower and its surrounding walls."]
+  }
+}

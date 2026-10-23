@@ -13,7 +13,7 @@ import type { ScanPin } from '../lib/scan-model';
 import { ScanPanel } from './ScanPanel';
 import { suggestionForChecklist, type ScanSuggestionLayer } from '../lib/scan-suggestions';
 import { ScanSuggestionChip } from './ScanSuggestions';
-import { checklistPresentation, displayAnswer } from './checklist-presentation';
+import { progressText, checklistPresentation, displayAnswer } from './checklist-presentation';
 
 interface WorkflowProps { scenario: DemoScenario; state: DemoState; onCommand: (command: ResidentCommandInput) => void }
 
@@ -49,7 +49,7 @@ export function ChecklistSection({ scenario, state, onCommand, scanResetVersion 
             <article className="room" key={room.id} data-count={evidence.length} aria-labelledby={`room-${room.id}`}>
               <header className="room-head">
                 <h3 id={`room-${room.id}`}>{authored(t, room.name)}</h3>
-                {tally ? <p className="room-tally" data-complete={tally.unknown === 0}>{t('home.progress', { answered: tally.answered, total: tally.total, notSure: tally.notSure, unanswered: tally.unanswered })}</p> : null}
+                {tally ? <p className="room-tally" data-complete={tally.unknown === 0}>{progressText(t, { answered: tally.answered, total: tally.total, notSure: tally.notSure, unanswered: tally.unanswered })}</p> : null}
               </header>
               <div className="room-items">
                 {evidence.map((item) => <ObservationItem key={item.id} scenario={scenario} state={state} onCommand={onCommand} evidence={item} suggestions={suggestions} />)}
@@ -134,7 +134,7 @@ export function PlanSection({ scenario, state, onCommand }: WorkflowProps) {
       </StepHead>
       <p className="tally-line" role="status" aria-live="polite">{concernCount}{t("legacy.workflowsections.18")}{concernCount === 1 ? '' : 's'} · {plan.length}{t("legacy.workflowsections.19")}{plan.length === 1 ? '' : 's'}.</p>
       <p className="small-text">{t("legacy.workflowsections.20")}</p>
-      {plan.length === 0 ? <p className="empty-state">{t("legacy.workflowsections.21")}{t('home.progress', { answered: coverage.answered, total: coverage.total, notSure: coverage.notSure, unanswered: coverage.unanswered })}. {t("legacy.workflowsections.23")}</p> : (
+      {plan.length === 0 ? <p className="empty-state">{t("legacy.workflowsections.21")}{progressText(t, { answered: coverage.answered, total: coverage.total, notSure: coverage.notSure, unanswered: coverage.unanswered })}. {t("legacy.workflowsections.23")}</p> : (
         <ol className="plan-list">{plan.map((item) => (
           <li key={item.referenceActionId} value={item.catalogPosition}>
             <article className="action-card" data-routing={item.referenceAction.helpRouting.kind} aria-labelledby={`action-${item.referenceActionId}`}>
