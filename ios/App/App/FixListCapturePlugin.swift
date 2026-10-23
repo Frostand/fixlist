@@ -18,6 +18,13 @@ enum CaptureUIPreview {
         guard let index = args.firstIndex(of: "-FixListCaptureUIPreview"), index + 1 < args.count else { return false }
         return args[index + 1] == "1"
     }
+    /// Optional `-FixListCaptureUIPreviewState N` (0-4) starts the preview at a given state for screenshots.
+    static var initialState: Int {
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: "-FixListCaptureUIPreviewState"), index + 1 < args.count,
+              let value = Int(args[index + 1]), (0..<5).contains(value) else { return 0 }
+        return value
+    }
 }
 #endif
 

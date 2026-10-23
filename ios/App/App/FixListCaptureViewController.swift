@@ -192,7 +192,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
 
     private func button(_ key: String, symbol: String? = nil, action: Selector? = nil,
                         diameter: CGFloat? = nil) -> UIButton {
-        let button = UIButton(type: .system)
+        let button: UIButton = diameter == nil ? UIButton(type: .system) : CircularButton(type: .system)
         var config = UIButton.Configuration.plain()
         config.baseForegroundColor = .white
         config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
@@ -928,7 +928,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             nextState.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
             nextState.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 84)
         ])
-        setUIPreviewState(0)
+        setUIPreviewState(CaptureUIPreview.initialState)
     }
 
     @objc private func advanceUIPreview() { setUIPreviewState((uiPreviewState + 1) % 5) }
@@ -967,4 +967,13 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         coaching.isHidden = true
     }
     #endif
+}
+
+/// Keeps fixed-diameter capture controls circular; UIButton configuration updates can reset layer corners.
+private final class CircularButton: UIButton {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerCurve = .circular
+        layer.cornerRadius = min(bounds.width, bounds.height) / 2
+    }
 }
