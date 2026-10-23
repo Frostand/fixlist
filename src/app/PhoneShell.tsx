@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Person } from '../domain/roles';
-import { useT, reviewed, useLanguage, type MessageKey } from '../i18n';
+import { useT, type MessageKey } from '../i18n';
 import { activeTab, homeRoute, isTabRoot, parentRoute, routeHash, type Route } from './routes';
 import { focusTarget, focusVisible, skipToContent } from './focus';
 import { hasSettingsEntry, navigationTabs, type NavigationLayout } from './navigation-layouts';
@@ -19,7 +19,7 @@ export function Icon({ name }: { name: string }) {
     arrow: <path d="m9 5 7 7-7 7M3 12h13" />,
     back: <path d="m14 5-7 7 7 7" />,
   };
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.home}</svg>;
+  return <svg className={name === 'back' || name === 'arrow' ? 'directional-icon' : undefined} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.home}</svg>;
 }
 export function PhoneShell({ person, route, title, navigate, children, hasChecklist, hasPlan, hasRequests = true, actingFor, returnTo = null, layout = 'current' }: { person: Person; route: Route; title: string; navigate: Navigate; children: ReactNode; hasChecklist: boolean; hasPlan: boolean; hasRequests?: boolean; actingFor?: string; returnTo?: Route | null; layout?: NavigationLayout }) {
   const t = useT(), [helpOpen, setHelpOpen] = useState(false), helpHeading = useRef<HTMLHeadingElement>(null);
@@ -48,7 +48,7 @@ export function PhoneShell({ person, route, title, navigate, children, hasCheckl
     })}</nav>
   </div>;
 }
-export function DemoBanners({ showDemo = true, printable = false }: { showDemo?: boolean; printable?: boolean }) { const t = useT(), language = useLanguage(); if (!showDemo && (language !== 'es' || reviewed)) return null; return <div className={`demo-banners${printable ? '' : ' screen-only'}`}>{showDemo ? <p>{t('app.demo')}</p> : null}{language === 'es' && !reviewed ? <p className="translation-note" lang="es">{t('app.unreviewed')}</p> : null}</div>; }
+export function DemoBanners({ showDemo = true, printable = false }: { showDemo?: boolean; printable?: boolean }) { const t = useT(); return showDemo ? <div className={`demo-banners${printable ? '' : ' screen-only'}`}><p>{t('app.demo')}</p></div> : null; }
 export function ScreenLink({ route, navigate, title, detail, icon = 'arrow' }: { route: Route; navigate: Navigate; title: string; detail?: string; icon?: string }) {
   return <a className="screen-link" href={routeHash(route)} onClick={(e) => { e.preventDefault(); navigate(route); }}><span><strong>{title}</strong>{detail ? <span className="muted">{detail}</span> : null}</span><Icon name={icon} /></a>;
 }

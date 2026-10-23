@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { DemoScenario } from '../domain/types';
 import { hasScope, type DemoState, type Person } from '../domain/workflow';
-import { useLanguage, useT, translate, type MessageKey, type Translator } from '../i18n';
+import { useLanguage, useT, localeFor, translate, type MessageKey, type Translator } from '../i18n';
 import { catalogText } from '../i18n/catalog';
 import { buildCaptureBundle } from '../lib/capture-bundle';
 import { CaptureError, newCaptureId, sha256Blob, validateCaptureManifest } from '../lib/capture-model';
@@ -79,7 +79,7 @@ function AuthorizedRoomPage(props: CaptureScreenProps) {
   const flagsInput = useRef<HTMLInputElement>(null);
   const capture = record?.manifest;
   return <div className="stack capture-screen"><h2>{catalogText(t, 'room', roomId)}</h2><p>{t('capture.privacy')}</p>{error ? <p role="alert" className="error-message">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
-    {loading ? <p role="status">{t('common.loading')}</p> : <><p>{capture ? t('room.saved', { date: new Date(capture.createdAt).toLocaleDateString(language), photos: t(capture.photos.length === 1 ? 'capture.photoOne' : 'capture.photoMany', { count: capture.photos.length }) }) : t('room.none')}</p>
+    {loading ? <p role="status">{t('common.loading')}</p> : <><p>{capture ? t('room.saved', { date: new Date(capture.createdAt).toLocaleDateString(localeFor(language)), photos: t(capture.photos.length === 1 ? 'capture.photoOne' : 'capture.photoMany', { count: capture.photos.length }) }) : t('room.none')}</p>
     <button disabled={busy || !!error && !record} onClick={() => navigate({ role: 'r', screen: 'capture', id: roomId })}>{t(capture ? 'room.replace' : 'room.start')}</button>
     {record ? <><RoomCaptureContent {...props} record={record} photoUrls={urls} selectedId={selectedId} onSelect={setSelectedId} mode={mode} onMode={setMode} navigate={navigate} />
     <section className="card stack"><button disabled={busy} onClick={() => setConfirmation('export')}>{t('room.export')}</button><button className="secondary" disabled={busy} onClick={() => flagsInput.current?.click()}>{t('room.import')}</button><input ref={flagsInput} hidden type="file" accept=".json,application/json" aria-label={t('room.import')} disabled={busy} onChange={(event) => void importFlags(event)} /></section>
@@ -108,7 +108,7 @@ export function RoomCaptureContent({ record, photoUrls, selectedId, onSelect, mo
     <RoomSketch capture={capture} photoUrls={photoUrls} flags={sketchFlags} selectedId={selectedId} onSelect={onSelect} mode={mode} /></section>
     <section className="stack"><h2>{t('room.flags')}</h2>{record.flags ? <><p>{t('room.reviewNotice')}</p><p className="muted">{t('room.modelLicense')}</p></> : null}{!flags.length ? <p>{t('room.flagsEmpty')}</p> : null}{flags.map((flag) => <article className="card capture-flag" key={flag.checklistItemId} data-selected={selectedId === flag.checklistItemId}>
       <button className="secondary capture-flag-select" aria-pressed={selectedId === flag.checklistItemId} onClick={() => onSelect(flag.checklistItemId)}>{photoUrls.get(flag.bestPhotoId!) ? <img src={photoUrls.get(flag.bestPhotoId!)} alt={t('room.photo', { number: capture.photos.findIndex((p) => p.photoId === flag.bestPhotoId) + 1 })} /> : null}{flag.question}</button>
-      {language === 'es' ? <p>{t('room.original')}</p> : null}<p>{flag.limitation}</p><p>{captureScoreText(flag, record.flags!, t)}</p><strong>{t('room.notFinding')}</strong>
+      {language !== 'en' ? <p>{t('room.original')}</p> : null}<p>{flag.limitation}</p><p>{captureScoreText(flag, record.flags!, t)}</p><strong>{t('room.notFinding')}</strong>
       <p>{t(person.role === 'resident' || hasScope(state, person.id, 'confirm') ? 'room.addSteps' : 'room.proposeSteps')}</p>
       <div className="button-row capture-decisions"><button disabled={decisionBusy} onClick={() => review(flag.checklistItemId)}>{t(person.role === 'resident' ? 'room.add' : 'room.propose')}</button><button className="secondary" disabled={decisionBusy} onClick={() => notProblem(flag.checklistItemId)}>{t('room.notProblem')}</button>{person.role === 'resident' && helper ? <button className="secondary" disabled={decisionBusy} onClick={() => { if (start()()) navigate({ screen: 'people' }); }}>{t('room.askHelper', { name: helper.name })}</button> : null}</div>
       {person.role === 'resident' && helper ? <p className="muted">{t('room.localHandoff', { name: helper.name })}</p> : null}<ScreenLink title={t('room.related')} route={{ role: 'r', screen: 'question', id: flag.checklistItemId }} navigate={navigate} />

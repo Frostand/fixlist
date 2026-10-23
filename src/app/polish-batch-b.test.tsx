@@ -103,7 +103,7 @@ describe('AI frames, exact questions and provenance', () => {
   });
 });
 
-describe('demo banner placement and retained Spanish review notice', () => {
+describe('demo banner placement without repeated translation notices', () => {
   const state = createInitialState(scenario), person = state.people[0]!;
   it.each(['en', 'es'] as const)('shows the banner on language/person pickers, More/About and the printable report in %s', (language) => {
     const start = html(<StartShell showDemo title="Language"><p /></StartShell>, language);
@@ -112,7 +112,7 @@ describe('demo banner placement and retained Spanish review notice', () => {
     const shell = (screen: 'home' | 'check' | 'more' | 'about') => html(<PhoneShell person={person} route={{ role: 'r', screen } as Route} title={screen} navigate={noop} hasChecklist hasPlan><p /></PhoneShell>, language);
     for (const rendered of [start, people, shell('more'), shell('about'), report]) expect(rendered.split(translate(language, 'app.demo'))).toHaveLength(2);
     for (const rendered of [shell('home'), shell('check'), html(<GuideScreen person={person} residentName="Margaret" dispatch={dispatch} onExit={noop} />, language)]) expect(rendered).not.toContain(translate(language, 'app.demo'));
-    if (language === 'es') { expect(shell('home')).toContain(translate(language, 'app.unreviewed')); expect(report).toContain(translate(language, 'app.unreviewed')); }
+    for (const rendered of [shell('home'), shell('check'), shell('more'), shell('about'), report]) expect(rendered).not.toContain(translate(language, 'app.unreviewed'));
     expect(report).toMatch(/class="demo-banners"/);
   });
 });

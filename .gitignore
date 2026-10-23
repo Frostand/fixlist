@@ -17,3 +17,6 @@ coverage/
 *.md
 *.mdx
 /.claude/
+
+# Local compiler caches and source snapshots for pending translation exports.
+/.cache/

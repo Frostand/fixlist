@@ -43,7 +43,7 @@ describe('version 3 trusted reconstruction', () => {
     (s: DemoState) => { s.people[2]!.role = 'family_helper'; },
     (s: DemoState) => { s.household.residentId = 'alex'; },
     (s: DemoState) => { s.people[0]!.name = 'Other'; },
-    (s: DemoState) => { s.people[0]!.language = 'fr' as never; },
+    (s: DemoState) => { s.people[0]!.language = 'xx' as never; },
     (s: DemoState) => { s.requests[0]!.volunteerId = 'jordan'; },
     (s: DemoState) => { s.requests[0]!.status = 'draft'; },
     (s: DemoState) => { s.requests[0]!.revision++; },

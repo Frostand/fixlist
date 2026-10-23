@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Language, Person, PersonRole } from '../domain/roles';
-import { useT } from '../i18n';
+import { LANGUAGES, reviewed, useLanguage, useT } from '../i18n';
+import { loadLanguageMessages } from '../i18n/messages';
 import { guideIdFor, guideProgress } from './view-model';
 import { type Dispatch } from './ui-controller';
 import { StartShell, type Navigate } from './PhoneShell';
@@ -11,21 +12,22 @@ export async function skipGuide(person: Person, dispatch: Dispatch, onExit: (ski
   if ((await dispatch({ type: 'set_onboarding', guideId: guideIdFor(person), stepIndex: guideProgress(person).stepIndex, completed: false })).ok) await onExit(true);
 }
 export function LanguagePicker({ onSelect, current }: { onSelect(language: Language): void; current?: Language }) {
-  // With no current language (first launch) English stays the primary choice; otherwise the active language is highlighted.
-  const choice = (language: Language, label: string) => { const active = (current ?? 'en') === language;
-    return <button className={active ? undefined : 'secondary'} lang={language} aria-pressed={current ? active : undefined} onClick={() => onSelect(language)}>{label}</button>; };
-  return <div className="language-choices">{choice('en', 'English')}{choice('es', 'Español')}</div>;
+  const t = useT(), language = useLanguage();
+  return <div className="stack"><div className="language-choices">{LANGUAGES.map((option) => {
+    const active = (current ?? language) === option.code;
+    return <button key={option.code} className={active ? undefined : 'secondary'} lang={option.code} dir={option.dir} aria-pressed={current ? active : undefined} onClick={async () => { await loadLanguageMessages(option.code).catch(() => {}); onSelect(option.code); }}>{option.nativeName}</button>;
+  })}</div>{LANGUAGES.some((option) => !reviewed[option.code]) ? <p className="translation-note">{t('app.unreviewed')}</p> : null}</div>;
 }
 export function PeopleScreen({ people, language, dispatch, onChoose }: { people: readonly Person[]; language: Language; dispatch: Dispatch; onChoose(personId: string, preserveLanguage?: boolean): void }) {
   const t = useT();
   const [creating, setCreating] = useState(false), [name, setName] = useState(''), [role, setRole] = useState<PersonRole>('family_helper'), [profileLanguage, setProfileLanguage] = useState(language);
-  return <StartShell showDemo title={t('nav.people')}><div className="people-list">{people.map((person) => <button key={person.id} className="person-row secondary" onClick={() => onChoose(person.id)}><span className="avatar" aria-hidden="true">{person.name.slice(0, 1)}</span><span><strong>{person.name}</strong><small>{t(`role.${person.role}`)}</small></span><span aria-hidden="true">›</span></button>)}</div>
+  return <StartShell showDemo title={t('nav.people')}><div className="people-list">{people.map((person) => <button key={person.id} className="person-row secondary" onClick={() => onChoose(person.id)}><span className="avatar" aria-hidden="true">{person.name.slice(0, 1)}</span><span><strong>{person.name}</strong><small>{t(`role.${person.role}`)}</small></span><span className="directional-icon" aria-hidden="true">›</span></button>)}</div>
     <button className="secondary full" onClick={() => setCreating(!creating)} aria-expanded={creating}>{t('person.create')}</button>
     {creating ? <form className="card stack" onSubmit={async (e) => { e.preventDefault(); const id = `person-${crypto.randomUUID().slice(0, 20)}`; const result = (await dispatch({ type: 'create_person', personId: id, name: name.trim(), role, language: profileLanguage })); if (result.ok) await onChoose(id, true); }}>
       <label>{t('person.name')}<input value={name} maxLength={40} required onChange={(e) => setName(e.target.value)} autoComplete="off" /></label>
       <label>{t('person.role')}<select value={role} onChange={(e) => setRole(e.target.value as PersonRole)}>{(['resident', 'family_helper', 'volunteer'] as const).map((r) => <option key={r} value={r}>{t(`role.${r}`)}</option>)}</select></label>
       {role === 'resident' ? <p className="notice">{t('person.oneResident')}</p> : null}
-      <label>{t('nav.language')}<select value={profileLanguage} onChange={(e) => setProfileLanguage(e.target.value as Language)}><option value="en">English</option><option value="es">Español</option></select></label>
+      <label>{t('nav.language')}<select value={profileLanguage} onChange={(e) => setProfileLanguage(e.target.value as Language)}>{LANGUAGES.map((option) => <option key={option.code} value={option.code} lang={option.code} dir={option.dir}>{option.nativeName}</option>)}</select></label>
       <button disabled={!name.trim() || role === 'resident'}>{t('person.createButton')}</button>
     </form> : null}
   </StartShell>;

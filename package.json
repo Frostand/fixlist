@@ -17,7 +17,10 @@
     "ios:sync": "npm run build && cap sync ios",
     "ios:demo": "npm run ios:demo:stage && npm run ios:sync && npm run ios:demo:install",
     "ios:demo:stage": "node scripts/ios-demo-scan.mjs --stage ios/DerivedData/fixlist-demo-scan-stage viennese-v2",
-    "ios:demo:install": "node scripts/ios-demo-scan.mjs --install-staged ios/DerivedData/fixlist-demo-scan-stage"
+    "ios:demo:install": "node scripts/ios-demo-scan.mjs --install-staged ios/DerivedData/fixlist-demo-scan-stage",
+    "i18n:status": "node scripts/i18n/cli.mjs status",
+    "i18n:export": "node scripts/i18n/cli.mjs export",
+    "i18n:import": "node scripts/i18n/cli.mjs import"
   },
   "dependencies": {
     "@capacitor/core": "8.5.3",

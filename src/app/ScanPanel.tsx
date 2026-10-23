@@ -1,6 +1,6 @@
 import { scanFailureMessage, scanMessage } from '../i18n/authored';
 import { projectedCatalogText, catalogText } from '../i18n/catalog';
-import { useT, useLanguage, Copy } from '../i18n';
+import { useT, useLanguage, localeFor, Copy } from '../i18n';
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { DemoScenario } from '../domain/types';
 import type { DemoState } from '../domain/workflow';
@@ -252,7 +252,7 @@ export function ScanPanel({ scenario, state, restoreSaved = true, onSuggestionsC
                 canSave.current = true;
                 setBusy(false);
                 setError(null);
-                setViewerMessage(t('scan.loaded', { count: count.toLocaleString(language), notice: document.asset.kind === 'generated' ? t("legacy.scanpanel.36") : t("legacy.scanpanel.37") }));
+                setViewerMessage(t('scan.loaded', { count: count.toLocaleString(localeFor(language)), notice: document.asset.kind === 'generated' ? t("legacy.scanpanel.36") : t("legacy.scanpanel.37") }));
                 if (needsSave.current && current.current) { persist(current.current); needsSave.current = false; }
               }}
               onError={(message) => { loadTask.current?.finish(); ready.current = false; setBusy(false); setError({ message }); setViewerMessage(''); }} />
