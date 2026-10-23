@@ -1056,5 +1056,8 @@
   "sketch.noOutline": "Aucun contour de pièce. Photos uniquement.",
   "sketch.in": "Agrandir",
   "sketch.out": "Réduire",
-  "sketch.reset": "Réinitialiser la vue"
+  "sketch.reset": "Réinitialiser la vue",
+  "home.spotOne": "endroit à examiner",
+  "rooms.scannedOne": "Scannée · 1 endroit à examiner",
+  "rooms.scannedNone": "Scannée · rien de signalé"
 }

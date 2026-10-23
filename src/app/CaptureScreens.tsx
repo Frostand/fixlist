@@ -6,13 +6,14 @@ import { catalogText } from '../i18n/catalog';
 import { buildCaptureBundle } from '../lib/capture-bundle';
 import { CaptureError, newCaptureId, sha256Blob, validateCaptureManifest } from '../lib/capture-model';
 import { getCaptureStore, type StoredCapture } from '../lib/capture-storage';
-import { displayFlags, MAX_CAPTURE_FLAGS_BYTES, parseCaptureSuggestions } from '../lib/capture-suggestions';
+import { MAX_CAPTURE_FLAGS_BYTES, parseCaptureSuggestions } from '../lib/capture-suggestions';
 import type { CaptureManifest, CapturePhoto, CaptureSuggestionItem } from '../lib/capture-types';
 import { captureAvailability, runNativeCapture, shareText, type CapturePrompt } from '../lib/native-capture';
 import { reencodePhoto } from '../lib/photo-storage';
 import { trustedPhotoQuestions } from '../lib/scan-suggestions';
 import { PhotoInputActions } from './Photos';
 import { RoomSketch } from './RoomSketch';
+import { roomFlags } from './capture-summary';
 import { Icon, ScreenLink, type Navigate } from './PhoneShell';
 import { Illustration } from './Illustration';
 import { SegmentedControl, Sheet, StatusPill, SecondaryButton } from './UI';
@@ -137,7 +138,7 @@ export function InlineRoomQuestions({ scenario, state, person, roomId, dispatch,
 }
 export function RoomCaptureContent({ scenario, record, photoUrls, selectedId, onSelect, mode, onMode, navigate, state, person, dispatch, canContinue, decisionsDisabled = false }: Omit<CaptureScreenProps, 'roomId'> & { decisionsDisabled?: boolean; record: StoredCapture; photoUrls: ReadonlyMap<string, string>; selectedId: string | null; onSelect(id: string): void; mode: 'plan' | '3d'; onMode(mode: 'plan' | '3d'): void; navigate: Navigate }) {
   const t = useT(), language = useLanguage(), capture = record.manifest;
-  const flags = displayFlags(record.flags).filter((flag) => scenario.checklist.some((item) => item.id === flag.checklistItemId && item.roomId === capture.roomId));
+  const flags = roomFlags(record.flags, scenario.checklist, capture.roomId);
   const helper = state.people.find((p) => p.role === 'family_helper');
   const { alive, start } = useCaptureOperation(dispatch, () => state.activePersonId === person.id && canUseCaptures(state, person) && (canContinue?.() ?? true));
   const [decisionBusy, setDecisionBusy] = useState(false), decisionPending = useRef(false);

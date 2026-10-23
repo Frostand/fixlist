@@ -1056,5 +1056,8 @@
   "room.checkAgain": "사진 다시 검토",
   "room.checkUnavailable": "지점 검토는 iPhone 앱에서 실행됩니다.",
   "room.checkFailed": "사진을 검토하지 못했습니다. 다시 시도해 주세요.",
-  "room.flagsNotChecked": "아직 검토하지 않은 사진입니다."
+  "room.flagsNotChecked": "아직 검토하지 않은 사진입니다.",
+  "home.spotOne": "검토할 지점",
+  "rooms.scannedOne": "스캔 완료 · 검토할 지점 1곳",
+  "rooms.scannedNone": "스캔 완료 · 표시된 곳 없음"
 }

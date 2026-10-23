@@ -1056,5 +1056,8 @@
   "sketch.noOutline": "لا يوجد مخطط حدود للغرفة. صور فقط.",
   "sketch.in": "تكبير",
   "sketch.out": "تصغير",
-  "sketch.reset": "إعادة ضبط العرض"
+  "sketch.reset": "إعادة ضبط العرض",
+  "home.spotOne": "موضع للمراجعة",
+  "rooms.scannedOne": "ممسوحة · موضع واحد للمراجعة",
+  "rooms.scannedNone": "ممسوحة · لا شيء محدد"
 }

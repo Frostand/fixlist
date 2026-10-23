@@ -1056,5 +1056,8 @@
   "room.checkAgain": "Kiểm tra lại ảnh",
   "room.checkUnavailable": "Tính năng kiểm tra điểm chạy trong ứng dụng iPhone.",
   "room.checkFailed": "Không kiểm tra được các ảnh này. Xin thử lại.",
-  "room.flagsNotChecked": "Các ảnh này chưa được kiểm tra."
+  "room.flagsNotChecked": "Các ảnh này chưa được kiểm tra.",
+  "home.spotOne": "điểm cần xem lại",
+  "rooms.scannedOne": "Đã quét · 1 điểm cần xem lại",
+  "rooms.scannedNone": "Đã quét · không có gì được đánh dấu"
 }

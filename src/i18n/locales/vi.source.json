@@ -1056,5 +1056,8 @@
   "room.checkAgain": "Check photos again",
   "room.checkUnavailable": "Spot checks run in the iPhone app.",
   "room.checkFailed": "Couldn’t check these photos. Try again.",
-  "room.flagsNotChecked": "These photos haven’t been checked yet."
+  "room.flagsNotChecked": "These photos haven’t been checked yet.",
+  "home.spotOne": "spot to review",
+  "rooms.scannedOne": "Scanned · 1 spot to review",
+  "rooms.scannedNone": "Scanned · nothing flagged"
 }

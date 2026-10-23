@@ -1056,5 +1056,8 @@
   "room.checkAgain": "重新检查照片",
   "room.checkUnavailable": "位置检查在 iPhone 应用中运行。",
   "room.checkFailed": "无法检查这些照片。请重试。",
-  "room.flagsNotChecked": "这些照片尚未检查。"
+  "room.flagsNotChecked": "这些照片尚未检查。",
+  "home.spotOne": "处待查看",
+  "rooms.scannedOne": "已扫描 · 1 处待查看",
+  "rooms.scannedNone": "已扫描 · 未发现需注意之处"
 }

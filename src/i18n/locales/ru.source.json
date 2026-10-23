@@ -1056,5 +1056,8 @@
   "sketch.noOutline": "No room outline. Photos only.",
   "sketch.in": "Zoom in",
   "sketch.out": "Zoom out",
-  "sketch.reset": "Reset view"
+  "sketch.reset": "Reset view",
+  "home.spotOne": "spot to review",
+  "rooms.scannedOne": "Scanned · 1 spot to review",
+  "rooms.scannedNone": "Scanned · nothing flagged"
 }

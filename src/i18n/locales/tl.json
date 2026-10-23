@@ -1056,5 +1056,8 @@
   "sketch.noOutline": "Walang balangkas ng silid. Mga larawan lamang.",
   "sketch.in": "Palakihin",
   "sketch.out": "Paliitin",
-  "sketch.reset": "I-reset ang tanawin"
+  "sketch.reset": "I-reset ang tanawin",
+  "home.spotOne": "bahaging susuriin",
+  "rooms.scannedOne": "Na-scan · 1 bahaging susuriin",
+  "rooms.scannedNone": "Na-scan · walang namarkahan"
 }
