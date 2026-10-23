@@ -17,7 +17,7 @@ import { isAnnotatedScanImage } from '../lib/scan-image';
 
 const ScanViewer = lazy(() => import('./ScanViewer'));
 
-// Exact bytes of the licensed public-render adaptation documented in docs/ai-disclosures.md.
+// Exact bytes of the licensed public-render adaptation documented in docs/credits-and-sources.md.
 // A filename or a developer-local path alone is not evidence of this source.
 export const SAMPLE_APARTMENT_SCENE_SHA256 = '591d0f21e85b830bd9c848477a5686c98b8393768a49ec7d781fe002bc54e61c';
 type ScanSourceOrigin = 'user' | 'local' | 'saved';

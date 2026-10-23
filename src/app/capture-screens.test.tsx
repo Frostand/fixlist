@@ -16,6 +16,7 @@ import { NATIVE_CAPTURE_STRING_KEYS } from '../lib/capture-types';
 import { validateCaptureSuggestions } from '../lib/capture-suggestions';
 import { canUseCaptures, capturePrompts, CaptureFlow, GuidedPhotoTour, RoomCaptureContent, RoomPage } from './CaptureScreens';
 import { RoomList } from './ResidentScreens';
+import { RoomSketch } from './RoomSketch';
 import { createCaptureRouteEpoch } from './App';
 import { visibleHouseholdFor } from '../domain/role-views';
 import { activeTab, parentRoute, parseRoute } from './routes';
@@ -58,6 +59,24 @@ describe('capture screens preserve roles and human decisions', () => {
     expect(html).toContain('Room sketch view'); expect(render(false)).not.toContain('Room sketch view'); expect(render(null)).toContain('No room outline. Photos only.');
     expect(html).not.toContain('Confirm concern'); expect(html).not.toContain('type="radio"'); expect(html).not.toContain('% likely'); expect(html).not.toContain('handrail-check');
   });
+  it('keeps catalog-wide flags stored but offers only this room\'s checklist and sketch decisions', () => {
+    const manifest = validateCaptureManifest({ ...bundle, photos: bundle.photos.map(({ jpeg: _jpeg, ...p }) => p) }); if (!manifest.ok) throw new Error(manifest.error);
+    const allSuggested = structuredClone(fixtureFlags);
+    for (const item of allSuggested.items) { item.perPhoto.forEach((row) => { row.rawProbability = row.probability = .77; }); item.score = .77; item.status = 'suggested'; }
+    const flags = validateCaptureSuggestions(allSuggested, manifest.value); if (!flags.ok) throw new Error(flags.error);
+    const savedManifest = manifest.value, savedFlags = flags.value;
+    const state = createInitialState(scenario), navigate = vi.fn(), dispatch = vi.fn(async () => ({ ok: true as const }));
+    let tree: ReactNode;
+    function Probe() { tree = RoomCaptureContent({ scenario, state, person: state.people[0]!, dispatch, navigate, record: { manifest: savedManifest, photos: new Map(), flags: savedFlags }, photoUrls: new Map(), selectedId: null, onSelect: () => {}, mode: 'plan', onMode: () => {} }); return tree; }
+    const html = renderToStaticMarkup(<Probe />);
+    expect(html).toContain(allSuggested.items[0]!.question);
+    for (const item of allSuggested.items.slice(1)) expect(html).not.toContain(item.question);
+    expect(elements(tree, 'article')).toHaveLength(1);
+    const sketch = components(tree, RoomSketch)[0]!;
+    expect((sketch.props.flags as { checklistItemId: string }[]).map((flag) => flag.checklistItemId)).toEqual(['rug-check']);
+    expect(flags.value.items).toHaveLength(8);
+    expect(dispatch).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled();
+  });
   it('view/import never answers or confirms; Add and Ask are local navigation; Not a problem is an explicit No', async () => {
     let state = createInitialState(scenario);
     const values = new Map<string, string>(), storage = { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => { values.set(k, v); }, removeItem: (k: string) => { values.delete(k); } };
@@ -83,8 +102,12 @@ describe('capture screens preserve roles and human decisions', () => {
     expect(navigate).toHaveBeenLastCalledWith({ screen: 'people' }); expect(state).toEqual(before);
     await (buttons.find((b) => b.props.children === translate('en', 'room.notProblem'))!.props.onClick as () => Promise<void>)();
     expect(state.checklistAnswers['rug-check']).toBe('no'); expect(state.confirmations['rug-concern']?.humanConfirmed).toBe(false); expect(computePlan(scenario, state)).toHaveLength(0);
+    const savedNo = renderToStaticMarkup(<Probe />);
+    expect(savedNo).toContain('data-checklist-answer="no"'); expect(savedNo).toContain(`${translate('en', 'room.related')}: ${translate('en', 'check.no')}`);
     expect((await dispatch({ type: 'answer_checklist', checklistItemId: 'rug-check', answer: 'yes' })).ok).toBe(true); expect(computePlan(scenario, state)).toHaveLength(0);
     expect((await dispatch({ type: 'confirm_concern', concernId: 'rug-concern' })).ok).toBe(true); expect(computePlan(scenario, state)).toHaveLength(1);
+    const savedYes = renderToStaticMarkup(<Probe />);
+    expect(savedYes).toContain('data-checklist-answer="yes"'); expect(savedYes).toContain(`${translate('en', 'room.related')}: ${translate('en', 'check.yes')} · ${translate('en', 'check.confirmed')}`);
     // The existing No command clears prior confirmation through the domain, too.
     await (buttons.find((b) => b.props.children === translate('en', 'room.notProblem'))!.props.onClick as () => Promise<void>)();
     expect(computePlan(scenario, state)).toHaveLength(0);
@@ -151,4 +174,9 @@ function elements(node: ReactNode, type: string): ReactElement<Record<string, un
   if (Array.isArray(node)) return node.flatMap((n) => elements(n, type));
   if (!isValidElement<{ children?: ReactNode }>(node)) return [];
   return [...(node.type === type ? [node as ReactElement<Record<string, unknown>>] : []), ...elements(node.props.children, type)];
+}
+function components(node: ReactNode, type: unknown): ReactElement<Record<string, unknown>>[] {
+  if (Array.isArray(node)) return node.flatMap((n) => components(n, type));
+  if (!isValidElement<{ children?: ReactNode }>(node)) return [];
+  return [...(node.type === type ? [node as ReactElement<Record<string, unknown>>] : []), ...components(node.props.children, type)];
 }

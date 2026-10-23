@@ -30,6 +30,9 @@ struct CaptureOptions {
         "trackingLimited": "Move slowly; point at something with texture.",
         "interrupted": "Room tracking was interrupted. Return to the same place.",
         "relocalizeFailed": "Room tracking restarted. The old outline and photo positions were cleared.",
+        "restartTracking": "Restart room tracking",
+        "restartConfirmTitle": "Restart room tracking?",
+        "restartConfirmMessage": "The outline and photo positions will be cleared. Your photos will be kept.",
         "tapCorners": "Tap each corner of the room on the floor.",
         "cornerCount": "{count} corners",
         "undo": "Undo", "closeOutline": "Close outline", "markDoor": "Mark a door",
@@ -94,6 +97,44 @@ enum CaptureFiles {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         return formatter.string(from: date)
+    }
+}
+
+/// Selection is pure so changes in plane estimates can be checked without an
+/// AR session. Once a point or posed photo uses a floor, it is a drawing origin.
+enum CaptureFloorMath {
+    static func select(previous: Float?, heights: [Float], locked: Bool) -> Float? {
+        if locked { return previous }
+        return heights.min()
+    }
+
+    static func candidate(height: Float, cameraY: Float, classification: ARPlaneAnchor.Classification) -> Float? {
+        // ARKit's refined .none carries a classification Status; it is not
+        // Optional.none. Pattern matching also works before iOS 16, when this
+        // SDK enum did not yet provide its Equatable conformance.
+        switch classification {
+        case .floor, .none(_): break
+        default: return nil
+        }
+        guard height.isFinite, cameraY.isFinite, abs(height) <= 50, height < cameraY else { return nil }
+        return height
+    }
+
+    /// Extend the selected approximate floor, rather than whichever detected
+    /// plane happens to answer a later raycast (or no longer exists after merge).
+    static func intersection(origin: SIMD3<Float>, direction: SIMD3<Float>, floorY: Float) -> SIMD2<Float>? {
+        guard origin.x.isFinite, origin.y.isFinite, origin.z.isFinite,
+              direction.x.isFinite, direction.y.isFinite, direction.z.isFinite,
+              floorY.isFinite else { return nil }
+        let length = simd_length(direction)
+        guard length > 0.0001 else { return nil }
+        let ray = direction / length
+        guard ray.y < -0.0001, origin.y > floorY else { return nil }
+        let distance = (floorY - origin.y) / ray.y
+        guard distance >= 0.05, distance <= 15 else { return nil }
+        let hit = origin + ray * distance
+        guard hit.x.isFinite, hit.z.isFinite, abs(hit.x) <= 50, abs(hit.z) <= 50 else { return nil }
+        return SIMD2(hit.x, hit.z)
     }
 }
 

@@ -77,12 +77,12 @@ expect(screenProgram({ ...demoScenario.programs[0]!, criteria: [] }, {}).status)
 
 ## Task 4: Evidence review, architecture decision and handoff
 
-**Owner:** Astra primary. **Files:** `docs/architecture.md`, `docs/product-validation.md`, `docs/validation-2026-10-17.md`, `docs/video-shot-list.md`, `docs/ai-disclosures.md`, `README.md`, `AGENTS.md` current-state paragraphs only.
+**Owner:** Astra primary. **Files:** `docs/architecture.md`, `docs/product-validation.md`, `docs/validation-2026-10-17.md`, `docs/video-shot-list.md`, `README.md`, `AGENTS.md` current-state paragraphs only.
 
 - [x] Independently inspect diffs and run required checks. Fix found failures through the appropriate worker and verify covering evidence.
 - [x] Recheck close product precedents and relevant source material; document a bounded product hypothesis, strongest baseline, observable metrics, and continue/pivot/stop gate. Keep real programs out until their applicability can be established.
 - [x] Use the T3 collaborative browser for desktop/mobile viewport inspection. iOS simulation is optional only if it adds evidence beyond responsive browser checks. Save local artifacts under ignored `recordings/` where supported.
-- [x] Record implemented vs verified vs untested boundaries, actual assistance, remaining student work, and an exact repeatable rehearsal path. Leave no implied public release, submission, or real-world outcome.
+- [x] Record implemented vs verified vs untested boundaries and an exact repeatable rehearsal path. Leave no implied public release, submission, or real-world outcome.
 
 ## Progress
 

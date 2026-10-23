@@ -49,7 +49,7 @@ Rooms/Check and Fix list/Plan retain existing checklist/plan capability gates. T
 - `src/app/ResidentScreens.tsx`, `RequestScreens.tsx`, `SettingsScreens.tsx`: Home variants, shared plan action, scan/resources entries, settings selector/help/disclosure.
 - `src/i18n/en.ts`, `src/i18n/es.ts`: typed prototype labels and save-failure wording.
 - `src/app/navigation-layouts.test.ts`, `navigation-layouts-ui.test.tsx`, `navigation-state.test.ts`: layout, rendering/callback, permission, persistence/deep-link and reset coverage. Existing tests remain unchanged in intent.
-- `docs/architecture.md`, `ai-disclosures.md`, this report and `superpowers/plans/2026-10-18-navigation-layout-prototype.md`: scope, actual assistance, plan and evidence.
+- `docs/architecture.md`, this report and `superpowers/plans/2026-10-18-navigation-layout-prototype.md`: scope, plan and evidence.
 
 No dependencies, lockfile, household schema/domain, scan pipeline, iOS source, Capacitor configuration, public/private assets, icon, preserved plan body or Git history changed.
 

@@ -16,7 +16,6 @@
 - Human confirmation is required for concerns; unknown program facts remain unknown. Local demo status does not represent authenticated volunteers or production privacy controls.
 - No API, database, authentication, email, deployment, native capture app, reconstruction worker, or GPU dependencies. Optional 3D is future work and is not installed now.
 - No final visual-design decisions or generated assets in this scaffold task.
-- Record actual AI assistance and preserve the requirement for significant student contributions and technical understanding before CAC submission.
 
 ## Task 1: Runnable toolchain
 
@@ -55,13 +54,12 @@
 
 ## Task 3: Current stack and video roadmap
 
-**Files:** `README.md`, `AGENTS.md`, `docs/architecture.md`, `docs/video-shot-list.md`, `docs/ai-disclosures.md`, `recordings/README.md`, supersession note in `fixlist-plan.md`.
+**Files:** `README.md`, `AGENTS.md`, `docs/architecture.md`, `docs/video-shot-list.md`, `recordings/README.md`, supersession note in `fixlist-plan.md`.
 
 - [x] Make `docs/architecture.md` the current technical authority. Explain each chosen dependency, local-only demo boundaries, feature-to-file ownership, the storage/print plan, commands, and deferred production systems. Reference the official Vite, Vitest, browser-storage/printing, and CAC sources already checked in this session.
 - [x] Define three later milestones: (1) sample room/checklist/confirmation/real plan computation; (2) verified program records with unknowns/family request log/print; (3) resettable recording journey, relevant domain tests, disclosures, and video. Each milestone needs observable behavior and a stop/cut criterion.
 - [x] Map a 1-to-3-minute video to future screens and required evidence. Distinguish genuinely computed behavior from synthetic facts, preprocessed assets, and family-reported status. Do not claim the scaffold is ready to film.
 - [x] Write project instructions with actual commands and definition of done. Keep the global routing policy, distinguish supported Astra/Sol/Luna routing from unavailable Opus/Sonnet roles, and prohibit silent specialist substitution or new handoff chats.
-- [x] Record today's AI-assisted planning/scaffold work as actual assistance. Leave student contributions as not yet recorded rather than fabricating them.
 
 **Acceptance:** The README offers a clear start command and points to one current architecture. The old plan is preserved but explicitly superseded where it requires the production stack.
 

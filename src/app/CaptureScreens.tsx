@@ -13,6 +13,7 @@ import { reencodePhoto } from '../lib/photo-storage';
 import { trustedPhotoQuestions } from '../lib/scan-suggestions';
 import { PhotoInputActions } from './Photos';
 import { RoomSketch } from './RoomSketch';
+import { displayAnswer } from './checklist-presentation';
 import { ScreenLink, type Navigate } from './PhoneShell';
 import type { Dispatch } from './ui-controller';
 import '../styles/capture.css';
@@ -91,8 +92,9 @@ function AuthorizedRoomPage(props: CaptureScreenProps) {
     <ScreenLink title={t('check.rooms')} route={{ role: 'r', screen: 'check' }} navigate={navigate} />
   </div>;
 }
-export function RoomCaptureContent({ record, photoUrls, selectedId, onSelect, mode, onMode, navigate, state, person, dispatch, canContinue }: Omit<CaptureScreenProps, 'roomId'> & { record: StoredCapture; photoUrls: ReadonlyMap<string, string>; selectedId: string | null; onSelect(id: string): void; mode: 'plan' | '3d'; onMode(mode: 'plan' | '3d'): void; navigate: Navigate }) {
-  const t = useT(), language = useLanguage(), flags = displayFlags(record.flags), capture = record.manifest;
+export function RoomCaptureContent({ scenario, record, photoUrls, selectedId, onSelect, mode, onMode, navigate, state, person, dispatch, canContinue }: Omit<CaptureScreenProps, 'roomId'> & { record: StoredCapture; photoUrls: ReadonlyMap<string, string>; selectedId: string | null; onSelect(id: string): void; mode: 'plan' | '3d'; onMode(mode: 'plan' | '3d'): void; navigate: Navigate }) {
+  const t = useT(), language = useLanguage(), capture = record.manifest;
+  const flags = displayFlags(record.flags).filter((flag) => scenario.checklist.some((item) => item.id === flag.checklistItemId && item.roomId === capture.roomId));
   const helper = state.people.find((p) => p.role === 'family_helper');
   const { alive, start } = useCaptureOperation(dispatch, () => state.activePersonId === person.id && canUseCaptures(state, person) && (canContinue?.() ?? true));
   const [decisionBusy, setDecisionBusy] = useState(false), decisionPending = useRef(false);
@@ -109,6 +111,7 @@ export function RoomCaptureContent({ record, photoUrls, selectedId, onSelect, mo
     <section className="stack"><h2>{t('room.flags')}</h2>{record.flags ? <><p>{t('room.reviewNotice')}</p><p className="muted">{t('room.modelLicense')}</p></> : null}{!flags.length ? <p>{t('room.flagsEmpty')}</p> : null}{flags.map((flag) => <article className="card capture-flag" key={flag.checklistItemId} data-selected={selectedId === flag.checklistItemId}>
       <button className="secondary capture-flag-select" aria-pressed={selectedId === flag.checklistItemId} onClick={() => onSelect(flag.checklistItemId)}>{photoUrls.get(flag.bestPhotoId!) ? <img src={photoUrls.get(flag.bestPhotoId!)} alt={t('room.photo', { number: capture.photos.findIndex((p) => p.photoId === flag.bestPhotoId) + 1 })} /> : null}{flag.question}</button>
       {language === 'es' ? <p>{t('room.original')}</p> : null}<p>{flag.limitation}</p><p>{captureScoreText(flag, record.flags!, t)}</p><strong>{t('room.notFinding')}</strong>
+      <p className="muted" data-checklist-answer={displayAnswer(state, flag.checklistItemId)}>{t('room.related')}: {t(`check.${displayAnswer(state, flag.checklistItemId)}`)}{state.confirmations[flag.concernId]?.humanConfirmed ? ` · ${t('check.confirmed')}` : ''}</p>
       <p>{t(person.role === 'resident' || hasScope(state, person.id, 'confirm') ? 'room.addSteps' : 'room.proposeSteps')}</p>
       <div className="button-row capture-decisions"><button disabled={decisionBusy} onClick={() => review(flag.checklistItemId)}>{t(person.role === 'resident' ? 'room.add' : 'room.propose')}</button><button className="secondary" disabled={decisionBusy} onClick={() => notProblem(flag.checklistItemId)}>{t('room.notProblem')}</button>{person.role === 'resident' && helper ? <button className="secondary" disabled={decisionBusy} onClick={() => { if (start()()) navigate({ screen: 'people' }); }}>{t('room.askHelper', { name: helper.name })}</button> : null}</div>
       {person.role === 'resident' && helper ? <p className="muted">{t('room.localHandoff', { name: helper.name })}</p> : null}<ScreenLink title={t('room.related')} route={{ role: 'r', screen: 'question', id: flag.checklistItemId }} navigate={navigate} />

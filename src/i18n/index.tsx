@@ -7,12 +7,6 @@ export { reviewed };
 export type { MessageKey };
 export type Values = Readonly<Record<string, string | number | undefined>>;
 export type Translator = (key: MessageKey, values?: Values) => string;
-/** Every selectable language, in display order. UI lists render from this array only. */
-export interface LanguageOption { code: Language; nativeName: string; dir: 'ltr' | 'rtl' }
-export const LANGUAGES: readonly LanguageOption[] = [
-  { code: 'en', nativeName: 'English', dir: 'ltr' },
-  { code: 'es', nativeName: 'Español', dir: 'ltr' },
-];
 export function translate(language: Language, key: MessageKey, values: Values = {}): string {
   return (language === 'es' ? es[key] : en[key]).replace(/\{(\w+)\}/g, (token, name: string) => String(values[name] ?? token));
 }

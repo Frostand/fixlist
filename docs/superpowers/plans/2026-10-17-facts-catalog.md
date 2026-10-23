@@ -62,7 +62,7 @@ Owner: separate Sol after task 2 interfaces stabilize. Files: `src/lib/demo-stor
 
 ## Task 4: Acceptance and current documentation
 
-Owner: Astra. Independently inspect source/diffs against the baseline, run full test/typecheck/build/diff checks, and review bundle output. Exercise production build: unknown/boundary/owner/renter/failure profiles; all/any and relevance vs criteria; eight-concern confirmation/coverage; storage reload/reset, exact v1 migration and corrupt-data fallback; keyboard/320px; native print with expanded multi-page content. Reuse prior evidence only where unchanged behavior makes it relevant. Update README, architecture, roadmap/handoff, actual AI assistance, and dated validation with exact results and remaining limits. Original plan/icon/lockfile must retain hashes. No commits/deployment.
+Owner: Astra. Independently inspect source/diffs against the baseline, run full test/typecheck/build/diff checks, and review bundle output. Exercise production build: unknown/boundary/owner/renter/failure profiles; all/any and relevance vs criteria; eight-concern confirmation/coverage; storage reload/reset, exact v1 migration and corrupt-data fallback; keyboard/320px; native print with expanded multi-page content. Reuse prior evidence only where unchanged behavior makes it relevant. Update README, architecture, roadmap/handoff, and dated validation with exact results and remaining limits. Original plan/icon/lockfile must retain hashes. No commits/deployment.
 
 ## Progress
 

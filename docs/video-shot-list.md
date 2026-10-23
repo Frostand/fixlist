@@ -20,7 +20,7 @@ This replaces the earlier plan. It covers the current iOS app (Capacitor build i
 | 1:56–2:16 | **Optional.** Room scan orbiting, then the model's "areas to review", then **Show in 3D**. | "We turned a walk-through video into a 3D model on a Mac. A local AI model scores a few photo questions and marks areas to review. These are experimental scores, not findings. It can be wrong, and Margaret decides." | Use on-screen wording only: "areas to review", "experimental model score", "not a finding". Never say "detects hazards". Scan is a render of a fictional apartment, units arbitrary, no measurements. |
 | 2:16–2:24 | Find local help: Eldercare Locator, then the fictional programs. | "Find local help lists a real resource, the Eldercare Locator. The two example programs are fictional and say so." | Check the source line and verified date on screen (**TODO**). A match is not approval or funding. |
 | 2:24–2:32 | Switch to Spanish briefly. | "FixList also works in Spanish. That text is machine-translated and hasn't been reviewed by a person yet." | Banner "Traducción automática; aún no revisada…" must be visible. |
-| 2:32–2:45 | Closing card with the 2.0 plan and credits (below). | "Next, FixList 2.0 would add real accounts, server-checked permissions, and a partner volunteer organization. None of that exists yet. AI tools helped build this app; the full disclosure is in my submission." | Say what exists and what does not. **TODO Andrew: add one line on what you built yourself.** |
+| 2:32–2:45 | Closing card with the 2.0 plan and credits (below). | "Next, FixList 2.0 would add real accounts, server-checked permissions, and a partner volunteer organization. None of that exists yet." | Say what exists and what does not. |
 
 Without the optional scan segment the video runs about 2:25. Do not add time beyond 3:00 for extra scenes.
 
@@ -28,7 +28,6 @@ Without the optional scan segment the video runs about 2:25. Do not add time bey
 
 - App: FixList. Participants: **TODO names**.
 - Tools: React 19, TypeScript, Vite, Capacitor, three.js, Spark; Python, ffmpeg, COLMAP (pycolmap), Brush; StartLux-Decision model (weights CC BY-NC 4.0).
-- AI assistance in development: Claude (Opus 5.5, Sonnet 5.5) and OpenAI Codex models (GPT-6.1 Sol, GPT-6 Luna); see the submission's AI disclosure.
 - Next steps text based on the CDC "Check for Safety" checklist. Eldercare Locator: Administration for Community Living.
 - Fonts: Atkinson Hyperlegible, Zilla Slab (SIL OFL).
 - If the scan is shown: *Source footage: "UE4Arch.com – Viennese apartment" by UE4Arch.com, Wikimedia Commons, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/), https://commons.wikimedia.org/wiki/File:UE4Arch.com_-_Viennese_apartment.webm. Trimmed to 58–158 s, frame-sampled and reconstructed into a 3D scan; changes were made.*

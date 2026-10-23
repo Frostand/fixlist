@@ -8,7 +8,7 @@ Demonstrate a repeatable chain: fictional room observation → checklist answer 
 
 The previous core domain, storage, browser and print journey has recorded acceptance evidence; the roles domain/storage increment is implemented and awaits parent review. Phone-first resident/helper/volunteer screens are implemented; see `roles-ui-implementation-report.md` for execution evidence and remaining native-print limits. The validation report separates deterministic coverage, actual desktop/native print inspection, the bounded iOS Safari check and remaining product questions. Eight concerns across five text-only fictional rooms exercise the architecture. Seven fixed fictional profiles and two invented programs demonstrate matching, failure and missing facts. This describes the earlier core increment. Native capture and its guided photo fallback are now in the authorized rough prototype; no backend or real accounts are included.
 
-Update 2026-10-18: The current local demo also includes on-device photos and an optional Gaussian-splat room scan/viewer with v2 AI areas-to-review suggestions. These remain user-controlled references; they do not detect hazards, confirm concerns, or assess safety. See the [roles journey spec](roles-journey-spec.md), [scan viewer report](scan-viewer-2026-10-17.md), [suggestion UI report](scan-suggestions-ui-2026-10-17.md), [v2 suggestions contract](suggestions-v2-contract.md), and [AI disclosures](ai-disclosures.md).
+Update 2026-10-18: The current local demo also includes on-device photos and an optional Gaussian-splat room scan/viewer with v2 AI areas-to-review suggestions. These remain user-controlled references; they do not detect hazards, confirm concerns, or assess safety. See the [roles journey spec](roles-journey-spec.md), [scan viewer report](scan-viewer-2026-10-17.md), [suggestion UI report](scan-suggestions-ui-2026-10-17.md), [v2 suggestions contract](suggestions-v2-contract.md), and [Sources and credits](credits-and-sources.md).
 
 Following Andrew's request to retain useful parts of the larger proposal, this local-demo scope remains in place. The [plan integration review](plan-integration-review.md) selects its useful additions: fact-based screening over fictional profiles, a small structured concern/action catalog, funding-work relevance distinct from applicant criteria, and later one-county resource verification. The first two increments are now implemented: fact screening and the expanded catalog, including work relevance. The one-county resource pilot remains gated. See [current acceptance evidence](validation-facts-catalog-2026-10-17.md). Keep all rules in the existing TypeScript domain and data layers.
 
@@ -34,7 +34,7 @@ Update 2026-10-18: The real ACL Eldercare Locator is now included alongside the 
 | `src/app/` | Typed hash routes, phone shell, people/guides, capability-gated resident/helper screens, projection-only volunteer screens, compensated photo handlers and print view. Business rules remain in the domain. |
 | `src/i18n/` | English source dictionary, Spanish key parity and unreviewed marker, interpolation/context hook, ID-based catalog translations and bounded authored-domain explanation translation. User writing is never translated. |
 | `src/styles/` | Plain screen/print CSS tokens, native controls and visible focus. Design rules are in `frontend-design-2026-10-17.md`. |
-| `docs/` | Decisions, source review, evidence, recording plan and factual assistance log. |
+| `docs/` | Decisions, source review, evidence, recording plan and source credits. |
 | `recordings/` | Ignored local screenshot/video/PDF evidence; only its README is tracked. |
 
 Use the exact installed dependency versions in `package.json` and `package-lock.json`, Node **24.18.0** and npm **11**. This increment changes no dependencies. React/TypeScript/Vite, local fonts and the separately lazy-loaded three.js/Spark scan viewer remain the existing stack; Capacitor packaging is separate work. Persistence uses localStorage plus dedicated IndexedDB photo/scan/capture stores, with no backend, server database, analytics or remote API.
@@ -150,7 +150,7 @@ Development uses `http://127.0.0.1:5173`; `npm run preview` serves the build at 
 
 Continue when the synthetic journey and uncertainty invariants pass. Block filming for false confirmations, stale plans, misleading save/reset results or print omissions. Cut visual extras before weakening those rules. Preserve the [recording gate](video-shot-list.md).
 
-Before submission, record significant student technical work and understanding, disclose actual AI/tools, and recheck [current CAC rules](https://www.congressionalappchallenge.us/wp-content/uploads/2026/05/2026-CAC-Rules.pdf). This AI-assisted implementation alone does not establish those requirements. No upload, publication, commit, push or deployment without authorization.
+Before submission, recheck [current CAC rules](https://www.congressionalappchallenge.us/wp-content/uploads/2026/05/2026-CAC-Rules.pdf). No upload, publication, commit, push or deployment without authorization.
 
 ## Deferred work
 

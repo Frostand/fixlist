@@ -225,8 +225,8 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         closeButton = button("closeOutline", action: #selector(closeTapped))
         doorButton = button("markDoor", action: #selector(doorTapped))
         skipOutlineButton = button("skipOutline", action: #selector(skipOutlineTapped))
-        resetButton = button("skipOutline", action: #selector(resetTapped))
-        resetButton.accessibilityHint = text("relocalizeFailed")
+        resetButton = button("restartTracking", action: #selector(resetTapped))
+        resetButton.accessibilityHint = text("restartConfirmMessage")
         shutterButton = button("shutter", action: #selector(shutterTapped))
         retakeButton = button("retake", action: #selector(retakeTapped))
         skipButton = button("skip", action: #selector(skipTapped))
@@ -267,8 +267,10 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         doorButton.isEnabled = trackingNormal && !interrupted && doors.count < 8
         doorButton.setTitle(text(doorMode ? "doorMode" : "markDoor"), for: .normal)
         doorButton.accessibilityLabel = text(doorMode ? "doorMode" : "markDoor")
-        skipOutlineButton.isHidden = isPhotos || relocalizing
-        resetButton.isHidden = !relocalizing
+        skipOutlineButton.isHidden = isPhotos
+        // Recovery can stall in initializing/limited/interrupted as well as
+        // relocalizing. A labelled restart remains available in every state.
+        resetButton.isHidden = false
         shutterButton.isHidden = !isPhotos || hasPhoto
         shutterButton.isEnabled = trackingNormal && !interrupted && !saving
         retakeButton.isHidden = !isPhotos || !hasPhoto
@@ -291,11 +293,8 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     }
     private func place(at point: CGPoint) {
         guard step == .outline, trackingNormal, !interrupted, let floor = floorY, !finished,
-              let query = arView.makeRaycastQuery(from: point, allowing: .existingPlaneInfinite, alignment: .horizontal)
-                ?? arView.makeRaycastQuery(from: point, allowing: .estimatedPlane, alignment: .horizontal) else { return }
-        guard let result = arView.session.raycast(query).first(where: { abs($0.worldTransform[3].y - floor) <= 0.15 }) else { return }
-        let position = SIMD2(result.worldTransform[3].x, result.worldTransform[3].z)
-        guard position.x.isFinite, position.y.isFinite, abs(position.x) <= 50, abs(position.y) <= 50 else { return }
+              let ray = arView.ray(through: point),
+              let position = CaptureFloorMath.intersection(origin: ray.origin, direction: ray.direction, floorY: floor) else { return }
         if doorMode {
             guard doors.count < 8 else { return }
             doors.append(position)
@@ -481,7 +480,19 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         } else { dismiss(animated: true, completion: closed) }
     }
 
-    @objc private func resetTapped() { resetWorld() }
+    @objc private func resetTapped() {
+        guard !finished, presentedViewController == nil else { return }
+        guard !corners.isEmpty || !doors.isEmpty || !photos.isEmpty || pendingPhoto != nil || saving else {
+            resetWorld()
+            return
+        }
+        let alert = UIAlertController(title: text("restartConfirmTitle"), message: text("restartConfirmMessage"), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: text("cancelConfirmKeep"), style: .cancel))
+        alert.addAction(UIAlertAction(title: text("restartTracking"), style: .destructive) { [weak self] _ in
+            self?.resetWorld()
+        })
+        present(alert, animated: true)
+    }
     private func resetWorld() {
         guard !finished else { return }
         worldGeneration += 1
@@ -526,6 +537,9 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             relocalizing = recovering
             if normal { interrupted = false }
             refresh()
+            // A plane may have been added while tracking was limited. Recheck
+            // only after the current world frame is usable again.
+            if normal { updatePlanes(frame.anchors) }
         }
     }
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) { updatePlanes(anchors) }
@@ -535,12 +549,23 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         updatePlanes([])
     }
     private func updatePlanes(_ anchors: [ARAnchor]) {
-        guard !finished else { return }
+        guard !finished, trackingNormal, !interrupted,
+              let cameraY = arView.session.currentFrame?.camera.transform[3].y else { return }
         for case let plane as ARPlaneAnchor in anchors where plane.alignment == .horizontal {
-            let y = plane.transform[3].y + plane.center.y
-            if y.isFinite, abs(y) <= 50 { planeHeights[plane.identifier] = y }
+            let y = (plane.transform * SIMD4(plane.center.x, plane.center.y, plane.center.z, 1)).y
+            planeHeights[plane.identifier] = CaptureFloorMath.candidate(height: y, cameraY: cameraY,
+                classification: plane.classification)
         }
-        guard let lowest = planeHeights.values.min() else { return }
+        let locked = step == .photos || !corners.isEmpty || !doors.isEmpty || !photos.isEmpty || pendingPhoto != nil || saving
+        guard let lowest = CaptureFloorMath.select(previous: floorY, heights: Array(planeHeights.values), locked: locked) else {
+            if !locked {
+                floorY = nil
+                if step == .outline { step = .floor }
+                drawOutline()
+                refresh()
+            }
+            return
+        }
         let first = floorY == nil
         floorY = lowest
         if step == .floor { step = .outline }

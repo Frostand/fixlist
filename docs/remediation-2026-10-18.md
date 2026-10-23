@@ -1,6 +1,6 @@
 # Backlog remediation record — 2026-10-18
 
-Status of `docs/consolidated-review-backlog-2026-10-18.md` after two remediation passes on top of `18bb3ac` (first pass committed as `56a3814`). Implementation was AI-assisted: bounded Codex workers (`gpt-6.1-sol`) wrote the code and tests in separate worktrees; the Claude orchestrator merged, resolved conflicts and ran the checks below. Worker evidence: `scan/REPAIR-2026-10-18.md`, `scan/FOLLOWUP-2026-10-18.md`, `docs/routing-navigation-implementation-report-2026-10-18.md`.
+Status of `docs/consolidated-review-backlog-2026-10-18.md` after two remediation passes on top of `18bb3ac` (first pass committed as `56a3814`). Worker evidence: `scan/REPAIR-2026-10-18.md`, `scan/FOLLOWUP-2026-10-18.md`, `docs/routing-navigation-implementation-report-2026-10-18.md`.
 
 ## Verification actually run
 

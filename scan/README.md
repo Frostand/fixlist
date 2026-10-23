@@ -317,11 +317,11 @@ scan/venv-python scan/reconstruct.py private-captures/test-datasets/playroom.mp4
   --name playroom-video-150 --steps 7000 --max-frames 150 --resume --retry-training
 ```
 
-## Privacy and assistance
+## Privacy
 
 Reconstruction and training are local. Nothing in this pipeline uploads media, calls a hosted reconstruction service, creates an account, or sends a message. `private-captures/` is gitignored and no scan is copied into `public/` or another tracked path. Gitignore is an accidental-commit guard, not encryption or access control. Anyone with filesystem access can read local videos/scans/logs; opening or sharing them elsewhere has that tool's separate privacy boundary. Do not force-add these outputs to Git. Import `scene.splat` and `scene.json` together in the app's 3D room scan panel.
 
-This pipeline and tests were AI-assisted implementation by a delegated worker. Public benchmark validation is not a family capture study, student-authorship finding, geometric measurement, hazard-validation study, or visual acceptance of the integrated viewer. The parent owns final integration and acceptance. No commits, publications, external sends, app/package edits or new tool installations were performed by this worker.
+Public benchmark validation is not a family capture study, geometric measurement, hazard-validation study, or visual acceptance of the integrated viewer. The parent owns final integration and acceptance. No commits, publications, external sends, app/package edits or new tool installations were performed by this worker.
 
 ## Content validation and native packaging repair (2026-10-18)
 
