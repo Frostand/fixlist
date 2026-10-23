@@ -3,7 +3,7 @@ import { useT } from '../i18n';
 import { en } from '../i18n/en';
 import type { DemoScenario } from '../domain/types';
 import type { DemoState } from '../domain/workflow';
-import { checklistPresentation } from './checklist-presentation';
+import { progressText, checklistPresentation } from './checklist-presentation';
 
 /** Schematic, not to scale. Rooms missing from this layout are simply omitted from the map. */
 const layout: Record<string, { x: number; y: number; w: number; h: number; label: string }> = {
@@ -69,7 +69,7 @@ export function FloorPlan({ scenario, state }: { scenario: DemoScenario; state: 
           <li><span className="swatch swatch-clear" aria-hidden="true" />{t("legacy.floorplan.9")}</li>
           <li><span className="swatch swatch-flag" aria-hidden="true" />{t("legacy.floorplan.10")}</li>
         </ul>
-        <ul className="coverage-rooms">{rooms.map((room) => <li key={room.roomId}>{authored(t, room.roomName)}: {t('home.progress', { answered: room.answered, total: room.total, notSure: room.notSure, unanswered: room.unanswered })}</li>)}</ul>
+        <ul className="coverage-rooms">{rooms.map((room) => <li key={room.roomId}>{authored(t, room.roomName)}: {progressText(t, { answered: room.answered, total: room.total, notSure: room.notSure, unanswered: room.unanswered })}</li>)}</ul>
       </figcaption>
     </figure>
   );

@@ -350,16 +350,22 @@ export default function ScanViewer(props: Props) {
         ref={(node) => { const id = `ai:${suggestionId(item)}`; if (node) markerNodes.current.set(id, node); else markerNodes.current.delete(id); }}>{t("legacy.scanviewer.18")}</span>)}</div>
       {props.placing && loaded ? <span className="scan-crosshair" aria-hidden="true">+</span> : null}
     </div>
-    <p className="small-text">{t("legacy.scanviewer.19")}</p>
-    <div className="button-row scan-camera-controls" role="group" aria-label={t("legacy.scanviewer.20")}>
-      {(['left', 'right', 'up', 'down', 'in', 'out'] as const).map((direction) => <button key={direction} className="secondary compact" disabled={!loaded}
-        aria-label={direction === 'in' || direction === 'out' ? t("legacy.scanviewer.21", { v0: t(`scan.${direction}`) }) : t("legacy.scanviewer.22", { v0: t(`scan.${direction}`) })} onClick={() => runtime.current?.move(direction)}>
-        {{ left: '←', right: '→', up: '↑', down: '↓', in: '+', out: '−' }[direction]}
-      </button>)}
-      <button className="secondary compact" disabled={!loaded} onClick={() => runtime.current?.reset()}>{t("legacy.scanviewer.23")}</button>
-      <button disabled={!loaded || !props.placing} onClick={() => runtime.current?.hit(0, 0)}>{t("legacy.scanviewer.24")}</button>
-    </div>
+    <ScanCameraControls loaded={loaded} placing={props.placing} onMove={(direction) => runtime.current?.move(direction)} onReset={() => runtime.current?.reset()} onCenter={() => runtime.current?.hit(0, 0)} />
     {!loaded ? <p className="small-text">{t("legacy.scanviewer.25")}</p> : null}
     {hitMessage ? <p role="status" className="notice">{hitMessage}</p> : null}
   </div>;
+}
+
+export function ScanCameraControls({ loaded, placing, onMove, onReset, onCenter }: { loaded: boolean; placing: boolean; onMove(direction: CameraMove): void; onReset(): void; onCenter(): void }) {
+  const t = useT();
+  return <><div className="scan-camera-quick" role="group" aria-label={t('legacy.scanviewer.20')}>
+    <button type="button" className="secondary compact" disabled={!loaded} aria-label={t('legacy.scanviewer.23')} title={t('legacy.scanviewer.23')} onClick={onReset}><span aria-hidden="true">↺</span></button>
+    <button type="button" className="secondary compact" disabled={!loaded} aria-label={t('scan.zoomIn')} title={t('scan.zoomIn')} onClick={() => onMove('in')}><span aria-hidden="true">+</span></button>
+    <button type="button" className="secondary compact" disabled={!loaded} aria-label={t('scan.zoomOut')} title={t('scan.zoomOut')} onClick={() => onMove('out')}><span aria-hidden="true">−</span></button>
+    {placing ? <button type="button" className="scan-center-pin" disabled={!loaded} onClick={onCenter}>{t('legacy.scanviewer.24')}</button> : null}
+  </div><p className="small-text">{t('scan.viewHelp')}</p>
+  <details className="scan-view-buttons scan-suggestion-details"><summary>{t('scan.moveButtons')}</summary>
+    <p id="scan-controls-help" className="small-text">{t('legacy.scanpanel.34')}</p><p className="small-text">{t('legacy.scanviewer.19')}</p>
+    <div className="scan-camera-grid" role="group" aria-label={t('legacy.scanviewer.20')}>{(['left', 'right', 'up', 'down'] as const).map((direction) => <button type="button" key={direction} className="secondary compact" disabled={!loaded} aria-label={t('legacy.scanviewer.22', { v0: t(`scan.${direction}`) })} onClick={() => onMove(direction)}><span aria-hidden="true">{{ left: '←', right: '→', up: '↑', down: '↓' }[direction]}</span></button>)}</div>
+  </details></>;
 }

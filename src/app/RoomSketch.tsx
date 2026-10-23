@@ -64,7 +64,7 @@ export function RoomSketch(props: RoomSketchProps) {
 
   return <section className="room-sketch" aria-labelledby={titleId} lang={language}>
     <h3 id={titleId}>{copy.title}</h3>
-    <p className="room-sketch__notice">{copy.approximate}</p>
+    {outline ? <p className="room-sketch__notice">{copy.approximate}</p> : null}
     {!outline ? <p role="status">{capture.mode === 'arkit' && capture.outline ? copy.invalidOutline : copy.noOutline}</p> : <>
       {!outline.closed ? <p className="small-text">{copy.openOutline}</p> : null}
       <p className="small-text">{copy.assumptions}</p>

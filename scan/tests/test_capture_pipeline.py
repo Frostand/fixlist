@@ -147,6 +147,21 @@ class CapturePipelineTests(unittest.TestCase):
                 self.assertEqual(self.output.read_bytes(), prior)
                 self.assertEqual(list(self.root.glob('.fixlist-flags-*')), [])
 
+    def test_ambiguous_http_score_cannot_overwrite_prior_flags(self):
+        client = s.DecisionClient(retries=0)
+        request = s.build_review_request(s.load_questions(), '', 'never')
+        payload = json.dumps(InjectedModel().decide(request)).encode()
+        # A conflict where the last score would otherwise win and enter the
+        # high-score path. Exercise the actual HTTP decoder, not a dict seam.
+        payload = payload.replace(b'"noul": 0.99', b'"noul": 0.01, "noul": 0.99', 1)
+        self.output.write_bytes(b'PRIOR FLAGS')
+        with patch.object(client.opener, 'open', return_value=BytesIO(payload)):
+            with self.assertRaisesRegex(s.SuggestionError, 'duplicate JSON'):
+                self.run_pipeline(client)
+        self.assertEqual(client.attempts, 1)
+        self.assertEqual(self.output.read_bytes(), b'PRIOR FLAGS')
+        self.assertEqual(list(self.root.glob('.fixlist-flags-*')), [])
+
     def test_bad_hash_malformed_partial_or_oversize_bundle_does_not_request_or_write(self):
         prior = b'PRIOR'
         invalid = copy.deepcopy(self.bundle)
