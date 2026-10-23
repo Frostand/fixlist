@@ -41,7 +41,7 @@ describe('navigation prototype screen integration', () => {
     const props = propsFor(), requestViews = visibleRequestsFor(scenario, props.state, props.person.id).filter((v) => v.kind === 'household');
     const shell = markup(<PhoneShell {...props} layout={layout} route={{ role: 'r', screen: 'home' }} title="Home" hasChecklist hasPlan hasRequests><p /></PhoneShell>);
     const home = markup(<ResidentHome {...props} layout={layout} requests={requestViews} next={elderNextStep(scenario, props.state)} />);
-    const more = markup(<MoreScreen {...props} resident canViewScan onReset={noop} layout={layout} onLayoutChange={async () => true} />);
+    const more = markup(<MoreScreen {...props} resident canViewScan onReset={noop} layout={layout} showNavigationLayout onLayoutChange={async () => true} />);
     const rooms = markup(<RoomList {...props} showScanEntry={layout !== 'current'} />);
     const requests = markup(<RequestList requests={requestViews} navigate={noop} showResources={layout !== 'current'} />);
     const help = markup(<HelpScreen {...props} />);
@@ -49,7 +49,7 @@ describe('navigation prototype screen integration', () => {
     for (const screen of ['home', 'check', 'plan', 'requests', 'resources', 'scan', 'access', 'report', 'language', 'about', 'help']) expect(destinations.has(`#/r/${screen}`), `${layout}: ${screen}`).toBe(true);
     expect(destinations.has(`#/r/request/${props.state.requests[0]!.id}`)).toBe(true);
     if (layout === 'current') expect(destinations.has('#/r/more')).toBe(true);
-    else { expect(shell).toContain('Account and settings: Margaret'); expect(shell).toContain('Using this screen'); expect(more).toContain(en['app.disclosure']); }
+    else { expect(shell).toContain('Account and settings: Margaret'); expect(shell).toContain('Tips'); expect(more).toContain(en['app.disclosure']); }
     // People and guide remain native button actions in settings, and questions
     // remain native room/resume buttons rather than new route names.
     expect(more).toContain(en['nav.switch']); expect(more).toContain(en['routing.resumeGuide']); expect(rooms).toContain(en['check.resume']);
@@ -59,7 +59,7 @@ describe('navigation prototype screen integration', () => {
   it.each(navigationLayouts)('retains allowed helper links and hides resident-only settings/actions in %s', (layout) => {
     const state = run(atStage(), { type: 'grant_delegation', personId: 'sam', scopes: ['checklist', 'confirm', 'requests'] }), props = propsFor(state, 'sam');
     const home = markup(<ResidentHome {...props} layout={layout} requests={visibleRequestsFor(scenario, state, 'sam')} next={helperNextStep(scenario, state, 'sam')} />);
-    const more = markup(<MoreScreen {...props} resident={false} canViewScan onReset={noop} layout={layout} onLayoutChange={async () => true} />);
+    const more = markup(<MoreScreen {...props} resident={false} canViewScan onReset={noop} layout={layout} showNavigationLayout onLayoutChange={async () => true} />);
     const rooms = markup(<RoomList {...props} showScanEntry={layout !== 'current'} />);
     expect(home).toContain('#/r/plan'); expect(more).toContain('#/r/language'); expect(more).toContain('#/r/about');
     expect(more).not.toContain('#/r/access'); expect(more).not.toContain('#/r/report'); expect(more).not.toContain(en['more.reset']);
@@ -89,7 +89,7 @@ describe('navigation prototype screen integration', () => {
   });
   it.each(['en', 'es'] as const)('has typed prototype settings, account/help and scan labels in %s', (language) => {
     const props = propsFor(), dict = language === 'en' ? en : es;
-    const html = markup(<><PhoneShell {...props} layout="four" route={{ role: 'r', screen: 'home' }} title={dict['nav.home']} hasChecklist hasPlan><p /></PhoneShell><MoreScreen {...props} resident canViewScan onReset={noop} layout="four" onLayoutChange={async () => true} /><RoomList {...props} showScanEntry /></>, language);
+    const html = markup(<><PhoneShell {...props} layout="four" route={{ role: 'r', screen: 'home' }} title={dict['nav.home']} hasChecklist hasPlan><p /></PhoneShell><MoreScreen {...props} resident canViewScan onReset={noop} layout="four" showNavigationLayout onLayoutChange={async () => true} /><RoomList {...props} showScanEntry /></>, language);
     for (const key of ['nav.rooms', 'nav.fixList', 'nav.requests', 'nav.account', 'nav.screenHelp', 'nav.appHelp', 'nav.scan3d', 'navigation.label', 'navigation.current', 'navigation.three', 'navigation.four'] as const) expect(html).toContain(dict[key]);
   });
   it.each(navigationLayouts)('keeps volunteer shell markup identical in %s', (layout) => {
@@ -153,7 +153,7 @@ describe('navigation prototype screen integration', () => {
   it.each(navigationLayouts)('reloads the actual App and controlled settings choice from persisted %s', (layout) => {
     const storage = memory(); storage.setItem(DEMO_STORAGE_KEY, JSON.stringify({ format: 'fixlist-saved-v1', revision: 1, state: atStage() }));
     storage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({ ...emptyNavigationState(), layout }));
-    vi.stubGlobal('window', { localStorage: storage, location: { hash: '#/r/more', search: '' }, history: { state: null } });
+    vi.stubGlobal('window', { localStorage: storage, location: { hash: '#/r/more', search: '?nav' }, history: { state: null } });
     const html = renderToStaticMarkup(<App />), tabs = html.match(/<nav class="tab-bar[\s\S]*?<\/nav>/)?.[0] ?? '';
     expect(html).toContain(`<option value="${layout}" selected="">`); expect(links(tabs)).toHaveLength(layout === 'current' ? 5 : layout === 'three' ? 3 : 4);
   });

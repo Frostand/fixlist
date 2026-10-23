@@ -28,7 +28,7 @@ export function PhoneShell({ person, route, title, navigate, children, hasCheckl
   function closeHelp() { setHelpOpen(false); focusVisible(document.getElementById(focusTarget('help-close'))); }
   const context: MessageKey = route.screen === 'check' || route.screen === 'question' ? 'help.context.check' : route.screen === 'plan' ? 'help.context.plan' : ['request', 'task', 'sharing', 'invite', 'review'].includes(route.screen) ? 'help.context.request' : 'help.context.home';
   const tabs = navigationTabs(layout, person.role, { hasChecklist, hasPlan, hasRequests }), settings = hasSettingsEntry(layout, person.role);
-  const helpLabel = t(settings ? 'nav.screenHelp' : 'nav.help');
+  const helpLabel = t('nav.screenHelp');
   return <div className="phone-app">
     <a className="skip-link screen-only" href="#screen-heading" onClick={skipToContent}>{t('nav.skipContent')}</a>
     <header className="phone-bar screen-only">
@@ -36,10 +36,10 @@ export function PhoneShell({ person, route, title, navigate, children, hasCheckl
       {settings ? <button className="person-chip" onClick={() => navigate({ role: 'r', screen: 'more' })} aria-label={`${t('nav.account')}: ${person.name}`} aria-current={['more', 'help', 'access', 'language', 'report', 'about'].includes(route.screen) ? 'page' : undefined}><Icon name="profile" /><span>{t('nav.account')} · {person.name}</span></button> : <button className="person-chip" onClick={() => navigate({ screen: 'people' })} aria-label={`${t('nav.switch')}: ${person.name}`}><span className="avatar" aria-hidden="true">{person.name.slice(0, 1)}</span>{t('person.chip', { name: person.name, role: t(`role.${person.role}`) })}<span aria-hidden="true">⌄</span></button>}
     </header>
     <main className="phone-main">
-      <DemoBanners />
+      <DemoBanners showDemo={route.screen === 'more' || route.screen === 'about'} />
       {helpOpen ? <section id="context-help" className="card context-help screen-only" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeHelp(); } }}><h2 id={focusTarget('help-open')} tabIndex={-1} ref={helpHeading}>{helpLabel}</h2><p>{t(context)}</p><p>{t('app.local')}</p><button className="secondary" onClick={closeHelp}>{t('common.close')}</button></section> : null}
       {actingFor ? <p className="acting-banner screen-only">{t('person.acting', { name: actingFor })}</p> : null}
-      <h1 id="screen-heading" tabIndex={-1} className="screen-title screen-only">{title}</h1>
+      <h1 id="screen-heading" tabIndex={-1} className={`screen-title screen-only${route.screen === 'scan' ? ' sr-only' : ''}`}>{title}</h1>
       {children}
     </main>
     <nav className="tab-bar screen-only" aria-label={t('nav.tabs')} style={{ '--tab-count': tabs.length } as React.CSSProperties}>{tabs.map((tab) => {
@@ -48,9 +48,9 @@ export function PhoneShell({ person, route, title, navigate, children, hasCheckl
     })}</nav>
   </div>;
 }
-export function DemoBanners() { const t = useT(), language = useLanguage(); return <div className="demo-banners screen-only"><p>{t('app.demo')}</p>{language === 'es' && !reviewed ? <p className="translation-note" lang="es">{t('app.unreviewed')}</p> : null}</div>; }
+export function DemoBanners({ showDemo = true, printable = false }: { showDemo?: boolean; printable?: boolean }) { const t = useT(), language = useLanguage(); if (!showDemo && (language !== 'es' || reviewed)) return null; return <div className={`demo-banners${printable ? '' : ' screen-only'}`}>{showDemo ? <p>{t('app.demo')}</p> : null}{language === 'es' && !reviewed ? <p className="translation-note" lang="es">{t('app.unreviewed')}</p> : null}</div>; }
 export function ScreenLink({ route, navigate, title, detail, icon = 'arrow' }: { route: Route; navigate: Navigate; title: string; detail?: string; icon?: string }) {
   return <a className="screen-link" href={routeHash(route)} onClick={(e) => { e.preventDefault(); navigate(route); }}><span><strong>{title}</strong>{detail ? <span className="muted">{detail}</span> : null}</span><Icon name={icon} /></a>;
 }
-export function StartShell({ title, children }: { title: string; children: ReactNode }) { const t = useT(), [help, setHelp] = useState(false); return <main className="start-shell"><div className="bar-top"><p className="wordmark">{t('app.name')}</p><button className="bar-button" aria-expanded={help} onClick={() => setHelp(!help)}>{t('nav.help')}</button></div>{help ? <p className="notice">{t('help.context.start')}</p> : null}<DemoBanners /><h1 id="screen-heading" tabIndex={-1}>{title}</h1>{children}</main>; }
+export function StartShell({ title, children, showDemo = false }: { title: string; children: ReactNode; showDemo?: boolean }) { const t = useT(), [help, setHelp] = useState(false); return <main className="start-shell"><div className="bar-top"><p className="wordmark">{t('app.name')}</p><button className="bar-button" aria-expanded={help} onClick={() => setHelp(!help)}>{t('nav.screenHelp')}</button></div>{help ? <p className="notice">{t('help.context.start')}</p> : null}<DemoBanners showDemo={showDemo} /><h1 id="screen-heading" tabIndex={-1}>{title}</h1>{children}</main>; }
 export function DefaultHomeButton({ person, navigate }: { person: Person; navigate: Navigate }) { const t = useT(); return <button onClick={() => navigate(homeRoute(person.role))}>{t('nav.home')}</button>; }

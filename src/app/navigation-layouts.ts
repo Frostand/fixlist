@@ -33,6 +33,7 @@ export function hasSettingsEntry(layout: NavigationLayout, role: PersonRole): bo
 export function navigationActiveTab(layout: NavigationLayout, route: Route, returnTo: Route | null = null): string | null {
   if (!('role' in route)) return null;
   if (route.role === 'v') return route.screen === 'task' ? 'tasks' : route.screen;
+  if (layout === 'current' && ['request', 'sharing', 'invite', 'review'].includes(route.screen) && returnTo && !['request', 'sharing', 'invite', 'review'].includes(returnTo.screen)) return navigationActiveTab(layout, returnTo);
   if (layout === 'current' && route.screen === 'resources') return returnTo && returnTo.screen !== 'resources' ? navigationActiveTab(layout, returnTo) : 'help';
   return Object.hasOwn(NAVIGATION_LAYOUTS[layout].active, route.screen) ? NAVIGATION_LAYOUTS[layout].active[route.screen]! : route.screen;
 }

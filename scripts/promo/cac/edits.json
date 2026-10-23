@@ -1,0 +1,138 @@
+{
+  "05": {
+    "windows": [
+      {
+        "from": 2.5,
+        "to": 7.4,
+        "duration": 3.5
+      },
+      {
+        "from": 11.1,
+        "to": 15.8,
+        "duration": 3.3
+      },
+      {
+        "from": 20.05,
+        "to": 21.6,
+        "duration": 1.2
+      },
+      {
+        "from": 101.1,
+        "to": 104.8,
+        "duration": 1.8
+      },
+      {
+        "from": 106.85,
+        "to": 111.5,
+        "duration": 4
+      },
+      {
+        "from": 119.8,
+        "to": 122,
+        "duration": 2.7
+      },
+      {
+        "from": 203.6,
+        "to": 207.8,
+        "duration": 1.9
+      },
+      {
+        "from": 291.4,
+        "to": 293.65,
+        "duration": 1.2
+      },
+      {
+        "from": 313,
+        "to": 313.9,
+        "duration": 1.5
+      },
+      {
+        "from": 340.1,
+        "to": 341.5,
+        "duration": 1.7
+      },
+      {
+        "from": 349.65,
+        "to": 351.1,
+        "duration": 1.9
+      },
+      {
+        "from": 449.3,
+        "to": 451,
+        "duration": 2.3
+      },
+      {
+        "from": 454.6,
+        "to": 456.3,
+        "duration": 3.2
+      },
+      {
+        "from": 459.4,
+        "to": 463.5,
+        "duration": 8.8
+      }
+    ],
+    "sourceSha256": "02371307a593637661dc4f149dcc1b8dbd7bb5f8fd3f2d69023fc4966d04bd45"
+  },
+  "06": {
+    "windows": [
+      {
+        "from": 0.8,
+        "to": 7.8,
+        "duration": 7
+      },
+      {
+        "from": 15.5,
+        "to": 21.7,
+        "duration": 5
+      },
+      {
+        "from": 21.7,
+        "to": 28,
+        "duration": 12.5
+      }
+    ],
+    "zoom": {
+      "sourceTime": 22,
+      "crop": [
+        320,
+        360,
+        65,
+        110
+      ],
+      "questionCrop": [
+        17,
+        650,
+        368,
+        175
+      ],
+      "at": 12.2
+    },
+    "sourceSha256": "99199a175a885b393f0b5944a58d34b4c92dc0753c0b1e8e466e2be5a480ffad"
+  },
+  "07": {
+    "sourceSha256": "c05467db45e9add1083ae0d0df279196e4a0367622a6c37a4a9c4533d0de7bd1",
+    "windows": [
+      {
+        "from": 11.9,
+        "to": 12.85,
+        "duration": 1.6
+      },
+      {
+        "from": 13.3,
+        "to": 13.48,
+        "duration": 4.2
+      },
+      {
+        "from": 40.05,
+        "to": 40.8,
+        "duration": 1.1
+      },
+      {
+        "from": 119.35,
+        "to": 123.3,
+        "duration": 3.6
+      }
+    ]
+  }
+}

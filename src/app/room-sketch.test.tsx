@@ -38,7 +38,7 @@ describe('room sketch static UI', () => {
       { ...capture, mode: 'photos' as const, floorY: null, outline: null, doors: [], photos: capture.photos.map((p) => ({ ...p, camera: null })) },
     ]) {
       const result = html({ capture: fallback, mode: '3d' });
-      expect(result).toContain('No room outline. Photos only.'); expect(result).not.toContain('<svg');
+      expect(result.match(/No room outline. Photos only./g)).toHaveLength(1); expect(result).not.toContain('Approximate room sketch. Not to scale for measuring.'); expect(result).not.toContain('<svg');
       expect(result).toContain('Review the rug in this photo'); expect(result).toContain('Photo only');
       expect(result).not.toContain('room-sketch__marker--flag'); expect(result).not.toContain('Loading the approximate 3D sketch');
     }

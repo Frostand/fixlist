@@ -39,7 +39,7 @@ describe('UI controller and role screens', () => {
     const view = visibleRequestsFor(scenario, h.state, 'margaret')[0]!;
     if (view.kind !== 'household') throw Error('wrong projection');
     html = renderToStaticMarkup(<ResidentRequest view={view} state={h.state} person={h.state.people[0]!} scenario={scenario} dispatch={h.dispatch} navigate={noop} />);
-    expect(html).toContain('Yes, it&#x27;s done'); expect(html).toContain('Written by Alex');
+    expect(html).toContain('Yes, it&#x27;s done'); expect(html).toContain('Added by Alex');
     await h.transition('confirm_done'); expect(h.request().status).toBe('resident_confirmed_done');
     expect(h.request().independentVerification).toBe('not available in this demo');
     const loaded = loadDemoState(h.storage, scenario); expect(loaded.status).toBe('loaded'); expect(loaded.state).toEqual(h.state); expect(h.bytes.has(DEMO_STORAGE_KEY)).toBe(true);
@@ -92,7 +92,7 @@ describe('UI controller and role screens', () => {
   it('localizes the rendered report and retains user writing with attribution', async () => {
     const h = harness(); await invited(h); await h.run({ type: 'select_person', personId: 'alex' }); await h.transition('accept_invitation'); await h.run({ type: 'propose_time', requestId: h.request().id, expectedRevision: h.request().revision, text: 'My original English time' }); await h.run({ type: 'select_person', personId: 'margaret' }); await h.transition('agree_time'); await h.run({ type: 'select_person', personId: 'alex' }); await h.run({ type: 'post_update', requestId: h.request().id, expectedRevision: h.request().revision, text: 'Keep this writing in English.' });
     const html = renderToStaticMarkup(<I18nProvider language="es"><PrintReport scenario={scenario} snapshot={{ state: h.state, scanPins: [], generatedAt: at }} /></I18nProvider>);
-    expect(html).toContain('Se necesita información'); expect(html).not.toContain('Needs information'); expect(html).toContain('Keep this writing in English.'); expect(html).toContain('Escrito por Alex'); expect(html).toContain('No compartido');
+    expect(html).toContain('Se necesita información'); expect(html).not.toContain('Needs information'); expect(html).toContain('Keep this writing in English.'); expect(html).toContain('Añadido por Alex'); expect(html).toContain('No compartido');
   });
   it('only exposes permitted confirmation controls for a confirm-only helper', async () => {
     const h = harness(); await h.run({ type: 'answer_checklist', checklistItemId: 'rug-check', answer: 'yes' }); await h.run({ type: 'grant_delegation', personId: 'sam', scopes: ['confirm'] }); await h.run({ type: 'select_person', personId: 'sam' });
