@@ -17,12 +17,12 @@ function elements(node: ReactNode, type: string): ReactElement<Record<string, un
 function capture(render: () => ReactNode) { let tree: ReactNode; function Probe() { tree = render(); return tree; } const html = renderToStaticMarkup(<Probe />); return { tree, html }; }
 const noop = () => {}, send = async () => ({ ok: true as const });
 describe('visual four-step setup', () => {
-  it('renders every language from the shared list, preserving native names and direction', () => {
+  it('renders every language from the shared list, preserving native names and direction', async () => {
     const select = vi.fn(), { tree, html } = capture(() => LanguagePicker({ current: 'es', onSelect: select }));
     const buttons = elements(tree, 'button'); expect(buttons).toHaveLength(LANGUAGES.length);
     for (const [index, language] of LANGUAGES.entries()) {
       expect(html).toContain(language.nativeName); expect(buttons[index]!.props.dir).toBe(language.dir);
-      (buttons[index]!.props.onClick as () => void)(); expect(select).toHaveBeenLastCalledWith(language.code);
+      await (buttons[index]!.props.onClick as () => Promise<void>)(); expect(select).toHaveBeenLastCalledWith(language.code);
     }
   });
   it('has a separate Continue action on welcome and three role cards with other profiles reachable', () => {

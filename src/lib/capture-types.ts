@@ -1,3 +1,4 @@
+import type { Language } from '../domain/roles';
 /** Shared types for room capture v1. Binding format: docs/capture-v1-contract.md. Validation lives in capture-model.ts. */
 export type Vec2 = readonly [number, number];
 export type Matrix4 = readonly number[]; // 16 numbers, column-major camera-to-world
@@ -87,7 +88,7 @@ export interface NativeCaptureStartOptions {
   captureId: string;
   roomId: string;
   roomName: string;
-  language: 'en' | 'es';
+  language: Language;
   prompts: readonly { checklistItemId: string | null; text: string }[];
   strings: Readonly<Record<string, string>>;
 }

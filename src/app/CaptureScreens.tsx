@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { DemoScenario } from '../domain/types';
 import { hasScope, type ChecklistAnswer, type DemoState, type Person } from '../domain/workflow';
-import { useLanguage, useT, translate, type MessageKey, type Translator } from '../i18n';
+import { useLanguage, useT, localeFor, translate, type MessageKey, type Translator } from '../i18n';
 import { catalogText } from '../i18n/catalog';
 import { buildCaptureBundle } from '../lib/capture-bundle';
 import { CaptureError, newCaptureId, sha256Blob, validateCaptureManifest } from '../lib/capture-model';
@@ -99,7 +99,7 @@ function AuthorizedRoomPage(props: CaptureScreenProps) {
       <RoomScanIntro roomName={catalogText(t, 'room', roomId)} arAvailable={arAvailable} disabled={busy || !!error} onStart={() => navigate({ role: 'r', screen: 'capture', id: roomId })} />
       <details className="card"><summary>{t('room.withoutScan')}</summary><InlineRoomQuestions {...props} /></details>
     </> : <>
-      <p className="footnote">{t('room.saved', { date: new Date(record.manifest.createdAt).toLocaleDateString(language), photos: t(record.manifest.photos.length === 1 ? 'capture.photoOne' : 'capture.photoMany', { count: record.manifest.photos.length }) })}</p>
+      <p className="footnote">{t('room.saved', { date: new Date(record.manifest.createdAt).toLocaleDateString(localeFor(language)), photos: t(record.manifest.photos.length === 1 ? 'capture.photoOne' : 'capture.photoMany', { count: record.manifest.photos.length }) })}</p>
       <FlagCheckStatus state={flagCheck} onCheck={() => flagSession.current?.check(record)} />
       <RoomCaptureContent {...props} decisionsDisabled={flagCheck.checking} record={record} photoUrls={urls} selectedId={selectedId} onSelect={setSelectedId} mode={mode} onMode={setMode} navigate={navigate} />
       <InlineRoomQuestions {...props} disabled={flagCheck.checking} />
@@ -153,7 +153,7 @@ export function RoomCaptureContent({ scenario, record, photoUrls, selectedId, on
     <section className="stack spots-section"><h2>{t('room.flags')}</h2>{!flags.length && !decisionsDisabled ? <p className="muted">{t(record.flags ? 'room.flagsEmpty' : 'room.flagsNotChecked')}</p> : null}{flags.map((flag) => <article className="card capture-flag" key={flag.checklistItemId} data-selected={selectedId === flag.checklistItemId}>
       <button className="capture-flag-select" aria-pressed={selectedId === flag.checklistItemId} onClick={() => onSelect(flag.checklistItemId)}>{photoUrls.get(flag.bestPhotoId ?? '') ? <div className="flag-photo"><img src={photoUrls.get(flag.bestPhotoId ?? '')} alt={t('room.photo', { number: capture.photos.findIndex((photo) => photo.photoId === flag.bestPhotoId) + 1 })} /><span className="flag-photo-marker"><Icon name="flag" /></span></div> : <span className="flag-placeholder"><Icon name="flag" /></span>}<h3>{spotTitle(t, flag.checklistItemId)}</h3></button>
       <StatusPill tone="amber">{t('room.aiLabel')}</StatusPill><p className="muted" lang="en">{flag.limitation}</p>
-      <details className="flag-details"><summary>{t('room.whatAI')}</summary><p lang="en">{flag.question}</p>{language === 'es' ? <p className="footnote">{t('room.original')}</p> : null}<p className="footnote">{captureScoreText(flag, record.flags!, t)}</p><p className="footnote">{t('room.reviewNotice')}</p><p className="footnote">{t(record.flags!.model.backend === 'coreml' ? 'room.modelLicenseOnDevice' : 'room.modelLicense')}</p></details>
+      <details className="flag-details"><summary>{t('room.whatAI')}</summary><p lang="en">{flag.question}</p>{language !== 'en' ? <p className="footnote">{t('room.original')}</p> : null}<p className="footnote">{captureScoreText(flag, record.flags!, t)}</p><p className="footnote">{t('room.reviewNotice')}</p><p className="footnote">{t(record.flags!.model.backend === 'coreml' ? 'room.modelLicenseOnDevice' : 'room.modelLicense')}</p></details>
       <p className="muted" data-checklist-answer={displayAnswer(state, flag.checklistItemId)}>{t('room.related')}: {t(`check.${displayAnswer(state, flag.checklistItemId)}`)}{state.confirmations[flag.concernId]?.humanConfirmed ? ` · ${t('check.confirmed')}` : ''}</p>
       <p className="footnote">{t(person.role === 'resident' || hasScope(state, person.id, 'confirm') ? 'room.addSteps' : 'room.proposeSteps')}</p>
       <div className="button-row capture-decisions"><button disabled={decisionBusy || decisionsDisabled} onClick={() => review(flag.checklistItemId)}>{t(person.role === 'resident' ? 'room.add' : 'room.propose')}</button><button className="secondary" disabled={decisionBusy || decisionsDisabled} onClick={() => notProblem(flag.checklistItemId)}>{t('room.notProblem')}</button></div>

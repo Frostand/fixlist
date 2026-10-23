@@ -1,5 +1,6 @@
+import type { Language } from '../domain/roles';
 import { authored } from '../i18n/authored';
-import { useT, useLanguage, type Translator, type MessageKey } from '../i18n';
+import { useT, useLanguage, localeFor, type Translator, type MessageKey } from '../i18n';
 import { en } from '../i18n/en';
 import type { RuleResult, FactRule, FactDefinition, FactValues } from '../domain/fact-screening';
 import { progressText, checklistPresentation, displayAnswer } from './checklist-presentation';
@@ -44,14 +45,14 @@ export function ProfileFacts({ scenario, state }: { scenario: DemoScenario; stat
 }
 
 /** Display validated criteria without changing evaluation or parsing its diagnostic strings. */
-function factValueText(t: Translator, language: 'en' | 'es', value: string | number | boolean, definition?: FactDefinition): string {
+function factValueText(t: Translator, language: Language, value: string | number | boolean, definition?: FactDefinition): string {
   if (typeof value === 'boolean') return t(value ? 'check.yes' : 'check.no');
   if (typeof value === 'number' && definition?.type === 'number') {
-    if (definition.unit === 'USD/year') return t('screen.money', { value: new Intl.NumberFormat(language === 'es' ? 'es-US' : 'en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value) });
+    if (definition.unit === 'USD/year') return t('screen.money', { value: new Intl.NumberFormat(localeFor(language), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value) });
     if (definition.unit === 'years') return t('screen.age', { value });
-    return `${value.toLocaleString(language)} ${definition.unit}`;
+    return `${value.toLocaleString(localeFor(language))} ${definition.unit}`;
   }
-  return typeof value === 'string' ? value.charAt(0).toLocaleUpperCase(language) + value.slice(1) : String(value);
+  return typeof value === 'string' ? value.charAt(0).toLocaleUpperCase(localeFor(language)) + value.slice(1) : String(value);
 }
 export function RuleExplanation({ result, rule, definitions = [], facts = {} }: { result: RuleResult; rule?: FactRule | undefined; definitions?: readonly FactDefinition[]; facts?: FactValues }) {
   const t = useT(), language = useLanguage();

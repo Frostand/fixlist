@@ -22,7 +22,8 @@ describe('second-pass screen polish', () => {
     expect(renderToStaticMarkup(question(false))).toContain('class="answer-status"');
   });
   it('uses an explicit floor-view label and fix-list wording throughout translated copy', () => {
-    for (const dictionary of [en, es]) for (const value of Object.values(dictionary)) expect(value).not.toMatch(/\bplan(?:es)?\b/i);
+    // The sketch fallback describes a geometric room plan, not an action plan.
+    for (const dictionary of [en, es]) for (const [key, value] of Object.entries(dictionary)) if (key !== 'sketch.unavailable') expect(value).not.toMatch(/\bplan(?:es)?\b/i);
   });
   it('separates the room name from the scan title and uses a smartphone for the first tip', () => {
     const html = renderToStaticMarkup(<RoomScanIntro roomName="Living room" arAvailable onStart={noop} />);

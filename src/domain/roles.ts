@@ -1,6 +1,8 @@
 /** Local demo identities are not authenticated accounts. Roles cannot be edited. */
 export type PersonRole = 'resident' | 'family_helper' | 'volunteer';
-export type Language = 'en' | 'es';
+export const LANGUAGE_CODES = ['en', 'es', 'zh', 'vi', 'ko', 'tl', 'ru', 'fr', 'ar'] as const;
+export type Language = (typeof LANGUAGE_CODES)[number];
+export function isLanguage(value: unknown): value is Language { return typeof value === 'string' && (LANGUAGE_CODES as readonly string[]).includes(value); }
 export type DelegationScope = 'checklist' | 'confirm' | 'requests';
 export interface Attribution { actorId: string; at: string }
 export interface Person {

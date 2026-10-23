@@ -1,5 +1,5 @@
 import { authored } from '../i18n/authored';
-import { useT, useLanguage } from '../i18n';
+import { useT, useLanguage, localeFor } from '../i18n';
 import { en } from '../i18n/en';
 import type { HelpRequestStatus } from '../domain/roles';
 import type { DemoScenario, ScreeningStatus, SourceRecord } from '../domain/types';
@@ -19,7 +19,7 @@ export function actionTitle(scenario: DemoScenario, referenceActionId: string): 
 export function LocalTime({ iso }: { iso: string }) {
   const language = useLanguage();
   const date = new Date(iso);
-  const shown = Number.isNaN(date.getTime()) ? iso : date.toLocaleString(language, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+  const shown = Number.isNaN(date.getTime()) ? iso : date.toLocaleString(localeFor(language), { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   return <time dateTime={iso}>{shown}</time>;
 }
 export function SourceNote({ source }: { source: SourceRecord }) {

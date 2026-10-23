@@ -522,3 +522,10 @@ main { padding: 2.5rem clamp(1rem, 4vw, 3.5rem) 5rem; min-width: 0; }
   .print-report > footer { margin-block-start: 0.5rem; padding-top: 0.4rem; break-inside: avoid; break-before: avoid; }
   a { color: #000; }
 }
+
+/* Direction follows the person’s language; scan geometry keeps physical coordinates. */
+[dir="rtl"] select { background-position: left 0.9rem center; }
+[dir="rtl"] .directional-icon { transform: scaleX(-1); }
+.directional-icon { display: inline-block; }
+/* The tag points toward the start edge; room geometry itself is never mirrored. */
+[dir="rtl"] .confirmed-tag { clip-path: polygon(0 0, calc(100% - .75rem) 0, 100% 50%, calc(100% - .75rem) 100%, 0 100%); border-radius: 4px 0 0 4px; }

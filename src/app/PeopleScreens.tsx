@@ -1,6 +1,7 @@
+import { loadLanguageMessages } from '../i18n/messages';
 import { useEffect, useRef, useState } from 'react';
 import type { Language, Person, PersonRole } from '../domain/roles';
-import { LANGUAGES, useT } from '../i18n';
+import { LANGUAGES, reviewed, useT } from '../i18n';
 import { guideIdFor, guideProgress } from './view-model';
 import { type Dispatch } from './ui-controller';
 import { Icon, StartShell, type Navigate } from './PhoneShell';
@@ -18,7 +19,8 @@ export function SetupProgress({ step, onBack, onSkip }: { step: number; onBack?(
   return <div className="setup-progress"><div className="setup-step-row">{onBack ? <button className="plain setup-back" onClick={onBack}><Icon name="back" />{t('nav.back')}</button> : <span />}<span className="footnote">{t('guide.progress', { current: step, total: 4 })}</span>{onSkip ? <button className="plain" onClick={onSkip}>{t('nav.skip')}</button> : <span />}</div><div className="progress-dots" aria-hidden="true">{[1, 2, 3, 4].map((i) => <span key={i} data-current={i === step} />)}</div></div>;
 }
 export function LanguagePicker({ onSelect, current = 'en' }: { onSelect(language: Language): void; current?: Language }) {
-  return <div className="language-choices list-group">{LANGUAGES.map(({ code, nativeName, dir }) => <button key={code} className="language-row" lang={code} dir={dir} aria-pressed={current === code} onClick={() => onSelect(code)}><span>{nativeName}</span>{current === code ? <Icon name="tick" /> : null}</button>)}</div>;
+  const t = useT();
+  return <div className="stack"><div className="language-choices list-group">{LANGUAGES.map(({ code, nativeName, dir }) => <button key={code} className="language-row" lang={code} dir={dir} aria-pressed={current === code} onClick={async () => { await loadLanguageMessages(code).catch(() => {}); onSelect(code); }}><span>{nativeName}</span>{current === code ? <Icon name="tick" /> : null}</button>)}</div>{LANGUAGES.some(({ code }) => !reviewed[code]) ? <p className="translation-note">{t('app.unreviewed')}</p> : null}</div>;
 }
 export function WelcomeScreen({ current, onSelect, onContinue }: { current: Language; onSelect(language: Language): void; onContinue(): void }) {
   const t = useT();
