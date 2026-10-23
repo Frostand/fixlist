@@ -105,6 +105,8 @@ export interface FixListCapturePlugin {
  * Placeholders: {current}, {total}, {count}.
  */
 export const NATIVE_CAPTURE_STRING_KEYS = [
+  'stepOutline', 'stepPhotos', 'aimCorner', 'moreCorners', 'closeAtFirst', 'addCorner',
+  'moreOptions', 'usePhoto', 'doorChip', 'approximateShort', 'previewNextState',
   'findFloor', 'floorFound', 'trackingLimited', 'interrupted', 'relocalizeFailed',
   'restartTracking', 'restartConfirmTitle', 'restartConfirmMessage',
   'tapCorners', 'cornerCount', 'undo', 'closeOutline', 'markDoor', 'doorMode', 'skipOutline', 'approximate',
