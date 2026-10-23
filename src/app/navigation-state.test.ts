@@ -15,7 +15,7 @@ describe('separately versioned navigation context', () => {
     expect(loadNavigationState(storage)).toEqual({ ...record, pendingDestination: { role: 'r', screen: 'plan' }, layout: 'current' });
     expect(storage.getItem(NAVIGATION_STORAGE_KEY)).toBe(JSON.stringify(record));
   });
-  it('persists toggles and valid launch overrides without altering household bytes or other navigation fields', async () => {
+  it('normalizes legacy layouts without altering household bytes or other navigation fields', async () => {
     const storage = memory(), draft = createInvitationDraft(atStage(), atStage().requests[0]!.id, 'alex')!;
     storage.setItem('fixlist:demo:v1', 'household-unchanged');
     await saveNavigationState(storage, { ...emptyNavigationState(), invitations: [draft], dismissedGuides: ['sam'] });
@@ -27,7 +27,7 @@ describe('separately versioned navigation context', () => {
       expect(loadNavigationState(storage).layout).toBe(layout); expect(storage.getItem('fixlist:demo:v1')).toBe('household-unchanged');
     }
     await updateNavigationState(storage, (saved) => ({ ...saved, layout: navigationLayoutParameter('?nav=invalid') ?? saved.layout }));
-    expect(loadNavigationState(storage).layout).toBe('four');
+    expect(loadNavigationState(storage).layout).toBe('current');
   });
   it.each([null, false, 3, 'five', 'THREE', {}, []])('rejects an invalid stored layout %j', (layout) => {
     const storage = memory(); storage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({ ...emptyNavigationState(), layout }));

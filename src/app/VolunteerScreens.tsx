@@ -4,7 +4,8 @@ import type { VolunteerNextStep } from '../domain/role-views';
 import { useT } from '../i18n';
 import { projectedCatalogText } from '../i18n/catalog';
 import { PhotoImage } from './Photos';
-import { Icon, ScreenLink, type Navigate } from './PhoneShell';
+import { ListGroup, ListRow, StatusPill, EmptyState } from './UI';
+import { Icon, type Navigate } from './PhoneShell';
 import type { Dispatch } from './ui-controller';
 export type PublicPerson = Pick<Person, 'id' | 'name'>;
 const nameOf = (people: readonly PublicPerson[], id: string) => people.find((p) => p.id === id)?.name ?? id;
@@ -12,11 +13,11 @@ export function BoundariesCard() { const t = useT(); return <aside className="ca
 /** The entire volunteer tree accepts projections and public names, never DemoState or a household view. */
 export function VolunteerHome({ requests, next, navigate }: { requests: readonly VolunteerRequestView[]; next: VolunteerNextStep | null; navigate: Navigate }) {
   const t = useT();
-  return <div className="stack"><section className="next-card"><p className="eyebrow">{t('home.next')}</p><h2>{t(`next.${next?.kind ?? 'done'}`)}</h2><button onClick={() => navigate(next && 'requestId' in next ? { role: 'v', screen: 'task', id: next.requestId } : { role: 'v', screen: 'tasks' })}>{t('nav.continue')}<Icon name="arrow" /></button></section><VolunteerTasks requests={requests} navigate={navigate} /><BoundariesCard /></div>;
+  return <div className="stack"><section className="card next-card"><p className="eyebrow">{t('home.next')}</p><h2>{t(`next.${next?.kind ?? 'done'}`)}</h2><button className="secondary full" onClick={() => navigate(next && 'requestId' in next ? { role: 'v', screen: 'task', id: next.requestId } : { role: 'v', screen: 'tasks' })}>{t('nav.continue')}<Icon name="arrow" /></button></section><VolunteerTasks requests={requests} navigate={navigate} /><BoundariesCard /></div>;
 }
 export function VolunteerTasks({ requests, navigate }: { requests: readonly VolunteerRequestView[]; navigate: Navigate }) {
   const t = useT();
-  return <div className="stack">{!requests.length ? <p className="card">{t('volunteer.noTasks')}</p> : null}{(['invited', 'tasks'] as const).filter((group) => requests.some((v) => group === 'invited' ? v.status === 'invited' : v.status !== 'invited')).map((group) => <section key={group} className="stack"><h2>{t(group === 'invited' ? 'volunteer.invitations' : 'volunteer.myTasks')}</h2>{requests.filter((v) => group === 'invited' ? v.status === 'invited' : v.status !== 'invited').map((v) => <ScreenLink key={v.id} title={projectedCatalogText(t, v.title)} detail={t(`status.${v.status}`)} route={{ role: 'v', screen: 'task', id: v.id }} navigate={navigate} />)}</section>)}</div>;
+  return <div className="stack">{!requests.length ? <EmptyState icon="requests" title={t('volunteer.emptyTitle')} body={t('volunteer.noTasks')} /> : null}{(['invited', 'tasks'] as const).filter((group) => requests.some((request) => group === 'invited' ? request.status === 'invited' : request.status !== 'invited')).map((group) => <ListGroup key={group} title={t(group === 'invited' ? 'volunteer.invitations' : 'volunteer.myTasks')}>{requests.filter((request) => group === 'invited' ? request.status === 'invited' : request.status !== 'invited').map((request) => <ListRow key={request.id} title={projectedCatalogText(t, request.title)} trailing={<StatusPill>{t(`status.${request.status}`)}</StatusPill>} route={{ role: 'v', screen: 'task', id: request.id }} navigate={navigate} />)}</ListGroup>)}</div>;
 }
 export function VolunteerTask({ request, people, scanImage, dispatch }: { request: VolunteerRequestView; people: readonly PublicPerson[]; scanImage?: string | null; dispatch: Dispatch }) {
   const t = useT(), [reason, setReason] = useState(''), [time, setTime] = useState(''), [update, setUpdate] = useState('');

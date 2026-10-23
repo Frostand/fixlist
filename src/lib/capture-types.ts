@@ -106,6 +106,7 @@ export interface FixListCapturePlugin {
  */
 export const NATIVE_CAPTURE_STRING_KEYS = [
   'findFloor', 'floorFound', 'trackingLimited', 'interrupted', 'relocalizeFailed',
+  'restartTracking', 'restartConfirmTitle', 'restartConfirmMessage',
   'tapCorners', 'cornerCount', 'undo', 'closeOutline', 'markDoor', 'doorMode', 'skipOutline', 'approximate',
   'photoProgress', 'shutter', 'retake', 'skip', 'next', 'done',
   'cancel', 'cancelConfirmTitle', 'cancelConfirmMessage', 'cancelConfirmStop', 'cancelConfirmKeep',

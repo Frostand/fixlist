@@ -7,6 +7,7 @@ import type { ScanPin } from '../lib/scan-model';
 import { useT, type Translator } from '../i18n';
 import { catalogText } from '../i18n/catalog';
 import { personLabel } from './view-model';
+import { ListGroup, ListRow, StatusPill, EmptyState } from './UI';
 import { ScreenLink, type Navigate } from './PhoneShell';
 import type { Dispatch } from './ui-controller';
 export function SharingSummary({ request }: { request: HelpRequest }) {
@@ -36,7 +37,7 @@ export function InvitationReview({ request, volunteer, scenario, state, pins, di
 }
 export function RequestList({ requests, navigate, showResources = false }: { requests: readonly ({ kind: 'household' } & RequestView)[]; navigate: Navigate; showResources?: boolean }) {
   const t = useT();
-  return <div className="stack">{!requests.length ? <p>{t('request.empty')}</p> : requests.map(({ request, inactiveReason }) => <ScreenLink key={request.id} title={catalogText(t, 'action', request.referenceActionId, 'title')} detail={`${t(request.professionalReferral ? `data.referral.${request.professionalReferral}` : `status.${request.status}`)}${inactiveReason ? ` · ${t(`data.inactive.${inactiveReason}`)}` : ''}`} route={{ role: 'r', screen: 'request', id: request.id }} navigate={navigate} />)}{showResources ? <ScreenLink title={t('nav.resources')} route={{ role: 'r', screen: 'resources' }} navigate={navigate} /> : null}</div>;
+  return <div className="stack">{!requests.length ? <EmptyState icon="requests" title={t('help.noRequestsTitle')} body={t('request.empty')} /> : <ListGroup>{requests.map(({ request, inactiveReason }) => <ListRow key={request.id} title={catalogText(t, 'action', request.referenceActionId, 'title')} {...(inactiveReason ? { subtitle: t(`data.inactive.${inactiveReason}`) } : {})} trailing={<StatusPill tone={inactiveReason ? 'gray' : 'green'}>{t(request.professionalReferral ? `data.referral.${request.professionalReferral}` : `status.${request.status}`)}</StatusPill>} route={{ role: 'r', screen: 'request', id: request.id }} navigate={navigate} />)}</ListGroup>}{showResources ? <ScreenLink title={t('nav.resources')} route={{ role: 'r', screen: 'resources' }} navigate={navigate} /> : null}</div>;
 }
 function eventName(type: string, t: Translator): string { return t(`event.${type}` as 'event.create_request'); }
 export function ResidentRequest({ view, state, person, scenario, dispatch, navigate }: { view: RequestView; state: DemoState; person: Person; scenario: DemoScenario; dispatch: Dispatch; navigate: Navigate }) {

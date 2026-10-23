@@ -55,7 +55,7 @@ describe('batch A presentation and explicit choices', () => {
   });
   it('hides empty volunteer groups and keeps real invitations visible', () => {
     const initial = html(<VolunteerTasks requests={[]} navigate={noop} />);
-    expect(initial).toContain(en['volunteer.noTasks']); expect(initial).not.toContain('<h2>');
+    expect(initial).toContain(en['volunteer.noTasks']); expect(initial).toContain(en['volunteer.emptyTitle']); expect(initial).not.toContain(en['volunteer.invitations']); expect(initial).not.toContain(en['volunteer.myTasks']);
     for (const stage of ['invited', 'in_progress'] as const) {
       const requests = visibleRequestsFor(scenario, atStage(stage), 'alex').filter((r) => r.kind === 'volunteer');
       const rendered = html(<VolunteerTasks requests={requests} navigate={noop} />);
@@ -63,10 +63,10 @@ describe('batch A presentation and explicit choices', () => {
       expect(rendered).not.toContain(en[stage === 'invited' ? 'volunteer.myTasks' : 'volunteer.invitations']);
     }
   });
-  it('hides the layout selector by default while keeping its explicit opt-in', () => {
+  it('keeps the old layout selector inert even with its former opt-in', () => {
     const p = props(), more = { person: p.person, resident: true, canViewScan: true, navigate: noop, dispatch, onReset: noop, onLayoutChange: async () => true };
     expect(html(<MoreScreen {...more} />)).not.toContain('navigation-layout');
-    expect(html(<MoreScreen {...more} showNavigationLayout />)).toContain('id="navigation-layout"');
+    expect(html(<MoreScreen {...more} showNavigationLayout />)).not.toContain('id="navigation-layout"');
   });
   it.each(['en', 'es'] as const)('keeps criteria readable, money formatted and a failed condition visible in %s', (language) => {
     const state = run(createInitialState(scenario), { type: 'select_profile', profileId: 'maple-renter' });
@@ -78,13 +78,13 @@ describe('batch A presentation and explicit choices', () => {
     const unknown = html(<ProgramDetails scenario={scenario} state={createInitialState(scenario)} program={scenario.programs[0]!} plan={[]} />, language);
     expect(unknown).toContain(translate(language, 'screen.missing')); expect(unknown).toContain('data-status="unknown"');
   });
-  it('retains the Plan tab throughout sharing and invitation, including request detail', () => {
+  it('highlights Help throughout sharing and invitation, retaining the entry context', () => {
     const plan: Route = { role: 'r', screen: 'plan' };
     let previous: Route = plan, origin: Route | null = null;
     for (const screen of ['sharing', 'invite', 'review', 'request'] as const) {
       const next: Route = { role: 'r', screen, id: 'local-request' };
       origin = resourceReturnTo(next, previous, origin);
-      expect(origin).toEqual(plan); expect(activeTab(next, origin)).toBe('plan'); previous = next;
+      expect(origin).toEqual(plan); expect(activeTab(next, origin)).toBe('requests'); previous = next;
     }
   });
   it.each(['en', 'es'] as const)('pluralizes a single capture photo and retains fictional source disclosure in %s', (language) => {

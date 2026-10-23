@@ -13,6 +13,8 @@ import { ChecklistQuestion, ResidentHome, RoomList, type ResidentProps } from '.
 import { PrintReport } from './PrintReport';
 import { ChecklistSection } from './WorkflowSections';
 import { FloorPlan } from './FloorPlan';
+import { ListRow } from './UI';
+import { InlineRoomQuestions } from './CaptureScreens';
 import { Icon } from './PhoneShell';
 import { navigationTabs, navigationLayouts } from './navigation-layouts';
 import { checklistAnswerCounts, displayAnswer, firstUnanswered } from './checklist-presentation';
@@ -27,7 +29,7 @@ function mixed() {
 }
 function question(state: DemoState, id: string, person = 'margaret') { return <ChecklistQuestion {...props(state, person)} questionId={id} saved suggestions={null} photoStillRecorded={() => false} onPhotoError={noop} />; }
 function checkedValues(rendered: string) { return (rendered.match(/<input[^>]*type="radio"[^>]*>/g) ?? []).filter((input) => input.includes('checked=""')).map((input) => input.match(/value="([^"]+)"/)![1]); }
-function elements(node: ReactNode, type: string): ReactElement<Record<string, unknown>>[] {
+function elements(node: ReactNode, type: unknown): ReactElement<Record<string, unknown>>[] {
   if (Array.isArray(node)) return node.flatMap((child) => elements(child, type));
   if (!isValidElement<{ children?: ReactNode }>(node)) return [];
   return [...(node.type === type ? [node as ReactElement<Record<string, unknown>>] : []), ...elements(node.props.children, type)];
@@ -94,19 +96,21 @@ describe('unanswered and explicitly uncertain presentation', () => {
     state = atStage('invited');
     for (const view of visibleRequestsFor(scenario, state, 'alex')) { expect(view.kind).toBe('volunteer'); expect(view).not.toHaveProperty('checklistAnswers'); expect(view).not.toHaveProperty('checklistAttribution'); }
   });
-  it('resumes at the first unanswered question globally and within a room, skipping explicit Not sure', async () => {
+  it('resumes globally past explicit Not sure and opens each room with all its questions reachable', async () => {
     let state = run(createInitialState(scenario), { type: 'answer_checklist', checklistItemId: 'rug-check', answer: 'unknown' });
     const room = scenario.rooms.find((r) => r.id === 'stairs')!, items = scenario.checklist.filter((q) => q.roomId === room.id);
     state = run(state, { type: 'answer_checklist', checklistItemId: items[0]!.id, answer: 'unknown' });
     state = run(state, { type: 'set_checklist_position', position: scenario.checklist.length - 1 });
     const p = props(state), navigate = vi.fn(), tree = capture(() => RoomList({ ...p, navigate })), buttons = elements(tree, 'button');
     (buttons[0]!.props.onClick as () => void)(); expect(navigate).toHaveBeenLastCalledWith({ role: 'r', screen: 'question', id: scenario.checklist[1]!.id });
-    await (buttons[1 + scenario.rooms.indexOf(room)]!.props.onClick as () => Promise<void>)();
-    const nextInRoom = items[1]!;
-    expect(navigate).toHaveBeenLastCalledWith({ role: 'r', screen: 'question', id: nextInRoom.id });
+    const roomRow = elements(tree, ListRow).find((row) => (row.props.route as { id?: string })?.id === room.id)!;
+    expect(roomRow.props.route).toEqual({ role: 'r', screen: 'room', id: room.id });
+    const inline = html(<InlineRoomQuestions {...p} roomId={room.id} />);
+    expect(inline).toContain(`href="#/r/question/${items[1]!.id}"`);
+    expect(inline).toContain('aria-pressed="true">Not sure');
     for (const layout of navigationLayouts) {
       const home = capture(() => ResidentHome({ ...p, navigate, layout, requests: [], next: elderNextStep(scenario, state) }));
-      (elements(home, 'button')[0]!.props.onClick as () => void)(); expect(navigate).toHaveBeenLastCalledWith({ role: 'r', screen: 'question', id: scenario.checklist[1]!.id });
+      (elements(home, 'button').find((button) => Array.isArray(button.props.children) && button.props.children[0] === en['nav.continue'])!.props.onClick as () => void)(); expect(navigate).toHaveBeenLastCalledWith({ role: 'r', screen: 'question', id: scenario.checklist[1]!.id });
     }
   });
   it('leaves domain confirmation unchanged: missing and Not sure cannot confirm; Yes still needs explicit confirmation', () => {
@@ -126,10 +130,10 @@ describe('task navigation icons', () => {
     const door = html(<Icon name={rooms.icon} />), person = html(<Icon name={requests.icon} />);
     expect(door).not.toBe(person); expect(door).not.toBe(html(<Icon name="check" />)); expect(person).not.toBe(html(<Icon name="tasks" />));
     for (const icon of [door, person]) { expect(icon).toContain('viewBox="0 0 24 24"'); expect(icon).toContain('aria-hidden="true"'); expect(icon).toContain('stroke-width="1.7"'); }
-    expect(rooms.label).toBe('nav.rooms'); expect(requests.label).toBe('nav.requests'); if (layout === 'four') expect(tabs.find((tab) => tab.screen === 'plan')!.icon).toBe('plan');
+    expect(rooms.label).toBe('nav.rooms'); expect(requests.label).toBe('nav.help'); if (layout === 'four') expect(tabs.find((tab) => tab.screen === 'plan')!.icon).toBe('check');
   });
   it('preserves all current and volunteer icon assignments', () => {
-    expect(navigationTabs('current', 'resident', capabilities).map((tab) => tab.icon)).toEqual(['home', 'check', 'plan', 'help', 'more']);
+    expect(navigationTabs('current', 'resident', capabilities).map((tab) => tab.icon)).toEqual(['home', 'rooms', 'check', 'requests']);
     for (const layout of navigationLayouts) expect(navigationTabs(layout, 'volunteer', capabilities).map((tab) => tab.icon)).toEqual(['home', 'tasks', 'profile']);
   });
 });

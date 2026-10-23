@@ -9,19 +9,19 @@ import { LanguagePicker } from './PeopleScreens';
 import { SuggestionFrameDialog } from './ScanSuggestions';
 
 function html(node: ReactNode, language: Language = 'en') { return renderToStaticMarkup(<I18nProvider language={language}>{node}</I18nProvider>); }
-const buttons = (rendered: string) => rendered.match(/<button[^>]*>[^<]*<\/button>/g) ?? [];
+const buttons = (rendered: string) => rendered.match(/<button\b[\s\S]*?<\/button>/g) ?? [];
 
 describe('language picker', () => {
-  it('keeps English primary on first launch without marking a pressed state', () => {
+  it('marks the default English row on first launch', () => {
     const [english, spanish] = buttons(html(<LanguagePicker onSelect={() => {}} />));
-    expect(english).not.toContain('secondary'); expect(spanish).toContain('class="secondary"');
-    expect(english).not.toContain('aria-pressed'); expect(spanish).not.toContain('aria-pressed');
+    expect(english).toContain('class="language-row"'); expect(spanish).toContain('class="language-row"');
+    expect(english).toContain('aria-pressed="true"'); expect(spanish).toContain('aria-pressed="false"');
   });
   it.each(['en', 'es'] as const)('highlights and marks the active language (%s) in settings', (current) => {
     const [english, spanish] = buttons(html(<LanguagePicker current={current} onSelect={() => {}} />, current));
     const [active, inactive] = current === 'en' ? [english!, spanish!] : [spanish!, english!];
     expect(active).toContain('aria-pressed="true"'); expect(active).not.toContain('secondary');
-    expect(inactive).toContain('aria-pressed="false"'); expect(inactive).toContain('class="secondary"');
+    expect(inactive).toContain('aria-pressed="false"'); expect(inactive).toContain('class="language-row"');
   });
 });
 
