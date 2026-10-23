@@ -31,7 +31,7 @@ Update 2026-10-18: The current demo now packages as a Capacitor iOS app and incl
 | FastAPI, auth, volunteer matching, public jobs | Defer | These add identity, authorization, consent and operational requirements beyond a local record. Current typed commands are not a production API. |
 | Homelab hosting, tunnel, backups, public video | Defer until separately authorized | Do not promise 30-day expiry, deletion, access controls or backups that have not been implemented and verified. |
 
-Update 2026-10-18: Photo evidence and pins, the optional local Gaussian-splat scan pipeline/viewer, and v2 AI areas-to-review suggestions have since been implemented. They remain local and optional; suggestions are not hazard detection or safety findings, and no dimensions or accuracy are claimed. See the [scan viewer report](scan-viewer-2026-10-17.md), [suggestion UI report](scan-suggestions-ui-2026-10-17.md), [v2 contract](suggestions-v2-contract.md), and [AI disclosures](ai-disclosures.md). The real Eldercare Locator is present; a broader county program pilot and usefulness comparison remain gated.
+Update 2026-10-18: Photo evidence and pins, the optional local Gaussian-splat scan pipeline/viewer, and v2 AI areas-to-review suggestions have since been implemented. They remain local and optional; suggestions are not hazard detection or safety findings, and no dimensions or accuracy are claimed. See the [scan viewer report](scan-viewer-2026-10-17.md), [suggestion UI report](scan-suggestions-ui-2026-10-17.md), [v2 contract](suggestions-v2-contract.md), and [Sources and credits](credits-and-sources.md). The real Eldercare Locator is present; a broader county program pilot and usefulness comparison remain gated.
 
 ## Corrections before reusing the pitch or specifications
 
@@ -49,7 +49,7 @@ Update 2026-10-18: Photo evidence and pins, the optional local Gaussian-splat sc
 
 **Matching formula.** The draft says out-of-radius candidates must score zero, but its formula can give them `0 + 0.3 + 0.2 = 0.5`. Required skill/radius/availability conditions must be evaluated before any ranking or organization bonus. Missing facts need an unresolved state. Even a corrected rank would not vet a volunteer. Retain this correction for future work; do not add matching now.
 
-**Authorship and schedule.** Do not reuse “rules engine written by us,” personal inspiration, bugs encountered, hardware timings or completed repairs unless true and documented. Keep the original dates as historical planning context, not evidence of completion. Schedule new work by the gates below and retain the actual assistance log.
+**Authorship and schedule.** Do not reuse “rules engine written by us,” personal inspiration, bugs encountered, hardware timings or completed repairs unless true and documented. Keep the original dates as historical planning context, not evidence of completion. Schedule new work by the gates below.
 
 ## Ordered next milestones
 
@@ -83,4 +83,4 @@ Carry the new evidence, unknowns and coverage state into native print; rerun mea
 
 Keep the product's problem, audience, data-driven rules, funding-relevance idea, conservative task routing and evidence-rich handoff. The fact-based screening engine and small reference-attributed catalog are implemented and checked. Next, choose the county for a sourced resource pilot and run the planned usefulness comparison. Preserve the working implementation and keep capture, reconstruction, vision, volunteer marketplace and production infrastructure outside the current build.
 
-Update 2026-10-18: The local scan/reconstruction/viewer and AI suggestion features named above are now part of the demo; automated hazard detection, real eligibility decisions, volunteer marketplace functions and production infrastructure remain out of scope. One real Eldercare Locator resource is integrated, while the larger county directory pilot and usefulness comparison remain future gates. See the [scan viewer report](scan-viewer-2026-10-17.md), [suggestion contract](suggestions-v2-contract.md), and [AI disclosures](ai-disclosures.md).
+Update 2026-10-18: The local scan/reconstruction/viewer and AI suggestion features named above are now part of the demo; automated hazard detection, real eligibility decisions, volunteer marketplace functions and production infrastructure remain out of scope. One real Eldercare Locator resource is integrated, while the larger county directory pilot and usefulness comparison remain future gates. See the [scan viewer report](scan-viewer-2026-10-17.md), [suggestion contract](suggestions-v2-contract.md), and [Sources and credits](credits-and-sources.md).

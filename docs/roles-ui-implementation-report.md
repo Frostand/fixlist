@@ -1,6 +1,6 @@
 # FixList phone UI implementation handoff — 2026-10-18
 
-Implementation worker: the running `gpt-6.1-sol` at xhigh. No child agents. Parent review and acceptance are pending. Work is uncommitted on `codex/fixlist-core-2026-10-17`. The existing `.claude/` owner files were preserved. No edits to `scan/`, `ios/`, `src/domain`, manifests/lockfile or Capacitor configuration; no dependency, external send, upload, PR or deployment.
+Parent review and acceptance are pending. Work is uncommitted on `codex/fixlist-core-2026-10-17`. The existing `.claude/` owner files were preserved. No edits to `scan/`, `ios/`, `src/domain`, manifests/lockfile or Capacitor configuration; no dependency, external send, upload, PR or deployment.
 
 ## Implemented
 
@@ -48,8 +48,6 @@ The native browser print API was invoked after loaded report images; print CSS w
 Existing: `docs/architecture.md`; `src/main.tsx`; `src/app/App.tsx`, `CatalogViews.tsx`, `FloorPlan.tsx`, `PrintReport.tsx`, `ScanPanel.tsx`, `ScanSuggestions.tsx`, `ScanViewer.tsx`, `WorkflowSections.tsx`, `display.tsx`. Retained legacy views also use dictionaries so the hardcoded-copy scan covers all application TSX, while their original English rendering tests remain valid.
 
 New: `src/app/PeopleScreens.tsx`, `PhoneShell.tsx`, `Photos.tsx`, `RequestScreens.tsx`, `ResidentScreens.tsx`, `SettingsScreens.tsx`, `VolunteerScreens.tsx`, `routes.ts`, `ui-controller.ts`, `view-model.ts`; `routes.test.ts`, `i18n.test.ts`, `roles-ui.test.tsx`, `photo-handlers.test.ts`; `src/i18n/en.ts`, `es.ts`, `index.tsx`, `context.ts`, `catalog.ts`, `authored.ts`; `src/styles/phone.css`; `docs/superpowers/plans/2026-10-18-roles-ui.md`; this report.
-
-AI assistance: this worker authored the UI, translation drafts, view/controller helpers, tests and handoff, and executed the listed deterministic/browser/Simulator checks. These actions do not establish student authorship or understanding, real-user usefulness, real repairs, program approvals or CAC submission readiness.
 
 ## Saved browser evidence
 

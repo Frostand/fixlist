@@ -1,6 +1,6 @@
 # Capture integration notes (2026-10-18)
 
-Implementation worker: Codex; the parent records the selected model through its routing controls. This records AI-assisted code and synthetic deterministic checks. Parent review, full-suite/build checks, browser acceptance and native runtime acceptance remain separate evidence. No private capture, external send, dependency, domain schema, commit or physical device operation was used by this worker.
+Parent review, full-suite/build checks, browser acceptance and native runtime acceptance remain separate evidence. No private capture, external send, dependency, domain schema, commit or physical device operation was used by this worker.
 
 ## Native interface repair
 

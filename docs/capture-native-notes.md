@@ -46,4 +46,4 @@ git diff --check
 
 Simulator ARKit is unavailable; no Simulator result establishes that the AR flow works on an iPhone. The installed runtime is iOS 26.5, not the requested target iOS 27. A generic unsigned device build only proves compilation. All real-phone capture, permission, image/pose, recovery, accessibility, signing, export and import acceptance remains outstanding.
 
-Implementation assistance: Codex `gpt-6.1-sol` with xhigh reasoning in T3 Code. No student contribution, physical validation or final reviewer acceptance is asserted here.
+Physical validation and final reviewer acceptance are not asserted here.

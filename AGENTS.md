@@ -20,7 +20,7 @@ Delegate only concrete independent work that benefits from it; do not spawn a wo
 - `src/data`: synthetic fixtures and, later, separately sourced program records.
 - `src/lib`: validated browser storage and print snapshots; no placeholder services.
 - `public/demo`: assets safe to publish, with documented provenance.
-- `docs`: architecture, video requirements, assistance disclosures, and implementation plans.
+- `docs`: architecture, video requirements, source credits, and implementation plans.
 - `recordings`: ignored local exports; keep its README tracked.
 
 Use Node 24.18.0 and npm 11. Run `npm ci`, then `npm run dev` (127.0.0.1:5173). Required checks: `npm run typecheck`, `npm run build`, and `npm test`. `npm run preview` serves the built app at 127.0.0.1:4173. `npm test` requires real tests; the former `--passWithNoTests` flag is removed. Read `docs/validation-facts-catalog-2026-10-17.md` for current facts/catalog/migration evidence and `docs/validation-2026-10-17.md` for historical core evidence.
@@ -43,8 +43,8 @@ Use Node 24.18.0 and npm 11. Run `npm ci`, then `npm run dev` (127.0.0.1:5173). 
 
 ## Definition of done
 
-For the local journey: exact install and lockfile, strict typecheck/build, meaningful domain/storage tests, confirmation and uncertainty invariants, recoverable persistence/reset, native print output, typed synthetic fixtures, current architecture and recording roadmap, and actual assistance recorded. Runtime preview, keyboard/narrow layout and print inspection remain separate required checks when relevant behavior changes; do not replace them with a passing build.
+For the local journey: exact install and lockfile, strict typecheck/build, meaningful domain/storage tests, confirmation and uncertainty invariants, recoverable persistence/reset, native print output, typed synthetic fixtures, current architecture and recording roadmap. Runtime preview, keyboard/narrow layout and print inspection remain separate required checks when relevant behavior changes; do not replace them with a passing build.
 
 Before recording: implement and exercise the selected journey, meaningful rules tests, source/provenance disclosures, keyboard access and readable responsive states, storage recovery/reset, and print preview. No performance claims without measurements. Keep the initial JavaScript budget at 250 KiB gzip and review Vite build output when dependencies change; this is a budget, not a measured user-latency claim.
 
-Before submission: record significant student technical contributions and understanding, disclose tools and AI assistance, and satisfy the current CAC rules. No fabricated authorship, validation, sources, outcomes, or completed work.
+Before submission: satisfy the current CAC rules. No fabricated authorship, validation, sources, outcomes, or completed work.

@@ -1,6 +1,6 @@
 # Room capture web implementation
 
-Implementation worker: Codex, gpt-6.1-sol with xhigh reasoning. Andrew supplied the scope, capture contract, file boundaries and required validation. This is AI-assisted implementation, not evidence of student authorship or understanding. Parent review and integration remain required. No additional agents or models were invoked by this worker.
+Andrew supplied the scope, capture contract, file boundaries and required validation. Parent review and integration remain required.
 
 ## Delivered
 

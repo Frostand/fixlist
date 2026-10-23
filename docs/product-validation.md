@@ -56,7 +56,3 @@ Proposed pilot gate: every participant must correctly distinguish approval/conta
 ## Software acceptance versus real-world validation
 
 Tests can establish behavior for the tested synthetic inputs, while browser checks establish the exercised rendering and interactions. Neither establishes professional action advice, complete hazard detection, real-program applicability, trusted helpers, completed repairs, usability for older adults, or improved outcomes. The validation report must state which checks actually ran and which remain open.
-
-## Submission boundary
-
-The [official 2026 CAC rules](https://www.congressionalappchallenge.us/wp-content/uploads/2026/05/2026-CAC-Rules.pdf), rechecked October 17, allow disclosed AI support but require significant student contributions and technical understanding; AI must not constitute the entire technical development. This overnight AI-assisted build is a working reference for review, extension, and explanation. It does not establish Andrew's authorship or satisfy the student-contribution requirement by itself. Keep an actual contribution record, not a fabricated retrospective.

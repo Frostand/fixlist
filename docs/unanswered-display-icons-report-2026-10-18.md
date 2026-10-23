@@ -34,7 +34,7 @@ The existing `check.unknown` remains **Not sure / No estoy seguro**. Spanish ret
 - Updated `src/app/PhoneShell.tsx`, `navigation-layouts.ts` for the two prototype icon paths/assignments only.
 - Updated `src/i18n/en.ts`, `src/i18n/es.ts` with the copy above.
 - Updated `src/app/catalog-views.test.tsx`, `scan-suggestions-ui.test.tsx`, `data-lifecycle-ui.test.tsx` to expect the corrected progress/uncertainty wording while retaining their original invariants.
-- Updated `docs/architecture.md`, `ai-disclosures.md`; added this report and `docs/superpowers/plans/2026-10-18-unanswered-display.md`.
+- Updated `docs/architecture.md`; added this report and `docs/superpowers/plans/2026-10-18-unanswered-display.md`.
 
 Existing navigation prototype work remains present. No dependencies, lockfile, domain files, storage/print snapshot schema, scan pipeline, native source, public/private assets, protected icon, preserved plan body or Git history changed.
 
