@@ -161,7 +161,7 @@ export interface CommunityState {
   messages: readonly ChatMessage[];
 }
 
-export type CommunityFailure = { ok: false; code: 'not_found' | 'permission_denied' | 'invalid_state' | 'invalid_input'; message: string };
+export type CommunityFailure = { ok: false; code: 'not_found' | 'permission_denied' | 'invalid_state' | 'invalid_input' | 'conflict'; message: string };
 export type CommunityResult = { ok: true; state: CommunityState } | CommunityFailure;
 
 // ---- On-device assistant bridge (implemented in src/lib/assistant.ts) ----

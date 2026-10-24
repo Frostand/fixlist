@@ -2,7 +2,7 @@ import { isLanguage, LANGUAGE_CODES } from '../domain/roles';
 import { canManageElder } from './commands';
 import { createSeedState } from './seed';
 import * as valid from './validation';
-import type { ChatMessage, CommunityState, Job, JobStatus } from './types';
+import type { ChatMessage, CommunityFailure, CommunityResult, CommunityState, Job, JobStatus } from './types';
 
 export const COMMUNITY_STORAGE_KEY = 'fixlist.community.v1';
 function validHistory(state: CommunityState, job: Job): boolean {
@@ -67,24 +67,135 @@ export function validateCommunityState(value: unknown): value is CommunityState 
     });
   } catch { return false; }
 }
-export function loadCommunity(storage: Storage | null, now: string): { state: CommunityState; status: 'loaded' | 'seeded' | 'recovered' } {
-  if (!storage) return { state: createSeedState(now), status: 'seeded' };
-  try {
-    const raw = storage.getItem(COMMUNITY_STORAGE_KEY);
-    if (raw === null) return { state: createSeedState(now), status: 'seeded' };
-    const value: unknown = JSON.parse(raw);
-    return validateCommunityState(value) ? { state: value, status: 'loaded' } : { state: createSeedState(now), status: 'recovered' };
-  } catch { return { state: createSeedState(now), status: 'recovered' }; }
+export interface CommunitySnapshot {
+  state: CommunityState;
+  status: 'loaded' | 'seeded' | 'recovered';
+  raw: string | null;
+  revision: number;
+  resetEpoch: string;
+  readable: boolean;
 }
+/** State and its exact durable precondition always come from the same read. No read migrates bytes. */
+export function loadCommunitySnapshot(storage: Storage | null, now: string): CommunitySnapshot {
+  let raw: string | null = null, readable = false;
+  try {
+    if (storage) { raw = storage.getItem(COMMUNITY_STORAGE_KEY); readable = true; }
+    if (raw === null) return { state: createSeedState(now), status: 'seeded', raw, revision: 0, resetEpoch: 'empty', readable };
+    const value: unknown = JSON.parse(raw);
+    if (validateCommunityState(value)) return { state: value, status: 'loaded', raw, revision: 0, resetEpoch: 'legacy', readable };
+    if (valid.shape(value, ['revision', 'resetEpoch', 'state']) && Number.isSafeInteger(value.revision) && (value.revision as number) >= 0
+      && typeof value.resetEpoch === 'string' && value.resetEpoch.length > 0 && value.resetEpoch.length <= 200 && validateCommunityState(value.state)) {
+      return { state: value.state, status: 'loaded', raw, revision: value.revision as number, resetEpoch: value.resetEpoch, readable };
+    }
+  } catch { /* Preserve corrupt bytes and distinguish inaccessible storage from an absent key. */ }
+  return { state: createSeedState(now), status: 'recovered', raw, revision: 0, resetEpoch: 'recovered', readable };
+}
+export function loadCommunity(storage: Storage | null, now: string): { state: CommunityState; status: CommunitySnapshot['status'] } {
+  const { state, status } = loadCommunitySnapshot(storage, now);
+  return { state, status };
+}
+const subscribers = new WeakMap<Storage, Set<() => void>>();
+function notifyCommunity(storage: Storage) { for (const listener of subscribers.get(storage) ?? []) listener(); }
+function envelope(snapshot: CommunitySnapshot, state: CommunityState, resetEpoch: string): string {
+  if (!validateCommunityState(state) || !Number.isSafeInteger(snapshot.revision + 1)) throw new Error('Invalid community state or revision.');
+  return JSON.stringify({ revision: snapshot.revision + 1, resetEpoch, state });
+}
+function newResetEpoch() { return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+/** Compatibility convenience API. Interactive commands use the observed-snapshot controller below. */
 export function saveCommunity(storage: Storage | null, state: CommunityState): boolean {
   try {
-    if (!storage || !validateCommunityState(state)) return false;
-    storage.setItem(COMMUNITY_STORAGE_KEY, JSON.stringify(state));
-    return true;
+    if (!storage) return false;
+    const snapshot = loadCommunitySnapshot(storage, new Date().toISOString());
+    if (!snapshot.readable) return false;
+    storage.setItem(COMMUNITY_STORAGE_KEY, envelope(snapshot, state, snapshot.resetEpoch));
   } catch { return false; }
+  notifyCommunity(storage);
+  return true;
 }
 export function resetCommunity(storage: Storage | null, now: string): CommunityState {
   const state = createSeedState(now);
-  try { storage?.removeItem(COMMUNITY_STORAGE_KEY); } catch { /* The caller still receives a fresh in-memory demo. */ }
+  try {
+    if (storage) {
+      const snapshot = loadCommunitySnapshot(storage, now);
+      if (snapshot.readable) {
+        storage.setItem(COMMUNITY_STORAGE_KEY, envelope(snapshot, state, newResetEpoch()));
+        notifyCommunity(storage);
+      }
+    }
+  } catch { /* Legacy API returns the candidate seed; controllers report reset failures explicitly. */ }
   return state;
+}
+
+export type CommunityIssue = 'command' | 'storage' | 'recovered' | null;
+/** Synchronous preconditions, not atomic CAS: genuinely simultaneous tab writes can still race. */
+export function createCommunityStore(storage: Storage | null, now = () => new Date().toISOString()) {
+  let observed = loadCommunitySnapshot(storage, now());
+  let issue: CommunityIssue = observed.status === 'recovered' ? 'recovered' : null;
+  const listeners = new Set<() => void>();
+  const publish = () => { for (const listener of listeners) listener(); };
+  function storageFailure(): CommunityFailure {
+    issue = 'storage'; publish();
+    return { ok: false, code: 'invalid_state', message: 'Community changes could not be saved.' };
+  }
+  function conflict(latest: CommunitySnapshot): CommunityFailure {
+    observed = latest; issue = 'command'; publish();
+    return { ok: false, code: 'conflict', message: 'Community data changed. Review the latest state before trying again.' };
+  }
+  function check(raw: string | null): CommunityFailure | null {
+    const latest = loadCommunitySnapshot(storage, now());
+    if (!latest.readable) return storageFailure();
+    return latest.raw === raw ? null : conflict(latest);
+  }
+  function refresh() {
+    const latest = loadCommunitySnapshot(storage, now());
+    if (!latest.readable) { storageFailure(); return; }
+    if (latest.raw !== observed.raw) {
+      observed = latest; issue = latest.status === 'recovered' ? 'recovered' : null; publish();
+    }
+  }
+  function commit<T extends CommunityResult>(command: (state: CommunityState) => T, reset = false): T | CommunityFailure {
+    const before = observed, initialFailure = check(before.raw);
+    if (initialFailure) return initialFailure;
+    const result = command(before.state);
+    if (!result.ok) {
+      const failure = check(before.raw);
+      if (failure) return failure;
+      issue = 'command'; publish(); return result;
+    }
+    let raw: string;
+    try { raw = envelope(before, result.state, reset ? newResetEpoch() : before.resetEpoch); }
+    catch { return storageFailure(); }
+    const failure = check(before.raw);
+    if (failure) return failure;
+    try { storage!.setItem(COMMUNITY_STORAGE_KEY, raw); }
+    catch { return storageFailure(); }
+    // Also reject any replacement visible before publication; this still is not a cross-tab transaction.
+    const saved = loadCommunitySnapshot(storage, now());
+    if (!saved.readable) return storageFailure();
+    if (saved.raw !== raw) return conflict(saved);
+    observed = { ...saved, state: result.state }; issue = null; publish();
+    notifyCommunity(storage!);
+    return result;
+  }
+  return {
+    get state() { return observed.state; },
+    get resetEpoch() { return observed.resetEpoch; },
+    get issue() { return issue; },
+    run: <T extends CommunityResult>(command: (state: CommunityState) => T): T | CommunityFailure => commit(command),
+    reset: (): CommunityResult => commit(() => ({ ok: true, state: createSeedState(now()) }), true),
+    clearIssue() { issue = null; publish(); },
+    refresh,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      if (storage) {
+        let clients = subscribers.get(storage);
+        if (!clients) { clients = new Set(); subscribers.set(storage, clients); }
+        clients.add(refresh);
+      }
+      return () => {
+        listeners.delete(listener);
+        if (storage && !listeners.size) subscribers.get(storage)?.delete(refresh);
+      };
+    },
+  };
 }
