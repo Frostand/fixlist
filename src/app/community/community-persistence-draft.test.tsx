@@ -342,7 +342,7 @@ describe('community transient scope', () => {
         expect(await view.reset()).toBe(false);
         expect(view.model.render().resetEpoch).not.toBe(epoch); expect(view.model.render().account).toBeNull();
         const tree = view.render();
-        expect(nodes(tree, 'p').some(node => node.props.role === 'status' && node.props.children === 'Changes are on this screen, but could not be saved on this phone.')).toBe(true);
+        expect(nodes(tree, 'p').some(node => node.props.role === 'status' && node.props.children === 'Some FixList data could not be cleared. Try reset again before leaving this device.')).toBe(true);
         expect(nodes(tree, Settings)).toHaveLength(0);
     });
     it.each(['indexeddb', 'native'] as const)('does not continue a reset into a new account while %s cleanup is pending', async pending => {

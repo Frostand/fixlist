@@ -159,7 +159,7 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
             if (!isCurrent()) return false;
             if (cleared.ok && native.ok) return true;
         } catch { /* Cleanup cannot roll back the committed community reset. */ }
-        if (isCurrent()) setNotice(t('c.storageError'));
+        if (isCurrent()) setNotice(t('error.reset'));
         return false;
     }}/> : null}</div>;
 }
