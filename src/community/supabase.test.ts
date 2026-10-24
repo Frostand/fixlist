@@ -30,8 +30,9 @@ function harness(response: unknown=mutation()) {
   // Real installed SDK builds/executes PostgREST requests; no live network or AUTH.
   const client=createClient('https://closed-pilot.invalid','synthetic-public-key',{global:{fetch},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
   const getSession=vi.spyOn(client.auth,'getSession').mockResolvedValue({data:{session:{user:{id:userId},access_token:'synthetic-session-token'} as Session},error:null});
-  const port=new SupabaseLiveCommunity({backendId:identity.backendId,client,currentIdentity:async()=>current},identity);
-  return {port,fetch,getSession,client,setIdentity:(v: LiveIdentity|null)=>{current=v;},respond:(v: unknown)=>{pendingResponse=v;},onFetch:(v: ()=>void)=>{whileFetching=v;}};
+  const currentIdentity=vi.fn(async()=>current);
+  const port=new SupabaseLiveCommunity({backendId:identity.backendId,client,currentIdentity},identity);
+  return {port,fetch,getSession,client,currentIdentity,setIdentity:(v: LiveIdentity|null)=>{current=v;},respond:(v: unknown)=>{pendingResponse=v;},onFetch:(v: ()=>void)=>{whileFetching=v;}};
 }
 function sent(h: ReturnType<typeof harness>) {
   const call=h.fetch.mock.calls.at(-1)!;
@@ -104,6 +105,18 @@ describe('live community adapter through the installed official SDK',()=>{
     expect(await h.port.acceptJob(jobId,key,c.signal)).toEqual({ok:false,code:'aborted'});expect(h.fetch).not.toHaveBeenCalled();
     const active=new AbortController();h.onFetch(()=>active.abort());
     expect(await h.port.acceptJob(jobId,key,active.signal)).toEqual({ok:false,code:'aborted'});expect(h.fetch).toHaveBeenCalledOnce();
+  });
+  it('discards success when cancelled during final identity verification',async()=>{
+    const h=harness(), active=new AbortController();
+    let entered!:()=>void, finish!:(value: LiveIdentity|null)=>void;
+    const verifying=new Promise<void>(resolve=>{entered=resolve;});
+    const verified=new Promise<LiveIdentity|null>(resolve=>{finish=resolve;});
+    h.currentIdentity.mockResolvedValueOnce(identity).mockResolvedValueOnce(identity)
+      .mockImplementationOnce(()=>{entered();return verified;});
+    const request=h.port.acceptJob(jobId,key,active.signal);
+    await verifying;active.abort();finish(identity);
+    expect(await request).toEqual({ok:false,code:'aborted'});
+    expect(h.fetch).toHaveBeenCalledOnce();
   });
   it.each([
     {...input,actorId:otherId},{...input,evidence:[]},{...input,analysis:{...input.analysis,hours:100}},

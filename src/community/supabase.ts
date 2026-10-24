@@ -47,7 +47,9 @@ export class SupabaseLiveCommunity implements AsyncLiveCommunityPort {
       const {data,error}=await this.transport.client.rpc(name,args)
         .setHeader('Authorization',`Bearer ${session.session.access_token}`).abortSignal(signal);
       if (signal.aborted) return failure('aborted');
-      if (!await this.bound()) return failure('session_changed');
+      const stillBound=await this.bound();
+      if (signal.aborted) return failure('aborted');
+      if (!stillBound) return failure('session_changed');
       if (error) return failure(error.code==='42501' || error.code==='PGRST301' ? 'permission_denied' : 'retry');
       if (shape(data,['ok','code']) && data.ok===false && serverFailures.some(code=>code===data.code)) return failure(data.code as LiveFailureCode);
       if (!shape(data,['ok','value']) || data.ok!==true || !check(data.value)) return failure('retry');
