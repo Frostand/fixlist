@@ -4,7 +4,7 @@ FixList explores how older adults and their families can describe household jobs
 
 Choose **demo mode** for fictional accounts and local data, including two blank starting profiles: older adult/requester and volunteer. On a compatible iPhone, optional guided room photos, an outline, and a silent clip up to 30 seconds can support a request. Photos and outlines can be exported or shared when you choose; video stays local. Experimental AI suggestions use photos, not video, and require human review.
 
-The new Supabase auth foundation provides account sign-in and private profile setup when configured. Real community jobs, messages, volunteer hours, and account-linked captures are not implemented; this is not yet a full community service.
+Real accounts use Supabase Auth for sign-in and private elder or volunteer profile setup when configured. A closed single-pilot server workflow (requests, one volunteer per job, messages, elder confirmation, ratings, owner-approved service credit) is implemented as a database migration and client adapter. The app screens do not use it yet, so real accounts cannot post or accept jobs, and the pilot needs owner provisioning. Family delegation, background screening, teams, account editing/deletion, and account-linked captures are not supported.
 
 ## Stack
 
@@ -21,9 +21,9 @@ npm run setup
 npm run dev
 ```
 
-Open <http://127.0.0.1:5173> and choose demo mode. Setup installs locked dependencies without downloading the native model. The web writing helper uses rules and templates. Run `npm run typecheck`, `npm test`, and `npm run build` to check your copy.
+Open <http://127.0.0.1:5173> and choose demo mode. Setup installs locked dependencies without downloading the native model. The web writing helper uses rules and templates. Run `npm run typecheck`, `npm test`, `npm run build`, and `npm run test:db` (in-memory PostgreSQL, no Docker) to check your copy.
 
-For real-account setup, copy `.env.example` to ignored `.env.local` and supply `VITE_SUPABASE_URL` and the public `VITE_SUPABASE_PUBLISHABLE_KEY` from your own project. Keep provider flags false until configured; never put provider secrets or service-role keys in the client. Follow the [Supabase setup guide](docs/supabase-auth-setup.md) for the migration, email/redirect settings, provider configuration and verification limits.
+For real-account setup, copy `.env.example` to ignored `.env.local` and supply `VITE_SUPABASE_URL` and the public `VITE_SUPABASE_PUBLISHABLE_KEY` from your own project. Keep provider flags false until configured; never put provider secrets or service-role keys in the client. Follow the [Supabase setup guide](docs/supabase-auth-setup.md) for both migrations, pilot provisioning, email/redirect settings, provider configuration and verification limits; [validation evidence](docs/auth-increment-validation.md) records what was and was not tested.
 
 ## Optional iPhone app
 
