@@ -1,6 +1,6 @@
 # Auth foundation and native integration — local evidence
 
-Foundation: 2b67d66 (base d7ba0495235506e8be1eeffb6d854ea395d01b37). Native integration: parent a2426c9. Server workflow review and cancellation fix: b6ab8d1 / f4b72da (see the later section). Historical sections below are snapshots at their stated commits and are not recomputed. No push/cloud project/provider configuration/hosted migration application performed. The user selected a new Supabase setup; project creation is waiting for dashboard login, and paid spending is not authorized.
+Foundation: 2b67d66 (base d7ba0495235506e8be1eeffb6d854ea395d01b37). Native integration: parent a2426c9. Server workflow review and cancellation fix: b6ab8d1 / f4b72da (see the later section). Historical sections below are snapshots at their stated commits and are not recomputed. No cloud project/provider configuration/hosted migration application performed. Publishing this source does not configure those services. The user selected a new Supabase setup; project creation is waiting for dashboard login, and paid spending is not authorized.
 
 ## Foundation checks (recorded at 2b67d66)
 
