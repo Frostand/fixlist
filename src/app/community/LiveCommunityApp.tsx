@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AccountProfile } from '../../auth/types';
 import type { AsyncLiveCommunityPort, LiveDiscoveryJob } from '../../community/ports';
 import { I18nProvider, LANGUAGES, useT } from '../../i18n';
 import { Button, skillLabel } from './UI';
-import { LiveCommunityController, type Resource } from './live-controller';
+import { LiveCommunityController, type LiveRetryScope, type Resource } from './live-controller';
 import { creditNotice, liveError, liveStatus, scopeNotice, liveCopy as l } from './live-copy';
 import { LiveRequestDraft } from './LiveRequestDraft';
 import { LiveJobDetails } from './LiveJobDetails';
 import './live-community.css';
 
-export interface LiveCommunityProps { port: AsyncLiveCommunityPort; profile: AccountProfile; onSignOut(): void; onRecheckSession(): void }
+export interface LiveCommunityProps { port: AsyncLiveCommunityPort; profile: AccountProfile; retryScope?: LiveRetryScope | undefined; onSignOut(): void; onRecheckSession(): void }
 /** Also usable by an isolated test/story entry with an injected port; no production bypass. */
 export function LiveCommunityApp(props: LiveCommunityProps) {
     const namespace = JSON.stringify([props.port.identity.backendId, props.port.identity.userId]);
@@ -24,9 +24,11 @@ function Catalog({ job }: { job: LiveDiscoveryJob }) {
     // Deliberately project only the discovery allowlist, even with an injected port.
     return <><h3>{job.catalogTitle}</h3><p>{job.category} · <bdi>{job.coarseArea}</bdi></p><p lang={t.language} dir="auto">{job.neededSkills.map(s => skillLabel(t, s)).join(', ')}</p><p>{l.creditLabel} {job.approvedServiceCreditMinutes === null ? l.creditUnset : `${job.approvedServiceCreditMinutes} minutes`}</p></>;
 }
-export function LiveWorkspace({ port, profile, onSignOut, onRecheckSession }: LiveCommunityProps) {
-    const [c] = useState(() => new LiveCommunityController(port)), [state, setState] = useState(c.state);
-    useEffect(() => { const off = c.subscribe(() => setState(c.state)); void c.start(); return () => { off(); c.dispose(); }; }, [c]);
+export function LiveWorkspace({ port, profile, retryScope, onSignOut, onRecheckSession }: LiveCommunityProps) {
+    const c = useMemo(() => new LiveCommunityController(port, retryScope), [port, retryScope]);
+    const [view, setView] = useState({ controller: c, state: c.state });
+    const state = view.controller === c ? view.state : c.state;
+    useEffect(() => { const off = c.subscribe(() => setView({ controller: c, state: c.state })); void c.start(); return () => { off(); c.dispose(); }; }, [c]);
     const access = state.access.value, approved = access?.state === 'approved', locked = !!state.pending;
     const direction = LANGUAGES.find(l => l.code === profile.language)!.dir;
     return <section className="fl-live c-stack" lang="en" dir={direction} aria-label={l.realAccount}>
