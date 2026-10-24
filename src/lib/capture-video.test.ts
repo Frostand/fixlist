@@ -4,6 +4,7 @@ import { sha256Blob, validateNativeCaptureResult } from './capture-model';
 import { parseCaptureBundle, buildCaptureBundle } from './capture-bundle';
 import { createMemoryCaptureStore } from './capture-storage';
 import { validateCaptureVideos, validateCaptureVideoBlob } from './capture-video';
+import { validateMp4 } from './mp4-validator';
 import type { CaptureVideos } from './capture-types';
 import fixture from '../../scan/tests/capture-parity/valid-bundle.json';
 
@@ -20,6 +21,34 @@ function mutate(type: string, offset: number, value: number): Uint8Array<ArrayBu
   new DataView(b.buffer).setUint32(index + offset, value); return b;
 }
 describe('local capture video contract and real synthetic MP4', () => {
+  it.each([
+    ['native-180x320.mp4', 180, 320, 2067],
+    ['native-720x1280.mp4', 720, 1280, 1200],
+  ] as const)('accepts production AVAssetWriter output %s, including extended-size mdat', async (file, width, height, durationMs) => {
+    const d = await data();
+    // Public synthetic pixel buffers encoded by the actual CaptureVideoWriter.
+    const blob = new Blob([readFileSync(new URL(`./__fixtures__/${file}`, import.meta.url))], { type: 'video/mp4' });
+    const clip = { ...d.videos.clips[0], width, height, durationMs, byteLength: blob.size, sha256: await sha256Blob(blob) };
+    validateMp4(new Uint8Array(await blob.arrayBuffer()), clip);
+    await validateCaptureVideoBlob(blob, clip);
+  });
+  it('rejects altered chroma extensions and a movie extending beyond its actual samples', async () => {
+    const d = await data();
+    const original = new Uint8Array(readFileSync(new URL('./__fixtures__/native-180x320.mp4', import.meta.url)));
+    const badChroma = original.slice(), shortChroma = original.slice(), longerMovie = original.slice();
+    const chroma = Buffer.from(original).indexOf('chrm');
+    badChroma[chroma + 5] = 1;
+    new DataView(shortChroma.buffer).setUint32(chroma - 4, 9);
+    const movie = new DataView(longerMovie.buffer);
+    for (const [type, offset] of [['mvhd', 20], ['tkhd', 24], ['elst', 12]] as const) {
+      movie.setUint32(Buffer.from(original).indexOf(type) + offset, 1241);
+    }
+    for (const bytes of [badChroma, shortChroma, longerMovie]) {
+      const blob = new Blob([bytes], { type: 'video/mp4' });
+      const clip = { ...d.videos.clips[0], width: 180, height: 320, durationMs: bytes === longerMovie ? 2069 : 2067, byteLength: blob.size, sha256: await sha256Blob(blob) };
+      await expect(validateCaptureVideoBlob(blob, clip)).rejects.toThrow();
+    }
+  });
   it('accepts a real silent portrait AVC clip and normalizes photo-only records', async () => {
     const d = await data(), store = createMemoryCaptureStore();
     expect(validateCaptureVideos(d.videos, d.manifest).ok).toBe(true);

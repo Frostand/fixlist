@@ -76,7 +76,7 @@ export function validateMp4(bytes: Uint8Array, clip: CaptureVideo): void {
   const stsd = one(stbl, 'stsd'); full(stsd, 8); require(u32(stsd.data + 4) === 1);
   const avc = one(boxes(stsd.data + 8, stsd.end, ['avc1']), 'avc1'); require(avc.end - avc.data >= 78);
   require(u16(avc.data + 6) === 1 && u16(avc.data + 24) === clip.width && u16(avc.data + 26) === clip.height && u16(avc.data + 40) === 1);
-  const configs = boxes(avc.data + 78, avc.end, ['avcC', 'pasp', 'colr', 'clap', 'btrt', 'fiel']);
+  const configs = boxes(avc.data + 78, avc.end, ['avcC', 'pasp', 'colr', 'clap', 'btrt', 'fiel', 'chrm']);
   const avcC = one(configs, 'avcC'), config = avcConfiguration(bytes.subarray(avcC.data, avcC.end));
   require(config.width === clip.width && config.height === clip.height, 'H.264 dimensions do not match the room video.');
   const pasp = optional(configs, 'pasp'); if (pasp) require(pasp.end - pasp.data === 8 && u32(pasp.data) > 0 && u32(pasp.data) === u32(pasp.data + 4));
@@ -84,6 +84,9 @@ export function validateMp4(bytes: Uint8Array, clip: CaptureVideo): void {
   const colr = optional(configs, 'colr'); if (colr) require(['nclc', 'nclx'].includes(word(colr.data)) && colr.end - colr.data === (word(colr.data) === 'nclx' ? 11 : 10));
   const btrt = optional(configs, 'btrt'); if (btrt) require(btrt.end - btrt.data === 12);
   const fiel = optional(configs, 'fiel'); if (fiel) require(fiel.end - fiel.data === 2 && bytes[fiel.data] === 1);
+  // AVAssetWriter emits this two-byte chroma-location extension. Accept only
+  // the zero-valued form produced by our progressive H.264 recorder.
+  const chrm = optional(configs, 'chrm'); if (chrm) require(chrm.end - chrm.data === 2 && u16(chrm.data) === 0);
   const stsz = one(stbl, 'stsz'); full(stsz, 12);
   const fixedSize = u32(stsz.data + 4), sampleCount = u32(stsz.data + 8);
   require(sampleCount > 0 && sampleCount <= 450 && stsz.end - stsz.data === 12 + (fixedSize ? 0 : sampleCount * 4));
@@ -113,8 +116,10 @@ export function validateMp4(bytes: Uint8Array, clip: CaptureVideo): void {
     mediaStart = version ? u64(timeAt) : view.getInt32(timeAt);
     require(duration === movie.duration && mediaStart >= 0 && u32(timeAt + (version ? 8 : 4)) === 65536);
   }
-  const mediaEnd = mediaStart + movie.duration / movie.scale * media.scale;
-  require(presentation[0]!.start <= mediaStart && presentation.at(-1)!.end >= mediaEnd && (presentation.at(-1)!.end - presentation[0]!.start) / media.scale <= 30);
+  // Compare integer clock ticks exactly: 1240 / 600 * 600 can round above
+  // 1240 and falsely reject an AVAssetWriter clip whose final sample ends there.
+  const coversMovie = BigInt(presentation.at(-1)!.end - mediaStart) * BigInt(movie.scale) >= BigInt(movie.duration) * BigInt(media.scale);
+  require(presentation[0]!.start <= mediaStart && coversMovie && (presentation.at(-1)!.end - presentation[0]!.start) / media.scale <= 30);
   const stss = optional(stbl, 'stss'); if (stss) { const count = table(stss, 4, sampleCount); let previous = 0; for (let i = 0; i < count; i++) { const n = u32(stss.data + 8 + i * 4); require(n > previous && n <= sampleCount); previous = n; } require(u32(stss.data + 8) === 1); }
   const sdtp = optional(stbl, 'sdtp'); if (sdtp) { full(sdtp, 4); require(sdtp.end - sdtp.data === 4 + sampleCount); }
   const stco = optional(stbl, 'stco'), co64 = optional(stbl, 'co64'); require(!!stco !== !!co64);
