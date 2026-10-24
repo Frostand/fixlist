@@ -62,10 +62,14 @@ private final class CaptureVideoAdmission {
         guard current == id, finalizing else { return false }
         finalizing = false; return true
     }
-    func invalidate(_ id: UUID? = nil, onlyFinalizing: Bool = false) -> UUID? {
+    func invalidate(_ id: UUID? = nil, onlyFinalizing: Bool = false, enqueue: (UUID) -> Void) -> UUID? {
         lock.lock(); defer { lock.unlock() }
         guard let value = current, id == nil || id == value, !onlyFinalizing || finalizing else { return nil }
-        current = nil; accepting = false; finalizing = false; return value
+        current = nil; accepting = false; finalizing = false
+        // Publish invalidation together with its serial cleanup barrier. Discard
+        // and a newer start cannot observe nil before cancellation is enqueued.
+        enqueue(value)
+        return value
     }
 }
 
@@ -91,6 +95,10 @@ final class CaptureVideoWriter: @unchecked Sendable {
         var finishCallbackDelay = 0.0
         var beforeAppend: (() -> Void)?
         var beforeCommit: (() -> Void)?
+        // Off the file queue, inside the admission lock and before cleanup enqueue.
+        var afterDeadlineInvalidation: (() -> Void)?
+        var afterCancelWriting: (() -> Void)?
+        var beforeFinishCallback: (() -> Void)?
         var wallLimit = 30.0
         var finishLimit = 10.0
     }
@@ -253,10 +261,17 @@ final class CaptureVideoWriter: @unchecked Sendable {
         deadline = hooks.finishLimit
         #endif
         DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + deadline) { [weak self] in
-            guard let self = self, self.admission.invalidate(generation, onlyFinalizing: true) != nil else { return }
+            guard let self = self else { return }
+            let invalidated = self.admission.invalidate(generation, onlyFinalizing: true) { id in
+                #if CAPTURE_VIDEO_TESTING
+                self.hooks.afterDeadlineInvalidation?()
+                #endif
+                self.enqueueClear(id)
+            }
+            guard invalidated != nil else { return }
+            // cancelWriting can block. Report the deadline without waiting for
+            // cleanup; later folder deletion still queues behind cancellation.
             self.emit(generation, .failed)
-            // cancelWriting can block. Failure is visible now; cleanup is still pending on the serial queue.
-            self.enqueueClear(generation)
         }
         CaptureFiles.queue.async {
             guard self.admission.valid(generation), let a = self.attempt, a.id == generation,
@@ -280,6 +295,9 @@ final class CaptureVideoWriter: @unchecked Sendable {
                 delay = self.hooks.finishCallbackDelay
                 #endif
                 CaptureFiles.queue.asyncAfter(deadline: .now() + delay) {
+                    #if CAPTURE_VIDEO_TESTING
+                    self.hooks.beforeFinishCallback?()
+                    #endif
                     guard self.admission.valid(generation), self.attempt === a else { return }
                     guard writer.status == .completed else { self.fail(generation); return }
                     do { try Self.protect(a.url) } catch { self.fail(generation); return }
@@ -318,24 +336,27 @@ final class CaptureVideoWriter: @unchecked Sendable {
         }
     }
 
-    /// Invalidate synchronously, then enqueue cancellation BEFORE caller dismisses or queues folder removal.
+    /// Atomically invalidate/enqueue cancellation BEFORE caller dismisses or queues folder removal.
     func discard() {
-        guard let id = admission.invalidate() else { return }
-        enqueueClear(id)
+        _ = admission.invalidate { self.enqueueClear($0) }
     }
     private func enqueueClear(_ id: UUID) {
         CaptureFiles.queue.async { if self.attempt?.id == id { self.clearAttempt() } }
     }
     private func clearAttempt() {
         guard let a = attempt else { return }
-        if let writer = a.writer, writer.status == .writing || writer.status == .unknown { writer.cancelWriting() }
+        if let writer = a.writer, writer.status == .writing || writer.status == .unknown {
+            writer.cancelWriting()
+            #if CAPTURE_VIDEO_TESTING
+            hooks.afterCancelWriting?()
+            #endif
+        }
         try? CaptureFiles.remove(a.url)
         attempt = nil
     }
     private func fail(_ id: UUID) {
-        guard admission.invalidate(id) != nil else { return }
+        guard admission.invalidate(id, enqueue: { self.enqueueClear($0) }) != nil else { return }
         emit(id, .failed)
-        if attempt?.id == id { clearAttempt() }
     }
     private func emit(_ id: UUID, _ event: Event) { DispatchQueue.main.async { self.onEvent(id, event) } }
 
