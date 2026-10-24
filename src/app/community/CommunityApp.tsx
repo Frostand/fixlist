@@ -3,6 +3,7 @@ import * as domain from '../../community';
 import { canManageElder } from '../../community/commands';
 import { completeAccountSetup } from '../../community/setup';
 import type { Account, AccountRole, Language, SignInProvider } from '../../community/types';
+import { authCopy } from '../../i18n/auth';
 import { applyDocumentLanguage, I18nProvider, useT } from '../../i18n';
 import { discardAllNativeCaptures } from '../../lib/native-capture';
 import { resetCaptureStorage } from '../../lib/capture-storage';
@@ -31,7 +32,9 @@ catch {
 export function goCommunity(path: string) { window.location.hash = `/c/${path}`; }
 export function roleHome(role: AccountRole) { return role === 'volunteer' ? 'nearby' : 'home'; }
 function useRoute() { const [route, setRoute] = useState(() => parseCommunityRoute(typeof window === 'undefined' ? '' : window.location.hash)); useEffect(() => { const sync = () => setRoute(parseCommunityRoute(window.location.hash)); window.addEventListener('hashchange', sync); return () => window.removeEventListener('hashchange', sync); }, []); useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); document.querySelector<HTMLElement>('[data-screen-heading]')?.focus(); }, [route.screen, route.id]); return route; }
-export function CommunityApp() { const controller = useCommunity(), [guestLanguage, setGuestLanguage] = useState<Language>('en'); const language = controller.account?.language ?? guestLanguage; return <I18nProvider language={language}><CommunityBody controller={controller} language={language} onGuestLanguage={setGuestLanguage}/></I18nProvider>; }
+const AuthEntry = lazy(() => import('./AuthApp'));
+export function CommunityApp() { return <Suspense fallback={<p role="status">{authCopy.loading}</p>}><AuthEntry demo={<DemoCommunityApp/>}/></Suspense>; }
+function DemoCommunityApp() { const controller = useCommunity(), [guestLanguage, setGuestLanguage] = useState<Language>('en'); const language = controller.account?.language ?? guestLanguage; return <I18nProvider language={language}><CommunityBody key={JSON.stringify(['demo', controller.account?.id, controller.resetEpoch])} controller={controller} language={language} onGuestLanguage={setGuestLanguage}/></I18nProvider>; }
 export function AccountHeader({ account, onSettings }: {
     account: Account;
     onSettings(): void;
