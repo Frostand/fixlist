@@ -16,15 +16,18 @@ with tempfile.TemporaryDirectory(prefix='fixlist-video-tests-') as scratch:
     support.write_text('''import Foundation
     enum CaptureFiles {
         static let queue = DispatchQueue(label: "fixlist.video.production-tests")
+        static var didRemove: ((URL) -> Void)?
         static func remove(_ url: URL) throws {
             do { try FileManager.default.removeItem(at: url) }
             catch let e as NSError where e.domain == NSCocoaErrorDomain && e.code == NSFileNoSuchFileError {}
+            didRemove?(url)
         }
     }
     ''')
     production = ROOT / 'ios/App/App/CaptureVideoWriter.swift'
     subprocess.run(['xcrun', 'swiftc', '-typecheck', '-sdk', sdk, '-target',
                     'arm64-apple-ios15.0-simulator', str(support), str(production)], check=True)
+    print('PASS: production writer iOS 15 SDK typecheck', flush=True)
     binary = scratch / 'video-tests'
     subprocess.run(['xcrun', 'swiftc', '-D', 'CAPTURE_VIDEO_TESTING', str(support), str(production),
                     str(ROOT / 'scripts/native-capture-video-tests.swift'), '-o', str(binary)], check=True)

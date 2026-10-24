@@ -4,6 +4,28 @@ import CoreVideo
 import CryptoKit
 
 @main enum ProductionVideoTests {
+    // Rendezvous only on the deadline/caller threads, never on CaptureFiles.queue.
+    final class DeadlinePause {
+        private let condition = NSCondition()
+        private var paused = false
+        private var resumed = false
+        func pause() {
+            dispatchPrecondition(condition: .notOnQueue(CaptureFiles.queue))
+            condition.lock(); defer { condition.unlock() }
+            paused = true; condition.broadcast()
+            while !resumed {
+                precondition(condition.wait(until: Date().addingTimeInterval(12)), "Deadline pause released")
+            }
+        }
+        var isPaused: Bool { condition.lock(); defer { condition.unlock() }; return paused }
+        func resume() { condition.lock(); resumed = true; condition.broadcast(); condition.unlock() }
+    }
+    final class Trace {
+        private let lock = NSLock()
+        private var entries: [String] = []
+        func add(_ entry: String) { lock.lock(); entries.append(entry); lock.unlock() }
+        var events: [String] { lock.lock(); defer { lock.unlock() }; return entries }
+    }
     static var checks = 0
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         checks += 1
@@ -30,6 +52,144 @@ import CryptoKit
         } }
         CVPixelBufferUnlockBaseAddress(image, [])
         return image
+    }
+    static func deadlineCancellationRace(buffer: CVPixelBuffer, resetAll: Bool, lateFinish: Bool = false) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("fixlist-order-\(UUID())").resolvingSymlinksInPath()
+        let directory = root.appendingPathComponent("cap-cancel-order")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID(), trace = Trace(), pause = DeadlinePause()
+        let candidate = directory.appendingPathComponent("candidate-\(id.uuidString.lowercased()).mp4")
+        var failed = false, reviewed = false, removed = false
+        var hooks = CaptureVideoWriter.TestHooks()
+        hooks.holdFinish = !lateFinish; hooks.finishLimit = 0.05
+        hooks.finishCallbackDelay = lateFinish ? 1.5 : 0
+        hooks.afterDeadlineInvalidation = { pause.pause() }
+        hooks.beforeFinishCallback = { trace.add("finish callback") }
+        hooks.afterCancelWriting = {
+            dispatchPrecondition(condition: .onQueue(CaptureFiles.queue))
+            trace.add("cancelWriting returned")
+        }
+        let writer = CaptureVideoWriter(directory: directory, hooks: hooks) { _, event in
+            if case .failed = event { failed = true }
+            if case .review = event { reviewed = true }
+        }
+        CaptureFiles.queue.sync {
+            CaptureFiles.didRemove = { url in
+                dispatchPrecondition(condition: .onQueue(CaptureFiles.queue))
+                if url == candidate { trace.add("candidate removed") }
+            }
+        }
+        defer { CaptureFiles.queue.sync { CaptureFiles.didRemove = nil } }
+        writer.start(generation: id, takenAt: "2026-10-24T01:02:03.000Z")
+        CaptureFiles.queue.sync {}
+        for frame in 0...20 {
+            writer.submit(generation: id, buffer: buffer, timestamp: 1100 + Double(frame) / 15)
+            CaptureFiles.queue.sync {}
+            RunLoop.current.run(until: Date().addingTimeInterval(0.003))
+        }
+        expect(FileManager.default.fileExists(atPath: candidate.path), "Race fixture has a real writing candidate")
+        writer.stop(generation: id)
+        wait { pause.isPaused }
+        // Prove the paused deadline does not occupy/block the serial file queue.
+        CaptureFiles.queue.sync { trace.add("file queue responsive") }
+        let callerStarted = DispatchSemaphore(value: 0), cleanup = DispatchGroup()
+        cleanup.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            callerStarted.signal()
+            writer.discard()
+            // Same ordering as plugin discard/discardAll: abort first, then enqueue
+            // folder/root removal, then deliver cleanup resolution on the main queue.
+            CaptureFiles.queue.async {
+                try! CaptureFiles.remove(resetAll ? root : directory)
+                trace.add("folder removed")
+                cleanup.leave()
+                DispatchQueue.main.async { trace.add("cleanup resolved"); removed = true }
+            }
+        }
+        expect(callerStarted.wait(timeout: .now() + 12) == .success, "Competing discard started at the invalidation pause")
+        // On the buggy path cleanup completes while the deadline is paused. With
+        // atomic enqueue, discard waits for the admission lock. The bounded wait
+        // is a deadlock escape, not the ordering assertion; the trace is evidence.
+        _ = cleanup.wait(timeout: .now() + 0.5)
+        pause.resume()
+        wait { removed && failed }
+        CaptureFiles.queue.sync {}
+        let events = trace.events
+        print("ORDER \(lateFinish ? "late finish" : resetAll ? "discardAll/reset" : "discard"): \(events.joined(separator: " -> "))")
+        expect(events.firstIndex(of: "candidate removed").map { candidate in
+            events.firstIndex(of: "folder removed").map { candidate < $0 } ?? false
+        } ?? false, "Candidate removal precedes folder deletion/cleanup resolution")
+        if !lateFinish {
+            expect(events.firstIndex(of: "cancelWriting returned").map { cancel in
+                events.firstIndex(of: "candidate removed").map { cancel < $0 } ?? false
+            } ?? false, "Actual cancelWriting returns before candidate and folder deletion")
+        }
+        expect(events.firstIndex(of: "folder removed").map { folder in
+            events.firstIndex(of: "cleanup resolved").map { folder < $0 } ?? false
+        } ?? false, "Cleanup resolves after serial cancellation and deletion")
+        if lateFinish {
+            wait { trace.events.contains("finish callback") }
+            expect(trace.events.firstIndex(of: "finish callback")! > trace.events.firstIndex(of: "cleanup resolved")!,
+                   "Real finishWriting callback is delivered after folder cleanup")
+        }
+        expect(!reviewed && !writer.submit(generation: id, buffer: buffer, timestamp: 1103), "Timed-out generation cannot review or admit frames")
+        var useRejected = false
+        writer.use(generation: id) { if case .failure = $0 { useRejected = true } }
+        wait { useRejected }
+        expect(!FileManager.default.fileExists(atPath: directory.path), "Late Use cannot recreate or accept removed capture folder")
+        if lateFinish { print("LATE: \(trace.events.joined(separator: " -> ")); Use rejected, folder absent") }
+    }
+    static func deadlineRetakeRace(buffer: CVPixelBuffer) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("fixlist-retake-\(UUID())").resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let old = UUID(), newer = UUID(), pause = DeadlinePause()
+        var failures = Set<UUID>(), started = false
+        var hooks = CaptureVideoWriter.TestHooks()
+        hooks.holdFinish = true; hooks.finishLimit = 0.05
+        hooks.afterDeadlineInvalidation = { pause.pause() }
+        let writer = CaptureVideoWriter(directory: directory, hooks: hooks) { id, event in
+            if case .failed = event { failures.insert(id) }
+        }
+        writer.start(generation: old, takenAt: "2026-10-24T01:02:03.000Z")
+        CaptureFiles.queue.sync {}
+        for frame in 0...20 {
+            writer.submit(generation: old, buffer: buffer, timestamp: 1200 + Double(frame) / 15)
+            CaptureFiles.queue.sync {}
+            RunLoop.current.run(until: Date().addingTimeInterval(0.003))
+        }
+        writer.stop(generation: old)
+        wait { pause.isPaused }
+        let callerStarted = DispatchSemaphore(value: 0), startReturned = DispatchGroup()
+        startReturned.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            callerStarted.signal()
+            writer.start(generation: newer, takenAt: "2026-10-24T01:02:04.000Z")
+            startReturned.leave()
+            DispatchQueue.main.async { started = true }
+        }
+        expect(callerStarted.wait(timeout: .now() + 12) == .success, "Retake races paused deadline invalidation")
+        _ = startReturned.wait(timeout: .now() + 0.5)
+        pause.resume()
+        wait { started && failures.contains(old) }
+        CaptureFiles.queue.sync {}
+        expect(writer.submit(generation: newer, buffer: buffer, timestamp: 1203), "Retake admits a new generation after deadline cleanup")
+        CaptureFiles.queue.sync {}
+        let oldURL = directory.appendingPathComponent("candidate-\(old.uuidString.lowercased()).mp4")
+        let newURL = directory.appendingPathComponent("candidate-\(newer.uuidString.lowercased()).mp4")
+        expect(!FileManager.default.fileExists(atPath: oldURL.path) && FileManager.default.fileExists(atPath: newURL.path),
+               "Stale deadline cleanup removes only the old candidate")
+        writer.stop(generation: old)
+        var rejected = false
+        writer.use(generation: old) { if case .failure = $0 { rejected = true } }
+        wait { rejected }
+        expect(writer.submit(generation: newer, buffer: buffer, timestamp: 1204), "Stale stop/Use cannot invalidate the new retake")
+        CaptureFiles.queue.sync {}
+        expect(!failures.contains(newer) && FileManager.default.fileExists(atPath: newURL.path), "New retake survives stale generation operations")
+        writer.discard(); CaptureFiles.queue.sync {}
+        expect(!FileManager.default.fileExists(atPath: newURL.path), "Discard still cancels and removes the new retake")
+        print("RETAKE: newer candidate survives old deadline/stop/Use; discard removes newer candidate")
     }
     static func main() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("fixlist-synthetic-\(UUID())").resolvingSymlinksInPath()
@@ -355,6 +515,10 @@ import CryptoKit
         wait { removed }
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         expect(!FileManager.default.fileExists(atPath: directory.path) && reviews[abortID] == nil, "Abort/remove cannot resurrect candidate or folder")
+        try deadlineCancellationRace(buffer: buffer, resetAll: false)
+        try deadlineCancellationRace(buffer: buffer, resetAll: true)
+        try deadlineCancellationRace(buffer: buffer, resetAll: true, lateFinish: true)
+        try deadlineRetakeRace(buffer: buffer)
         print("MEDIA: \(clip.width)x\(clip.height), \(clip.durationMs) ms, \(clip.byteLength) bytes, avc1, silent; first and last actual samples decoded")
         print("PASS: \(checks) real production video checks")
     }
