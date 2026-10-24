@@ -1415,5 +1415,6 @@
   "capture.native.videoCancel": "Ihinto ang pag-scan na ito at burahin ang mga larawan at video nito?",
   "capture.video.title": "Video ng kuwarto",
   "capture.video.privacy": "Nananatili ang video sa teleponong ito. Mga larawan ang ginagamit ng AI sa pag-check. Mga larawan lang ang kasama sa mga capture export.",
-  "capture.video.playbackFailed": "Hindi ma-play ang video na ito. Subukang buksan muli ang kuwarto."
+  "capture.video.playbackFailed": "Hindi ma-play ang video na ito. Subukang buksan muli ang kuwarto.",
+  "c.volunteer.helped": "Tinulungan ni {name}"
 }

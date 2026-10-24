@@ -1415,5 +1415,6 @@
   "capture.native.videoCancel": "Arrêter ce scan et supprimer ses photos et sa vidéo ?",
   "capture.video.title": "Vidéo de la pièce",
   "capture.video.privacy": "La vidéo reste sur ce téléphone. L'IA analyse les photos. Les exports de capture ne contiennent que des photos.",
-  "capture.video.playbackFailed": "Cette vidéo n'a pas pu être lue. Essayez de rouvrir la pièce."
+  "capture.video.playbackFailed": "Cette vidéo n'a pas pu être lue. Essayez de rouvrir la pièce.",
+  "c.volunteer.helped": "Aidé par {name}"
 }

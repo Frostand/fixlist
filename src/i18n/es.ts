@@ -1213,6 +1213,7 @@ export const es = {
   "c.tracker": "Progreso de la solicitud",
   "c.volunteer.waiting": "Esperamos que un vecino acepte.",
   "c.volunteer.assigned": "{name} le ayudará",
+  "c.volunteer.helped": "Le ayudó {name}",
   "c.volunteer.eta": "En camino: pregunte a {name} a qué hora llegará.",
   "c.volunteer.rating": "{rating} de 5",
   "c.volunteer.new": "Voluntario nuevo",

@@ -1415,5 +1415,6 @@
   "capture.native.videoCancel": "要停止本次扫描并删除其照片和视频吗？",
   "capture.video.title": "房间视频",
   "capture.video.privacy": "视频只保存在这部手机上。AI 检查只使用照片。导出的采集内容只包含照片。",
-  "capture.video.playbackFailed": "无法播放此视频。请尝试重新打开该房间。"
+  "capture.video.playbackFailed": "无法播放此视频。请尝试重新打开该房间。",
+  "c.volunteer.helped": "{name} 已帮忙"
 }

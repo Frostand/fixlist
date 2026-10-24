@@ -1415,5 +1415,6 @@
   "capture.native.videoCancel": "이 스캔을 중지하고 사진과 동영상을 삭제할까요?",
   "capture.video.title": "방 동영상",
   "capture.video.privacy": "동영상은 이 휴대전화에만 저장됩니다. AI는 사진으로 확인합니다. 내보내기에는 사진만 포함됩니다.",
-  "capture.video.playbackFailed": "이 동영상을 재생할 수 없습니다. 방을 다시 열어 보세요."
+  "capture.video.playbackFailed": "이 동영상을 재생할 수 없습니다. 방을 다시 열어 보세요.",
+  "c.volunteer.helped": "{name}님이 도와주셨어요"
 }

@@ -1415,5 +1415,6 @@
   "capture.native.videoCancel": "هل تريد إيقاف هذا المسح وحذف صوره وفيديوه؟",
   "capture.video.title": "فيديو الغرفة",
   "capture.video.privacy": "يبقى الفيديو على هذا الهاتف. يفحص الذكاء الاصطناعي الصور فقط. تتضمن عمليات تصدير الالتقاط الصور فقط.",
-  "capture.video.playbackFailed": "تعذّر تشغيل هذا الفيديو. حاول فتح الغرفة مرة أخرى."
+  "capture.video.playbackFailed": "تعذّر تشغيل هذا الفيديو. حاول فتح الغرفة مرة أخرى.",
+  "c.volunteer.helped": "ساعدك {name}"
 }

@@ -45,6 +45,22 @@ describe('multilingual rules fallback', () => {
     expect(result.titleEnglish).toBe(title); expect(result.tools).toEqual(expect.arrayContaining(tools));
     expect(result.safetyNotes.join(' ')).toContain('unverified room flag'); expect(result.engine).toBe('rules');
   });
+  it('recognizes a light that is out without the word "bulb"', () => {
+    for (const [text, language] of [["The light in my hallway is out and I can't reach it.", 'en'], ['the lamp in my bedroom stopped working', 'en'], ['La luz del pasillo no funciona', 'es'], ['부엌 불이 나갔어요', 'ko']] as const) {
+      const result = analyzeTaskWithRules(text, language);
+      expect(result.titleEnglish).toBe('Replace a light bulb');
+      expect(result.tools).toContain('ladder');
+    }
+  });
+  it.each([
+    'Help me carry this light chair outside.', 'Put the light boxes outside for collection.',
+    'Help me carry this light chair outdoors.', 'Put the light boxes outdoors for collection.',
+  ])('does not treat outside/outdoors as a light that is out: %s', (text) => {
+    const result = analyzeTaskWithRules(text, 'en');
+    expect(result.titleEnglish).not.toBe('Replace a light bulb');
+    expect(result.tools).not.toContain('ladder');
+  });
+
   it('returns fresh arrays so caller edits cannot change later drafts', () => {
     const first = quickPickAnalysis('light-bulb', 'en'); (first.tools as string[]).push('car');
     expect(quickPickAnalysis('light-bulb', 'en').tools).toEqual(['ladder']);

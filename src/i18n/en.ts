@@ -1219,6 +1219,7 @@ export const en = {
   "c.tracker": "Request progress",
   "c.volunteer.waiting": "We’re waiting for a neighbor to accept.",
   "c.volunteer.assigned": "{name} is helping",
+  "c.volunteer.helped": "Helped by {name}",
   "c.volunteer.eta": "On the way — ask {name} for an arrival time.",
   "c.volunteer.rating": "{rating} out of 5",
   "c.volunteer.new": "New volunteer",

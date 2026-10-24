@@ -32,8 +32,11 @@ catch {
 export function goCommunity(path: string) { window.location.hash = `/c/${path}`; }
 export function roleHome(role: AccountRole) { return role === 'volunteer' ? 'nearby' : 'home'; }
 function useRoute() { const [route, setRoute] = useState(() => parseCommunityRoute(typeof window === 'undefined' ? '' : window.location.hash)); useEffect(() => { const sync = () => setRoute(parseCommunityRoute(window.location.hash)); window.addEventListener('hashchange', sync); return () => window.removeEventListener('hashchange', sync); }, []); useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); document.querySelector<HTMLElement>('[data-screen-heading]')?.focus(); }, [route.screen, route.id]); return route; }
-const AuthEntry = lazy(() => import('./AuthApp'));
-export function CommunityApp() { return <Suspense fallback={<p role="status">{authCopy.loading}</p>}><AuthEntry demo={<DemoCommunityApp/>}/></Suspense>; }
+const AuthEntry = import.meta.env.MODE === 'submission' ? null : lazy(() => import('./AuthApp'));
+export function CommunityApp() {
+    if (!AuthEntry) return <><div className="c-submission-banner" role="status" lang="en" dir="ltr"><strong>{authCopy.demoMode}</strong>{authCopy.demoNotice}</div><DemoCommunityApp/></>;
+    return <Suspense fallback={<p role="status">{authCopy.loading}</p>}><AuthEntry demo={<DemoCommunityApp/>}/></Suspense>;
+}
 function DemoCommunityApp() { const controller = useCommunity(), [guestLanguage, setGuestLanguage] = useState<Language>('en'); const language = controller.account?.language ?? guestLanguage; return <I18nProvider language={language}><CommunityBody key={JSON.stringify(['demo', controller.account?.id, controller.resetEpoch])} controller={controller} language={language} onGuestLanguage={setGuestLanguage}/></I18nProvider>; }
 export function AccountHeader({ account, onSettings }: {
     account: Account;
@@ -77,6 +80,8 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     let screen = route.screen;
     if (!account && !['intro', 'signin', 'role', 'setup', 'accounts'].includes(screen))
         screen = 'intro';
+    if (import.meta.env.MODE === 'submission' && !account && screen === 'intro')
+        screen = 'signin';
     if (account && (['intro', 'signin', 'role', 'accounts'].includes(screen) || account.role === 'volunteer' && screen === 'home'))
         screen = roleHome(account.role);
     if (account && (account.role === 'elder' || account.role === 'volunteer') && !state.session.onboarded.includes(account.id))
@@ -91,7 +96,9 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     else if (screen === 'accounts')
         content = <Heading>{t('c.signin.choose')}</Heading>;
     else if (screen === 'signin')
-        content = <SignIn groups={{ elder: domain.accountsByRole(state, 'elder'), volunteer: domain.accountsByRole(state, 'volunteer'), family: domain.accountsByRole(state, 'family') }} onSignIn={signIn} onCreate={(p) => { setProvider(p); goCommunity('role'); }} onBack={() => goCommunity('intro')}/>;
+        content = import.meta.env.MODE === 'submission'
+            ? <div className="c-narrow"><Heading intro={t('c.signin.demo')}>{t('c.signin.choose')}</Heading><DemoAccountChoices groups={{ elder: domain.accountsByRole(state, 'elder'), volunteer: domain.accountsByRole(state, 'volunteer'), family: domain.accountsByRole(state, 'family') }} onSelect={id => signIn(id, 'email')} onCreate={() => { setProvider('email'); goCommunity('role'); }}/></div>
+            : <SignIn groups={{ elder: domain.accountsByRole(state, 'elder'), volunteer: domain.accountsByRole(state, 'volunteer'), family: domain.accountsByRole(state, 'family') }} onSignIn={signIn} onCreate={(p) => { setProvider(p); goCommunity('role'); }} onBack={() => goCommunity('intro')}/>;
     else if (screen === 'role')
         content = <RoleChoice onSelect={(r) => goCommunity(`setup/${r}`)} onBack={() => goCommunity('signin')}/>;
     else if (screen === 'setup') {

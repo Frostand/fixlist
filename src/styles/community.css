@@ -5,6 +5,8 @@
 /* Community styles are scoped so the classic checklist keeps its own identity. */
 html[data-community] { background: #FAF7F2; }
 html[data-community] body { background: #FAF7F2; }
+.c-submission-banner { padding: calc(.75rem + env(safe-area-inset-top)) 1rem .75rem; background: #E4EFE9; color: #1D2521; text-align: center; font: 1rem/1.5 'Atkinson Hyperlegible Next Variable', system-ui, sans-serif; }
+.c-submission-banner + .community { padding-block-start: 0; }
 .community {
   --paper: #FAF7F2; --card: #FFFFFF; --ink: #1D2521; --ink-2: #4A5550;
   --line: #E6DFD4; --green: #1F5D4A; --green-tint: #E4EFE9; --clay: #C2562F;

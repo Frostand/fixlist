@@ -39,13 +39,13 @@ export function VolunteerJob({ job, elder, address, needs = [], profile, match, 
     onStep(step: 'trip' | 'arrive' | 'done', note?: string): boolean;
     onMessages(): void;
 }) {
-    const t = useT(), [original, setOriginal] = useState(false), [accepting, setAccepting] = useState(false);
+    const t = useT(), viewerLanguage = useLanguage(), [original, setOriginal] = useState(false), [accepting, setAccepting] = useState(false);
     const [chosen, setChosen] = useState<AvailabilitySlot | null>(null), [customDate, setCustomDate] = useState(''), [note, setNote] = useState('');
     const open = job.status === 'open';
     const slots = match?.sharedSlots.length ? match.sharedSlots : profile.availability;
     const destination = `${elder.location.lat},${elder.location.lng}`;
     const pins = useMemo(() => [{ id: job.id, point: elder.location, score: 100, title: t('c.map.destination') }], [job.id, elder.location.lat, elder.location.lng, t.language]);
-    const details = <><OriginalToggle language={job.analysis.language} original={original} onChange={setOriginal}/><JobCard analysis={job.analysis} evidence={job.evidence} slots={job.preferredSlots} original={original}/></>;
+    const details = <>{job.analysis.language !== viewerLanguage ? <OriginalToggle language={job.analysis.language} original={original} onChange={setOriginal}/> : null}<JobCard analysis={job.analysis} evidence={job.evidence} slots={job.preferredSlots} original={original}/></>;
     return <div className="c-stack">
         <Heading>{t(open ? 'c.job.details' : 'c.volunteer.helping', { name: elder.firstName })}</Heading>
         <Requester elder={elder} needs={needs} language={job.analysis.language}/>

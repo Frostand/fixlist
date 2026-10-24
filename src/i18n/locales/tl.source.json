@@ -1415,5 +1415,6 @@
   "capture.native.videoCancel": "Stop this scan and delete its photos and video?",
   "capture.video.title": "Room video",
   "capture.video.privacy": "Video stays on this phone. AI checks use photos. Capture exports include photos only.",
-  "capture.video.playbackFailed": "This video could not play. Try opening the room again."
+  "capture.video.playbackFailed": "This video could not play. Try opening the room again.",
+  "c.volunteer.helped": "Helped by {name}"
 }

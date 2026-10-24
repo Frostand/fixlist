@@ -1415,5 +1415,6 @@
   "capture.native.videoCancel": "Dừng lần quét này và xóa ảnh cùng video của lần quét?",
   "capture.video.title": "Video phòng",
   "capture.video.privacy": "Video chỉ lưu trên điện thoại này. AI kiểm tra bằng ảnh. Bản xuất chỉ gồm ảnh.",
-  "capture.video.playbackFailed": "Không thể phát video này. Hãy thử mở lại phòng."
+  "capture.video.playbackFailed": "Không thể phát video này. Hãy thử mở lại phòng.",
+  "c.volunteer.helped": "{name} đã giúp"
 }

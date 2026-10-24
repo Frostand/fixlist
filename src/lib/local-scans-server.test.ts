@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // Dynamic path avoids adding the Node-only Vite config to the browser tsconfig project.
 const configPath = '../../vite.config.ts';
 const config = await import(configPath) as {
-  default: { server: { fs: { strict: boolean; deny: string[] } } };
+  default: (env: { command: string; mode: string }) => { server: { fs: { strict: boolean; deny: string[] } } };
   parseLocalScanRequest: (path: string) => { kind: string; name?: string; file?: string } | null;
   createLocalScansHandler: (root: string) => (request: IncomingMessage, response: ServerResponse, next: () => void) => Promise<void>;
   localScansPlugin: () => Record<string, unknown>;
@@ -112,8 +112,9 @@ describe('dev/preview local scans middleware path boundary', () => {
 
 describe('ordinary Vite file serving cannot bypass the local-scans allowlist', () => {
   it('retains all installed Vite defaults and denies capture files', () => {
-    expect(config.default.server.fs.strict).toBe(true);
-    expect(config.default.server.fs.deny).toEqual(expect.arrayContaining([
+    const { server } = config.default({ command: 'serve', mode: 'development' });
+    expect(server.fs.strict).toBe(true);
+    expect(server.fs.deny).toEqual(expect.arrayContaining([
       '.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/private-captures/**', '**/ios/**',
     ]));
   });

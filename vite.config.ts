@@ -70,7 +70,7 @@ async function canonicalFilePath(path: string) {
   if (!target) throw new Error('Unresolvable file path.');
   return { target, ancestors };
 }
-async function createRouteAllowlist(projectRoot: string, publicDir: string, distRoot?: string, hmrPath = '/') {
+async function createRouteAllowlist(projectRoot: string, publicDir: string, distRoot?: string, hmrPath = '/', localScans = true) {
   const development = distRoot === undefined;
   const servingRoots = development ? [projectRoot, publicDir].filter(Boolean) : [distRoot];
   const canonicalRoots = async (roots: string[]) => Promise.all(roots.map(async (root) => (await canonicalFilePath(root)).target));
@@ -117,7 +117,10 @@ async function createRouteAllowlist(projectRoot: string, publicDir: string, dist
       // Give downstream decoders the same path we validated, retaining the query.
       const query = url.indexOf('?');
       request.url = encodeURI(path) + (query === -1 ? '' : url.slice(query));
-      if (path === '/local-scans' || path.startsWith('/local-scans/')) { next(); return; }
+      if (path === '/local-scans' || path.startsWith('/local-scans/')) {
+        if (localScans) next(); else notFound(response);
+        return;
+      }
 
       let file: string | undefined, roots: string[] = [];
       if (path === '/' || path === '/index.html') {
@@ -253,32 +256,40 @@ export async function assertSafePublicDir(projectRoot: string, publicDir: string
 }
 export function localScansPlugin(): Plugin {
   let root = '', projectRoot = '', publicDir = '', command = '';
+  let localScans = true;
   return {
     name: 'fixlist-local-scans',
     enforce: 'pre',
-    configResolved(config) { root = join(config.root, 'private-captures', 'scans'); projectRoot = config.root; publicDir = config.publicDir; command = config.command; },
+    configResolved(config) { root = join(config.root, 'private-captures', 'scans'); projectRoot = config.root; publicDir = config.publicDir; command = config.command; localScans = config.mode !== 'submission'; },
     async buildStart() { if (command === 'build') await assertSafePublicDir(projectRoot, publicDir); },
     // There is deliberately no generateBundle or copy hook; buildStart only refuses unsafe public/ links.
     async configureServer(server) {
       const ws = server.config.server.ws;
-      const boundary = await createRouteAllowlist(server.config.root, server.config.publicDir, undefined, join(server.config.base, typeof ws === 'object' ? ws.path ?? '' : ''));
+      const boundary = await createRouteAllowlist(server.config.root, server.config.publicDir, undefined, join(server.config.base, typeof ws === 'object' ? ws.path ?? '' : ''), localScans);
       // Vite installs its raw-# rejection before configureServer hooks. Prepend
       // our allowlist so all rejected wire targets consistently receive our 404.
       server.middlewares.stack.unshift({ route: '', handle: boundary.before });
-      server.middlewares.use(createLocalScansHandler(root));
+      if (localScans) server.middlewares.use(createLocalScansHandler(root));
       return () => { server.middlewares.use(boundary.after); };
     },
     async configurePreviewServer(server) {
-      const boundary = await createRouteAllowlist(server.config.root, server.config.publicDir, resolve(server.config.root, server.config.build.outDir));
+      const boundary = await createRouteAllowlist(server.config.root, server.config.publicDir, resolve(server.config.root, server.config.build.outDir), '/', localScans);
       server.middlewares.stack.unshift({ route: '', handle: boundary.before });
-      server.middlewares.use(createLocalScansHandler(root));
+      if (localScans) server.middlewares.use(createLocalScansHandler(root));
       return () => { server.middlewares.use(boundary.after); };
     },
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), localScansPlugin()],
+  ...(mode === 'submission' ? {
+    envDir: false,
+    // Also reject inherited VITE_* if someone invokes Vite directly.
+    envPrefix: [],
+    base: './',
+    build: { outDir: 'dist-submission', sourcemap: false },
+  } : {}),
   server: {
     host: '127.0.0.1',
     port: 5173,
@@ -290,4 +301,4 @@ export default defineConfig({
     port: 4173,
     strictPort: true,
   },
-});
+}));

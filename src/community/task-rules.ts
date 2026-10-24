@@ -71,7 +71,7 @@ const PATTERNS: readonly [PatternId, RegExp][] = [
   ['grab-bar', /grab.?bar|handrail|barra de apoyo|pasamanos|손잡이|扶手|thanh vịn|tay vịn|hawakan|поручень|barre d.appui|مقبض دعم/iu],
   ['smoke-alarm', /smoke|carbon monoxide|detector de humo|화재|경보기|烟雾|煙霧|báo khói|báo cháy|usok|дым|détecteur|كاشف الدخان/iu],
   ['night-light', /night.?light|night lighting|luz nocturna|luces nocturnas|야간|밤.*조명|夜灯|夜燈|đèn ngủ|ilaw sa gabi|ночник|veilleuse|إضاءة ليلية/iu],
-  ['light-bulb', /light.?bulb|bulb|burned out|bombilla|foco|전구|灯泡|燈泡|bóng đèn|bumbilya|лампочк|ampoule|مصباح/iu],
+  ['light-bulb', /light.?bulb|bulb|burn(?:ed|t) out|\b(?:lights?|lamps?)\b[^.]{0,40}\b(?:out|dead|not working|stopped working|broken|flicker\w*)\b|bombilla|foco|luz[^.]{0,30}(?:no funciona|fundid|apagad)|전구|불이 (?:나갔|안 켜)|灯泡|燈泡|灯坏|bóng đèn|đèn[^.]{0,20}(?:hỏng|cháy)|bumbilya|лампочк|ampoule|مصباح/iu],
   ['rug', /rug|loose carpet|alfombra|러그|깔개|地毯|thảm|alpombra|коврик|tapis|سجادة/iu],
   ['clutter', /clutter|walkway|clear.*path|despejar|통로|走道|杂物|雜物|lối đi|daanan|проход|passage|الممر/iu],
   ['move-furniture', /furniture|sofa|couch|move.*(?:table|bed|chair)|mueble|가구|소파|家具|沙发|沙發|nội thất|bàn ghế|muwebles|мебель|meuble|أثاث|الأثاث/iu],
