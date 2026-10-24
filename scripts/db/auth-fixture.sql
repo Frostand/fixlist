@@ -9,7 +9,7 @@ create schema extensions;
 grant usage on schema public, auth, extensions to anon, authenticated;
 
 -- Only the auth.users columns used by the migration/tests are represented.
-create table auth.users (id uuid primary key, email_confirmed_at timestamptz);
+create table auth.users (id uuid primary key, email_confirmed_at timestamptz, is_anonymous boolean not null default false);
 revoke all on auth.users from public, anon, authenticated;
 
 -- Supabase's SQL helper semantics, including legacy singular-GUC precedence:
