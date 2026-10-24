@@ -1,5 +1,5 @@
 import { liveCopy as l } from './live-copy';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { AuthController } from '../../auth/controller';
 import { readAuthConfig, type AuthConfiguration } from '../../auth/config';
@@ -13,6 +13,7 @@ import { I18nProvider, LANGUAGES } from '../../i18n';
 import { Setup, type SetupValues } from './Onboarding';
 import { Button, Heading, Icon } from './UI';
 import { LiveCommunityApp } from './LiveCommunityApp';
+import { LiveRetryScope } from './live-controller';
 import './auth.css';
 
 interface AuthRuntime { configuration: AuthConfiguration; controller: AuthController | null }
@@ -36,6 +37,7 @@ const initial: AuthState = { phase: 'loading', busy: false, session: null, works
 export default function AuthApp({ demo }: { demo: ReactNode }) {
     const [runtime] = useState(pageRuntime), [mode, setMode] = useState<'live' | 'demo'>('live');
     const [state, setState] = useState(initial);
+    const [retryScope] = useState(() => new LiveRetryScope());
     const c = runtime.controller;
     useEffect(() => { const prior = document.title; document.title = mode === 'live' ? a.realTitle : a.demoTitle; return () => { document.title = prior; }; }, [mode]);
     useEffect(() => {
@@ -44,7 +46,7 @@ export default function AuthApp({ demo }: { demo: ReactNode }) {
     }, []);
     useEffect(() => {
         if (!c) return;
-        const unsubscribe = c.subscribe(() => setState(c.state));
+        const unsubscribe = c.subscribe(() => { if (c.state.workspace) retryScope.bind(c.state.workspace.namespace); setState(c.state); });
         let alive = true, removeNative: (() => void) | undefined;
         const callback = async (url: string) => { if (alive) await c.callback(url); };
         const isNative = Capacitor.isNativePlatform();
@@ -67,17 +69,17 @@ export default function AuthApp({ demo }: { demo: ReactNode }) {
             await started;
         })().catch(() => { if (alive) setState({ ...initial, phase: 'signed-out', message: 'auth-error' }); });
         return () => { alive = false; unsubscribe(); removeNative?.(); c.dispose(); };
-    }, [c]);
+    }, [c, retryScope]);
     async function openDemo() {
         if (c && !await c.signOut()) return;
         window.location.hash = '/c/intro';
         setMode('demo');
     }
     if (mode === 'demo') return <><div className="fl-auth-demo-banner" role="status" lang="en" dir="ltr"><strong>{a.demoMode}</strong>{a.demoNotice}<button type="button" onClick={() => { setMode('live'); if (c) void c.refresh(); }}>{a.realSignIn}</button></div>{demo}</>;
-    return <I18nProvider language={state.phase === 'ready' && state.profile ? state.profile.language : 'en'}><AuthScreen key={state.workspace?.namespace ?? 'signed-out'} state={state} controller={c} configuration={runtime.configuration} onDemo={() => { void openDemo(); }}/></I18nProvider>;
+    return <I18nProvider language={state.phase === 'ready' && state.profile ? state.profile.language : 'en'}><AuthScreen key={state.workspace?.namespace ?? 'signed-out'} state={state} controller={c} configuration={runtime.configuration} retryScope={retryScope} onDemo={() => { void openDemo(); }}/></I18nProvider>;
 }
 
-export function AuthScreen({ state, controller: c, configuration, onDemo }: { state: AuthState; controller: AuthController | null; configuration: AuthConfiguration; onDemo(): void }) {
+export function AuthScreen({ state, controller: c, configuration, retryScope, onDemo }: { state: AuthState; controller: AuthController | null; configuration: AuthConfiguration; retryScope?: LiveRetryScope | undefined; onDemo(): void }) {
     const [form, setForm] = useState<'login' | 'register' | 'reset'>('login'), [email, setEmail] = useState(''), [password, setPassword] = useState('');
     const [role, setRole] = useState<ProfileInput['role'] | null>(null), [language, setLanguage] = useState<Language>('en');
     const cfg = configuration.config;
@@ -88,7 +90,7 @@ export function AuthScreen({ state, controller: c, configuration, onDemo }: { st
     else if (state.phase === 'recovery' && c) content = <><Heading>{a.recoveryTitle}</Heading><form className="c-stack" onSubmit={e => { e.preventDefault(); const next = password; setPassword(''); void c.updatePassword(next); }}><label className="c-field">{a.newPassword}<input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={password} onChange={e => setPassword(e.target.value)}/></label><Button type="submit" disabled={state.busy}>{a.savePassword}</Button></form></>;
     else if (state.phase === 'profile-error') content = <><Heading>{a.profileError}</Heading><p>{a.profileErrorBody}</p><Button disabled={state.busy} onClick={() => { void c?.refresh(); }}>{a.retry}</Button></>;
     else if (state.phase === 'onboarding' && c) content = <><p>{a.setupIntro}</p>{!role ? <><Heading>{a.setupTitle}</Heading><Button onClick={() => setRole('elder')}>{a.elder}</Button><Button kind="secondary" onClick={() => setRole('volunteer')}>{a.volunteer}</Button><p>{a.noFamily}</p></> : <I18nProvider language={language}><div lang={language} dir={LANGUAGES.find(l => l.code === language)!.dir}><fieldset className="fl-auth-setup" disabled={state.busy}><Setup key={`${state.workspace?.namespace}:${role}`} role={role} language={language} elders={[]} onLanguage={setLanguage} onBack={() => setRole(null)} onComplete={(v: SetupValues) => { const { elderId: _unused, ...preferences } = v; if (preferences.role !== 'family') void c.saveProfile({ ...preferences, role: preferences.role }); }}/></fieldset></div></I18nProvider>}</>;
-    else if (state.phase === 'ready' && state.profile && state.session && !state.session.recovery && state.workspace && c) content = <VerifiedCommunity key={state.workspace.namespace} state={state} controller={c}/>;
+    else if (state.phase === 'ready' && state.profile && state.session && !state.session.recovery && state.workspace && c) content = <VerifiedCommunity key={state.workspace.namespace} state={state} controller={c} retryScope={retryScope}/>;
     else if (state.phase === 'ready' && state.profile) content = <><Heading intro={a.saved}>{a.welcome}, {state.profile.name}</Heading><p>{a.role}: {state.profile.role === 'elder' ? a.elderRole : a.volunteerRole} · {state.profile.area}</p><section className="c-stack" aria-label={a.featuresLabel}><h2>{a.noCommunityTitle}</h2><p>{a.noCommunity}</p><p>{a.noCapture}</p></section></>;
     else content = <><Heading intro={a.intro}>{a.title}</Heading>{unavailable ? <p role="status">{configuration.reason === 'native-unavailable' ? a.missingNative : a.missingBackend}</p> : null}<form className="c-stack" onSubmit={e => {
         e.preventDefault(); if (!c || unavailable) return;
@@ -100,9 +102,9 @@ export function AuthScreen({ state, controller: c, configuration, onDemo }: { st
     return <div className="community fl-auth c-elder" lang="en" dir="ltr"><main className="c-main c-narrow"><header className="c-wordmark"><Icon name="leaf"/>{a.brand}</header><p className="c-small">{a.preview}</p>{state.message ? <p role={state.message === 'auth-error' ? 'alert' : 'status'} className="c-notice">{a.messages[state.message]}</p> : null}{content}{state.busy ? <p role="status">{a.wait}</p> : null}{c && state.phase !== 'sign-out-error' && (state.busy || !state.session) ? <Button kind="quiet" onClick={() => { setPassword(''); void c.cancel(); }}>{a.cancel}</Button> : null}{state.session ? <Button kind="quiet" disabled={state.busy} onClick={() => { void c?.signOut(); }}>{a.signOut}</Button> : null}<hr/><Button kind="secondary" disabled={state.busy || state.phase === 'sign-out-error'} onClick={onDemo}>{a.explore}</Button><p className="c-small">{a.demoExplanation}</p><p className="c-small">{a.languageLimit}</p></main></div>;
 }
 
-export function VerifiedCommunity({ state, controller: c }: { state: AuthState; controller: AuthController }) {
-    const [port] = useState(() => state.session ? c.gateway.createLiveCommunity?.(state.session) ?? null : null);
+export function VerifiedCommunity({ state, controller: c, retryScope }: { state: AuthState; controller: AuthController; retryScope?: LiveRetryScope | undefined }) {
+    const port = useMemo(() => state.session ? c.gateway.createLiveCommunity?.(state.session) ?? null : null, [c, state.session]);
     if (!port || !state.profile || !state.session || state.session.recovery || state.profile.userId !== state.session.userId
         || port.identity.userId !== state.session.userId || port.identity.backendId !== state.session.backendId) return <section className="c-stack"><p role="alert">{l.bindingError}</p><Button onClick={() => { void c.refresh(); }}>{l.recheckSession}</Button></section>;
-    return <LiveCommunityApp port={port} profile={state.profile} onSignOut={() => { void c.signOut(); }} onRecheckSession={() => { void c.refresh(); }}/>;
+    return <LiveCommunityApp port={port} profile={state.profile} retryScope={retryScope} onSignOut={() => { void c.signOut(); }} onRecheckSession={() => { void c.refresh(); }}/>;
 }

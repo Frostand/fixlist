@@ -8,7 +8,7 @@ import type { Language } from '../../community/types';
 import { LiveWorkspace, LiveCommunityApp } from './LiveCommunityApp';
 import { LiveRequestDraft } from './LiveRequestDraft';
 import { LiveJobDetails } from './LiveJobDetails';
-import { LiveCommunityController } from './live-controller';
+import { LiveCommunityController, LiveRetryScope } from './live-controller';
 import { ELDER, VOLUNTEER, liveFixture } from './live-fixture.test-support';
 import { Button } from './UI';
 import { AuthScreen, VerifiedCommunity } from './AuthApp';
@@ -22,6 +22,12 @@ vi.mock('react', async original => {
             const d = runtime.active; if (!d) return actual.useState(initial);
             const i = d.cursor++; if (!(i in d.values)) d.values[i] = typeof initial === 'function' ? initial() : initial;
             return [d.values[i], (v: unknown) => { d.values[i] = typeof v === 'function' ? v(d.values[i]) : v; }];
+        },
+        useMemo<T>(factory: () => T, deps: readonly unknown[]) {
+            const d = runtime.active; if (!d) return actual.useMemo(factory, deps);
+            const i = d.cursor++, prior = d.values[i] as { value: T; deps: readonly unknown[] } | undefined;
+            if (!prior || deps.some((v, j) => !Object.is(v, prior.deps[j]))) d.values[i] = { value: factory(), deps };
+            return (d.values[i] as { value: T }).value;
         },
         useEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
             const d = runtime.active; if (!d) return actual.useEffect(effect, deps);
@@ -64,6 +70,7 @@ describe('live React controls using injected async port', () => {
         const mount = nodes(screen.render(), VerifiedCommunity)[0]!; expect(mount.key).toBe(state.workspace!.namespace);
         const binding = driver(() => VerifiedCommunity({ state, controller: c })); const shell = nodes(binding.render(), LiveCommunityApp)[0]!;
         expect(shell.props.port).toBe(p); expect(factory).toHaveBeenCalledOnce(); call(shell, 'onSignOut'); expect(c.signOut).toHaveBeenCalledOnce();
+        state = { ...state, session: { ...session } }; binding.render(); expect(factory).toHaveBeenCalledTimes(2);
         state = { ...state, phase: 'loading' }; expect(nodes(screen.render(), VerifiedCommunity)).toHaveLength(0);
         state = { ...state, phase: 'ready', session: { ...session, recovery: true } }; expect(nodes(screen.render(), VerifiedCommunity)).toHaveLength(0);
         state = { ...state, session: null }; expect(nodes(screen.render(), VerifiedCommunity)).toHaveLength(0);
@@ -83,7 +90,7 @@ describe('live React controls using injected async port', () => {
         const elder = driver(() => LiveWorkspace({ port: ep, profile: profile(ELDER, 'elder'), onSignOut() {}, onRecheckSession() {} }));
         const volunteer = driver(() => LiveWorkspace({ port: vp, profile: profile(VOLUNTEER, 'volunteer'), onSignOut() {}, onRecheckSession() {} }));
         elder.render(); volunteer.render(); await settle();
-        const ec = elder.state.values[0] as LiveCommunityController, vc = volunteer.state.values[0] as LiveCommunityController;
+        const ec = (elder.state.values[0] as { value: LiveCommunityController }).value, vc = (volunteer.state.values[0] as { value: LiveCommunityController }).value;
         const draft = driver(() => LiveRequestDraft({ controller: ec, language: 'en', locked: !!ec.state.pending }));
         change(draft.render(), 'textarea', 0, 'Please water my plants'); change(draft.render(), 'textarea', 1, 'Private test street');
         expect(f.calls).toHaveLength(0); press(draft.render(), 'Review task and address');
@@ -119,7 +126,7 @@ describe('live React controls using injected async port', () => {
     it('locks duplicate clicks and edited draft while uncertain; retry uses the original UUID/input and refresh alone never posts', async () => {
         const f = liveFixture(), p = f.port(ELDER, 'elder'); f.loseResponse();
         const shell = driver(() => LiveWorkspace({ port: p, profile: profile(ELDER, 'elder'), onSignOut() {}, onRecheckSession() {} })); shell.render(); await settle();
-        const c = shell.state.values[0] as LiveCommunityController, draft = driver(() => LiveRequestDraft({ controller: c, language: 'en', locked: !!c.state.pending }));
+        const c = (shell.state.values[0] as { value: LiveCommunityController }).value, draft = driver(() => LiveRequestDraft({ controller: c, language: 'en', locked: !!c.state.pending }));
         change(draft.render(), 'textarea', 0, 'Water plants'); change(draft.render(), 'textarea', 1, 'PRIVATE address'); press(draft.render(), 'Review task and address'); change(draft.render(), 'input', 0, true);
         const post = button(draft.render(), 'Post reviewed request'); call(post, 'onClick'); call(post, 'onClick'); await settle();
         expect(f.calls).toHaveLength(1); expect(nodes(draft.render(), 'fieldset')[0]?.props.disabled).toBe(true);
@@ -164,7 +171,19 @@ describe('live React controls using injected async port', () => {
         const f = liveFixture(), p = f.port(ELDER, 'elder'); let finish!: (value: LiveResult<Details>) => void, signal!: AbortSignal;
         vi.spyOn(p, 'details').mockImplementation(async (_job, s) => { signal = s; return new Promise(r => { finish = r; }); });
         const view = driver(() => LiveWorkspace({ port: p, profile: profile(ELDER, 'elder'), onSignOut() {}, onRecheckSession() {} })); view.render(); await settle();
-        const c = view.state.values[0] as LiveCommunityController; const selecting = c.select('33333333-3333-4333-8333-333333333333'); view.unmount(); expect(signal.aborted).toBe(true);
+        const c = (view.state.values[0] as { value: LiveCommunityController }).value; const selecting = c.select('33333333-3333-4333-8333-333333333333'); view.unmount(); expect(signal.aborted).toBe(true);
         finish({ ok: false, code: 'permission_denied' }); await selecting; expect(c.state.access.error).toBeNull(); expect(c.state.details.value).toBeNull();
+    });
+    it('rebinds the same-account port even if React batches away the loading render, retaining only the uncertain receipt', async () => {
+        const f = liveFixture(), scope = new LiveRetryScope(); let p = f.port(ELDER, 'elder'); f.loseResponse();
+        const view = driver(() => LiveWorkspace({ port: p, retryScope: scope, profile: profile(ELDER, 'elder'), onSignOut() {}, onRecheckSession() {} }));
+        view.render(); await settle(); const first = (view.state.values[0] as { value: LiveCommunityController }).value;
+        const analysis = (await import('../../community/task-rules')).analyzeTaskWithRules('Water plants', 'en');
+        await first.execute({ kind: 'post', input: { requestId: '33333333-3333-4333-8333-333333333333', originalText: 'Water plants', source: 'typed', analysis, address: 'Private address' } });
+        const pending = first.state.pending; p = f.port(ELDER, 'elder'); view.render(); await settle();
+        const second = (view.state.values[0] as { value: LiveCommunityController }).value; expect(second).not.toBe(first); expect(first.state.jobs.value).toBeNull();
+        expect(second.state.pending?.key).toBe(pending?.key); expect(content(view.render())).toContain('Action not confirmed');
+        press(view.render(), 'Retry same action'); await settle(); expect(f.calls[1]?.key).toBe(f.calls[0]?.key); expect(f.calls[1]?.payload).toEqual(f.calls[0]?.payload);
+        expect(second.state.pending).toBeNull(); view.unmount();
     });
 });

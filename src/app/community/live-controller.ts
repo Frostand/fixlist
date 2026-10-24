@@ -8,6 +8,15 @@ export type LiveCommand = { kind: 'post'; input: PostLiveRequest }
     | { kind: 'rate'; jobId: string; stars: 1 | 2 | 3 | 4 | 5; note: string };
 export interface Resource<T> { value: T | null; loading: boolean; error: LiveFailureCode | null }
 export interface PendingLiveCommand { readonly key: string; readonly command: LiveCommand; running: boolean; error: LiveFailureCode | null }
+/** Explicit page-owned user intent, never a server-state cache. A verified workspace
+ * change destroys the previous input. Same-account session rebinds retain its receipt. */
+export class LiveRetryScope {
+    private namespace: string | null = null;
+    private pending: PendingLiveCommand | null = null;
+    bind(namespace: string) { if (this.namespace !== namespace) { this.namespace = namespace; this.pending = null; } }
+    read(namespace: string) { return this.namespace === namespace ? this.pending : null; }
+    write(namespace: string, pending: PendingLiveCommand | null) { if (this.namespace === namespace) this.pending = pending; }
+}
 export interface LiveViewState {
     access: Resource<LiveAccess>; discovery: Resource<LivePage<LiveDiscoveryJob>>; jobs: Resource<LivePage<LiveJob>>;
     credits: Resource<LivePage<LiveServiceCredit>>; details: Resource<LiveJobDetails>; messages: Resource<LivePage<LiveMessage>>;
@@ -28,10 +37,23 @@ export class LiveCommunityController {
     private listeners = new Set<() => void>();
     private reads = new Map<string, AbortController>();
     private mutation = new AbortController();
-    constructor(readonly port: AsyncLiveCommunityPort) {}
-    start() { this.active = true; this.mutation = new AbortController(); return this.refresh(); }
+    private readonly namespace: string;
+    constructor(readonly port: AsyncLiveCommunityPort, private readonly retryScope = new LiveRetryScope()) {
+        this.namespace = JSON.stringify(['live', port.identity.backendId, port.identity.userId]);
+        this.retryScope.bind(this.namespace);
+        this.restoreRetry();
+    }
+    private restoreRetry() {
+        const pending = this.retryScope.read(this.namespace);
+        this.state = { ...this.state, pending: pending?.running ? { ...pending, running: false, error: 'aborted' } : pending };
+    }
+    start() { this.active = true; this.mutation = new AbortController(); this.restoreRetry(); return this.refresh(); }
     subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
-    private publish(patch: Partial<LiveViewState>) { if (this.active) { this.state = { ...this.state, ...patch }; this.listeners.forEach(fn => fn()); } }
+    private publish(patch: Partial<LiveViewState>) { if (this.active) {
+        this.state = { ...this.state, ...patch };
+        if ('pending' in patch) this.retryScope.write(this.namespace, this.state.pending);
+        this.listeners.forEach(fn => fn());
+    } }
     private read(name: string) {
         this.reads.get(name)?.abort();
         const controller = new AbortController(); this.reads.set(name, controller);
@@ -143,5 +165,10 @@ export class LiveCommunityController {
         if (!this.state.pending || this.state.pending.running) return;
         this.publish({ pending: null, notice: 'Retry record discarded. A lost response may already have saved. Refresh and check your jobs/messages before creating a replacement.' });
     }
-    dispose() { this.active = false; this.abortReads(); this.mutation.abort(); this.state = initial(); this.listeners.clear(); }
+    dispose() {
+        this.active = false; this.abortReads(); this.mutation.abort();
+        const pending = this.state.pending;
+        if (pending) this.retryScope.write(this.namespace, pending.running ? { ...pending, running: false, error: 'aborted' } : pending);
+        this.state = initial(); this.listeners.clear();
+    }
 }

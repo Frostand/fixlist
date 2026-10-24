@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { LiveResult, LiveJobDetails, LiveMutation, PostLiveRequest } from '../../community/ports';
 import { analyzeTaskWithRules } from '../../community/task-rules';
-import { LiveCommunityController } from './live-controller';
+import { LiveCommunityController, LiveRetryScope } from './live-controller';
 import { ELDER, VOLUNTEER, TEST_JOB, liveFixture } from './live-fixture.test-support';
 const draft = (): PostLiveRequest => ({ requestId: TEST_JOB, source: 'typed', originalText: 'Please water my plants', analysis: analyzeTaskWithRules('Please water my plants', 'en'), address: 'PRIVATE test address' });
 function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
@@ -122,5 +122,26 @@ describe('mounted live workspace async controller', () => {
         const c = new LiveCommunityController(p), first = c.start(); c.dispose(); await c.start();
         old.resolve({ ok: true, value: { state: 'revoked', role: null, community: null } }); await first;
         expect(c.state.access.value?.state).toBe('approved');
+    });
+    it('retains an aborted immutable mutation across same-account auth remount; old response cannot clear its new retry', async () => {
+        const f = liveFixture(), scope = new LiveRetryScope(), p = f.port(ELDER, 'elder');
+        const gate = deferred<void>(), post = p.postRequest;
+        vi.spyOn(p, 'postRequest').mockImplementation(async (...args) => { const saved = await post(...args); await gate.promise; return saved; });
+        const first = new LiveCommunityController(p, scope); await first.start();
+        const operation = first.execute({ kind: 'post', input: draft() }), pending = first.state.pending;
+        await Promise.resolve(); first.dispose(); expect(pending?.running).toBe(true);
+        const second = new LiveCommunityController(f.port(ELDER, 'elder'), scope); await second.start();
+        expect(second.state.pending).toMatchObject({ key: pending?.key, error: 'aborted', running: false });
+        expect(second.state.pending?.command).toEqual(pending?.command); expect(first.state.details.value).toBeNull();
+        gate.resolve(); expect(await operation).toBe(false); expect(second.state.pending?.key).toBe(pending?.key);
+        expect(await second.retry()).toBe(true); expect(f.calls[1]?.key).toBe(f.calls[0]?.key); expect(f.calls[1]?.payload).toEqual(f.calls[0]?.payload); expect(second.state.jobs.value?.items).toHaveLength(1);
+    });
+    it('destroys the previous intent on verified account/backend transition and an old cleanup cannot restore it', async () => {
+        const f = liveFixture(), scope = new LiveRetryScope(), first = new LiveCommunityController(f.port(ELDER, 'elder'), scope); await first.start(); f.loseResponse();
+        await first.execute({ kind: 'post', input: draft() }); expect(first.state.pending).not.toBeNull();
+        const second = new LiveCommunityController(f.port(VOLUNTEER, 'volunteer'), scope); first.dispose(); await second.start();
+        expect(second.state.pending).toBeNull(); second.dispose();
+        const returning = new LiveCommunityController(f.port(ELDER, 'elder'), scope); expect(returning.state.pending).toBeNull();
+        expect(returning.state.details.value).toBeNull(); expect(returning.state.jobs.value).toBeNull();
     });
 });
