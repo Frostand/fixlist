@@ -165,12 +165,26 @@ export type CommunityFailure = { ok: false; code: 'not_found' | 'permission_deni
 export type CommunityResult = { ok: true; state: CommunityState } | CommunityFailure;
 
 // ---- On-device assistant bridge (implemented in src/lib/assistant.ts) ----
-export interface AssistantAvailability { onDeviceModel: boolean; speechInput: boolean; speechOutput: boolean; reason?: string }
+export type AssistantModelReason = 'requires-iOS-26' | 'unsupported-language' | 'apple-intelligence-not-enabled' | 'device-not-eligible' | 'model-not-ready' | 'model-unavailable' | 'native-unavailable';
+export type AssistantInputReason = 'permission-denied' | 'recognizer-unavailable' | 'on-device-recognition-unavailable';
+/** Native flags describe the selected language on this device now, not measured quality.
+ * Browser flags describe Web Speech API presence; they do not promise local audio or locale support. */
+export interface AssistantAvailability {
+  language: Language;
+  onDeviceModel: boolean;
+  speechInput: boolean;
+  speechOutput: boolean;
+  reason?: AssistantModelReason;
+  speechInputReason?: AssistantInputReason;
+  speechOutputReason?: 'voice-unavailable';
+}
 export interface ChatTurn { role: 'user' | 'assistant'; text: string }
 export interface AssistantReply {
   text: string;            // reply in the user's language, short, warm, plain
   job: JobAnalysis | null; // present when the assistant has enough to draft a request
   engine: AnalysisEngine;
+  /** Original user turns in the bounded context window, in order. Never model-produced or assistant text. */
+  originalText?: string;
 }
 export interface ListeningSession {
   readonly sessionId: string;
@@ -179,7 +193,7 @@ export interface ListeningSession {
   cancel(): void;
 }
 export interface Assistant {
-  availability(): Promise<AssistantAvailability>;
+  availability(language: Language): Promise<AssistantAvailability>;
   analyzeTask(text: string, language: Language): Promise<JobAnalysis>;
   chat(turns: readonly ChatTurn[], language: Language, context: { firstName: string }): Promise<AssistantReply>;
   startListening(language: Language, onPartial: (text: string) => void, signal?: AbortSignal): Promise<ListeningSession>;

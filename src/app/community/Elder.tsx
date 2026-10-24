@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import type { Account, ChatTurn, CommunityState, Job, JobAnalysis, JobSource, ListeningSession, ScanEvidence } from '../../community/types';
 import { QUICK_PICK_IDS, quickPickAnalysis, volunteerStats } from '../../community';
 import { assistant } from '../../lib/assistant';
+import { assistantRulesCopy } from '../../lib/assistant-copy';
 import { localeFor, useLanguage, useT } from '../../i18n';
 import { Avatar, Button, Heading, Icon } from './UI';
 import { DraftScreen } from './DraftScreen';
@@ -76,17 +77,23 @@ export function AskScreen({ talk, account, onDraft, onPost }: {
     const [phase, setPhase] = useState<TalkPhase>('idle');
     const [text, setText] = useState(''), [partial, setPartial] = useState(''), [turns, setTurns] = useState<ChatTurn[]>([]);
     const [voice, setVoice] = useState<boolean | null>(null), [error, setError] = useState(''), [typing, setTyping] = useState(!talk), [draft, setDraft] = useState<Draft | null>(null);
+    const [speechOutput, setSpeechOutput] = useState(false), [rulesOnly, setRulesOnly] = useState(false);
     const typingRef = useRef<HTMLTextAreaElement>(null);
     const busy = phase === 'thinking', recording = phase === 'starting' || phase === 'listening';
     useEffect(() => {
         const owner = { identity }; scope.current = owner;
         alive.current = true; pending.current = false; starting.current = false;
-        setPhase('idle'); setText(''); setPartial(''); partialText.current = ''; setTurns([]); setDraft(null); setError(''); setVoice(null); setTyping(!talk);
-        void assistant.availability().then(a => { if (alive.current && scope.current === owner) setVoice(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && a.reason !== 'native-unavailable' && a.speechInput); }).catch(() => { if (alive.current && scope.current === owner) setVoice(false); });
+        setPhase('idle'); setText(''); setPartial(''); partialText.current = ''; setTurns([]); setDraft(null); setError(''); setVoice(null); setSpeechOutput(false); setRulesOnly(false); setTyping(!talk);
+        void assistant.availability(language).then(a => {
+            if (alive.current && scope.current === owner) {
+                setVoice(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && a.reason !== 'native-unavailable' && a.speechInput);
+                setSpeechOutput(a.speechOutput); setRulesOnly(!a.onDeviceModel);
+            }
+        }).catch(() => { if (alive.current && scope.current === owner) { setVoice(false); setSpeechOutput(false); setRulesOnly(true); } });
         return () => { alive.current = false; listeningAbort.current?.abort(); listeningAbort.current = null; listening.current?.cancel(); listening.current = null; assistant.stopSpeaking(); };
     }, [account.id, language, talk]);
     useEffect(() => { if (typing) typingRef.current?.focus(); }, [typing]);
-    function speak(words: string) { assistant.stopSpeaking(); void assistant.speak(words, language).catch(() => {}); }
+    function speak(words: string) { assistant.stopSpeaking(); if (speechOutput) void assistant.speak(words, language).catch(() => {}); }
     async function submit(words: string, source: JobSource) {
         if (!words.trim() || pending.current) return;
         const owner = scope.current, active = () => alive.current && scope.current === owner;
@@ -99,7 +106,7 @@ export function AskScreen({ talk, account, onDraft, onPost }: {
                 if (!active()) return;
                 setTurns([...next, { role: 'assistant', text: reply.text }]);
                 setPhase('replied'); speak(reply.text);
-                if (reply.job) setDraft({ analysis: reply.job, source, text: words.trim(), evidence: [] });
+                if (reply.job) setDraft({ analysis: reply.job, source, text: reply.originalText ?? next.filter(turn => turn.role === 'user').map(turn => turn.text).join('\n'), evidence: [] });
             } else {
                 const analysis = await assistant.analyzeTask(words.trim(), language);
                 if (active()) onDraft({ analysis, source, text: words.trim(), evidence: [] });
@@ -147,8 +154,9 @@ export function AskScreen({ talk, account, onDraft, onPost }: {
     }
     return <div className="c-stack" data-talk-phase={phase}>
         <Heading intro={t(talk ? 'c.talk.prompt' : 'c.type.body')}>{t(talk ? 'c.talk.title' : 'c.type.title')}</Heading>
+        {rulesOnly && !draft ? <p className="c-small" role="status">{assistantRulesCopy[language]}</p> : null}
         {talk ? <>
-            <div className="c-chat" aria-live="polite">{turns.map((turn, i) => <div className={`c-bubble c-bubble-${turn.role}`} key={i}><span>{t(turn.role === 'user' ? 'c.talk.you' : 'c.talk.assistant')}</span><p>{turn.text}</p>{turn.role === 'assistant' ? <Button kind="quiet" icon="replay" disabled={recording || busy} onClick={() => speak(turn.text)}>{t('c.talk.replay')}</Button> : null}</div>)}
+            <div className="c-chat" aria-live="polite">{turns.map((turn, i) => <div className={`c-bubble c-bubble-${turn.role}`} key={i}><span>{t(turn.role === 'user' ? 'c.talk.you' : 'c.talk.assistant')}</span><p>{turn.text}</p>{turn.role === 'assistant' ? <Button kind="quiet" icon="replay" disabled={!speechOutput || recording || busy} onClick={() => speak(turn.text)}>{t('c.talk.replay')}</Button> : null}</div>)}
                 {phase === 'listening' && partial ? <div className="c-bubble c-bubble-user"><span>{t('c.talk.you')}</span><p>{partial}</p></div> : null}</div>
             {draft ? <section aria-label={t('c.talk.preview')}><DraftScreen embedded key={turns.length} draft={draft} onChange={setDraft} onPost={(slots, analysis) => { if (onPost) return onPost(draft, slots, analysis); onDraft({ ...draft, analysis }); return true; }}/></section> : null}
             {!draft ? busy ? <p className="c-thinking c-small" role="status">{t('c.talk.thinking')}</p> : <>

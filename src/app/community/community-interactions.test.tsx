@@ -97,7 +97,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); runtime.language 
 describe('community polish interactions', () => {
     it('moves idle → listening → thinking → replied, speaks and replays, and keeps the draft visible', async () => {
         vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true); vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('ios');
-        vi.spyOn(assistant, 'availability').mockResolvedValue({ onDeviceModel: true, speechInput: true, speechOutput: true });
+        vi.spyOn(assistant, 'availability').mockResolvedValue({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
         let partial: (words: string) => void = () => {};
         const { session } = listeningFixture();
         vi.spyOn(assistant, 'startListening').mockImplementation(async (_language, onPartial) => { partial = onPartial; return session; });
@@ -120,13 +120,13 @@ describe('community polish interactions', () => {
         view.unmount();
     });
     it('shows typed input when voice is unavailable and cancels a pending listening start on leave', async () => {
-        vi.spyOn(assistant, 'availability').mockResolvedValue({ onDeviceModel: false, speechInput: false, speechOutput: false });
+        vi.spyOn(assistant, 'availability').mockResolvedValue({ language: 'en', onDeviceModel: false, speechInput: false, speechOutput: false });
         const account = domain.createSeedState(NOW).accounts[0]!, view = driver(() => AskScreen({ talk: true, account, onDraft: vi.fn() }));
         view.render(); await settle(); const unavailable = view.render();
         expect(rootProps(unavailable)['data-talk-phase']).toBe('idle'); expect(nodes(unavailable, 'textarea')).toHaveLength(1);
         expect(renderToStaticMarkup(<>{unavailable}</>)).not.toContain('I’m listening'); view.unmount();
         vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true); vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('ios');
-        vi.mocked(assistant.availability).mockResolvedValue({ onDeviceModel: true, speechInput: true, speechOutput: true });
+        vi.mocked(assistant.availability).mockResolvedValue({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
         let resolve!: (value: ListeningSession) => void, signal: AbortSignal | undefined;
         vi.spyOn(assistant, 'startListening').mockImplementation((_language, _partial, inputSignal) => { signal = inputSignal; return new Promise(done => { resolve = done; }); });
         const leaving = driver(() => AskScreen({ talk: true, account, onDraft: vi.fn() })); leaving.render(); await settle(); press(leaving.render(), 'Tap to talk'); leaving.unmount();
@@ -135,7 +135,7 @@ describe('community polish interactions', () => {
     });
     it.each(['final', 'stopped'] as const)('consumes a %s terminal exactly once, including manual stop plus done', async reason => {
         vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true); vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('ios');
-        vi.spyOn(assistant, 'availability').mockResolvedValue({ onDeviceModel: true, speechInput: true, speechOutput: true });
+        vi.spyOn(assistant, 'availability').mockResolvedValue({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
         const { session, finish } = listeningFixture();
         vi.spyOn(assistant, 'startListening').mockResolvedValue(session);
         const chat = vi.spyOn(assistant, 'chat').mockResolvedValue({ text: 'Which room?', job: null, engine: 'rules' });
@@ -149,7 +149,7 @@ describe('community polish interactions', () => {
     });
     it.each(['error', 'background', 'interrupted', 'cancelled'] as const)('leaves listening on %s and preserves interrupted words for editing', async reason => {
         vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true); vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('ios');
-        vi.spyOn(assistant, 'availability').mockResolvedValue({ onDeviceModel: true, speechInput: true, speechOutput: true });
+        vi.spyOn(assistant, 'availability').mockResolvedValue({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
         const { session, finish } = listeningFixture(); vi.spyOn(assistant, 'startListening').mockResolvedValue(session);
         const chat = vi.spyOn(assistant, 'chat');
         const account = domain.createSeedState(NOW).accounts[0]!, view = driver(() => AskScreen({ talk: true, account, onDraft: vi.fn() }));
@@ -161,7 +161,7 @@ describe('community polish interactions', () => {
     });
     it('ignores old-account terminal results and replies after the account changes', async () => {
         vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true); vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('ios');
-        vi.spyOn(assistant, 'availability').mockResolvedValue({ onDeviceModel: true, speechInput: true, speechOutput: true });
+        vi.spyOn(assistant, 'availability').mockResolvedValue({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
         const first = listeningFixture(), second = listeningFixture();
         vi.spyOn(assistant, 'startListening').mockResolvedValueOnce(first.session).mockResolvedValueOnce(second.session);
         let reply!: (value: AssistantReply) => void;
@@ -176,6 +176,39 @@ describe('community polish interactions', () => {
         expect(renderToStaticMarkup(<>{view.render()}</>)).not.toContain('Old account'); expect(speak).not.toHaveBeenCalled();
         press(view.render(), 'Tap to talk'); await settle(); account = accounts[2]!; view.render(); await settle();
         second.finish('final', 'Another old account'); await settle(); expect(chat).toHaveBeenCalledOnce(); view.unmount();
+    });
+    it('refreshes selected-language capabilities and ignores a stale language response', async () => {
+        vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true); vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('ios');
+        let old!: (value: Awaited<ReturnType<typeof assistant.availability>>) => void;
+        const availability = vi.spyOn(assistant, 'availability').mockImplementationOnce(() => new Promise(resolve => { old = resolve; }))
+            .mockResolvedValue({ language: 'ru', onDeviceModel: false, speechInput: true, speechOutput: false, reason: 'unsupported-language' });
+        const account = domain.createSeedState(NOW).accounts[0]!, view = driver(() => AskScreen({ talk: true, account, onDraft: vi.fn() }));
+        view.render(); expect(availability).toHaveBeenLastCalledWith('en');
+        runtime.language = 'ru'; view.render(); await settle();
+        expect(availability).toHaveBeenLastCalledWith('ru');
+        old({ language: 'en', onDeviceModel: false, speechInput: false, speechOutput: true }); await settle();
+        const tree = view.render(), mic = nodes(tree, 'button').find(node => String(node.props.className).trim() === 'c-mic');
+        expect(mic?.props.disabled).toBe(false); // Speech stays independent of model support.
+        expect(renderToStaticMarkup(<>{tree}</>)).not.toContain('Play reply again');
+        view.unmount();
+    });
+    it('preserves user-only conversation provenance in a corrected draft', async () => {
+        vi.spyOn(assistant, 'availability').mockResolvedValue({ language: 'en', onDeviceModel: false, speechInput: false, speechOutput: false });
+        vi.spyOn(assistant, 'speak').mockResolvedValue(); vi.spyOn(assistant, 'stopSpeaking').mockImplementation(() => {});
+        vi.spyOn(assistant, 'chat').mockResolvedValueOnce({ text: 'Which room?', job: null, engine: 'rules' })
+            .mockResolvedValueOnce({ text: 'Please review the draft.', job: domain.quickPickAnalysis('water-plants', 'en'), engine: 'rules', originalText: 'Water plants\nIn the kitchen' });
+        const account = domain.createSeedState(NOW).accounts[0]!, view = driver(() => AskScreen({ talk: true, account, onDraft: vi.fn() }));
+        view.render(); await settle();
+        for (const words of ['Water plants', 'In the kitchen']) {
+            const input = nodes(view.render(), 'textarea')[0]!;
+            (input.props.onChange as (e: unknown) => void)({ target: { value: words } });
+            const form = nodes(view.render(), 'form')[0]!;
+            (form.props.onSubmit as (e: unknown) => void)({ preventDefault() {} }); await settle();
+        }
+        const draft = nodes(view.render(), DraftScreen)[0]!.props.draft as { text: string };
+        expect(draft.text).toBe('Water plants\nIn the kitchen'); expect(draft.text).not.toContain('Which room?');
+        expect(assistant.speak).not.toHaveBeenCalled();
+        const replay = nodes(view.render(), Button).find(node => node.props.icon === 'replay'); expect(replay?.props.disabled).toBe(true); view.unmount();
     });
     it('preselects the only shared slot and accepts the date displayed', () => {
         const state = domain.createSeedState(NOW), job = state.jobs.find(j => j.id === 'job-open-soonja-bulb')!, elder = state.accounts.find(a => a.id === job.elderId)!, profile = state.volunteers[0]!;

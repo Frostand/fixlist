@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute production speech teardown/events with host boundary stubs.
+"""Execute production capabilities and speech teardown/events with host boundary stubs.
 
 Optional --frameworks points to built iOS Simulator Capacitor/Cordova frameworks
 and also typechecks the entire real plugin against the iOS SDK. No device/audio
@@ -29,7 +29,7 @@ def declaration(marker):
 
 
 markers = (
-    'private func sessionID(', '@objc private func suspendAudio(',
+    'private func sessionID(', 'private func language(', '@objc func availability(', '@objc private func suspendAudio(',
     'private func rejectStart(', '@objc func stopListening(',
     '@objc func cancelListening(', 'private func finishRecognition(',
     'private func releaseRecognition(', '@objc func stopSpeaking(',
@@ -44,6 +44,9 @@ methods = '\n'.join(declaration(marker).replace('@objc ', '').replace('private f
 # final/error decision, rather than a separately implemented mock protocol.
 recognition = declaration('self.recognitionTask = recognizer.recognitionTask(with: request)')
 stubs = (ROOT / 'scripts/native-assistant-tests.swift').read_text()
+locales = next(line for line in SOURCE.splitlines() if line.startswith('private let assistantLocales ='))
+locale_helper = declaration('private func assistantLocale(')
+stubs = stubs.replace('/* PRODUCTION_LOCALES */', locales + '\n' + locale_helper)
 stubs = stubs.replace('/* PRODUCTION_METHODS */', methods).replace('/* PRODUCTION_RECOGNITION_CALLBACK */', recognition)
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--frameworks', type=Path)

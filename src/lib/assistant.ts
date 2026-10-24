@@ -1,12 +1,12 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { SKILLS, TASK_CATEGORIES, TOOLS, type Assistant, type AssistantAvailability, type ChatTurn, type JobAnalysis, type ListeningSession } from '../community/types';
-import { analyzeTaskWithRules } from '../community/task-rules';
+import { analyzeTaskWithRules, clearRuleTask, ruleFollowup, ruleUrgency } from '../community/task-rules';
 import type { Language } from '../domain/roles';
 import { localeFor } from '../i18n';
 
 /** Native returns untrusted bridge data; validate before showing a job preview. */
 export interface NativeAssistantPlugin {
-  availability(): Promise<unknown>;
+  availability(options: { language: Language }): Promise<unknown>;
   analyzeTask(options: { text: string; language: Language }): Promise<unknown>;
   chat(options: { turns: readonly ChatTurn[]; language: Language; firstName: string }): Promise<unknown>;
   startListening(options: { sessionId: string; language: Language }): Promise<unknown>;
@@ -77,13 +77,31 @@ async function bounded<T>(run: () => Promise<T>, cancelled: Promise<never> = new
   finally { clearTimeout(timer); }
 }
 function quietly(run: () => Promise<unknown>): void { void bounded(run).catch(() => {}); }
-function browserAvailability(browser: AssistantBrowser | undefined): AssistantAvailability {
-  return { onDeviceModel: false, speechInput: !!(browser?.SpeechRecognition ?? browser?.webkitSpeechRecognition), speechOutput: !!(browser?.speechSynthesis && browser.SpeechSynthesisUtterance) };
+function browserAvailability(browser: AssistantBrowser | undefined, language: Language): AssistantAvailability {
+  return { language, onDeviceModel: false, speechInput: !!(browser?.SpeechRecognition ?? browser?.webkitSpeechRecognition), speechOutput: !!(browser?.speechSynthesis && browser.SpeechSynthesisUtterance) };
 }
-function wordCount(text: string, language: Language): number {
-  // Chinese does not separate words with spaces; use the device's locale segmenter.
-  if (typeof Intl.Segmenter === 'function') return Array.from(new Intl.Segmenter(localeFor(language), { granularity: 'word' }).segment(text)).filter((part) => part.isWordLike).length;
-  return text.split(/\s+/u).filter(Boolean).length;
+/** Keep a small, auditable user-only provenance window within Job.originalText's limit.
+ * Fail closed rather than silently truncate a correction or an oversized turn. */
+function conversationWindow(turns: readonly ChatTurn[]): ChatTurn[] | null {
+  const recent = turns.slice(-12);
+  if (!recent.length || recent.at(-1)?.role !== 'user' || recent.some(turn => !['user', 'assistant'].includes(turn.role) || !textValue(turn.text))) return null;
+  const original = recent.filter(turn => turn.role === 'user').map(turn => turn.text).join('\n');
+  return original.length <= 4000 ? recent : null;
+}
+function rulesConversationJob(turns: readonly ChatTurn[], language: Language, rules: typeof analyzeTaskWithRules): JobAnalysis | null {
+  let task: string | null = null, timing: JobAnalysis['urgency'] | undefined;
+  for (const turn of turns) {
+    if (turn.role !== 'user') continue;
+    if (clearRuleTask(turn.text)) { task = turn.text; timing = undefined; }
+    else {
+      const followup = ruleFollowup(turn.text);
+      if (task && followup) { if (followup === 'timing') timing = ruleUrgency(turn.text); }
+      else { task = null; timing = undefined; }
+    }
+  }
+  if (!task) return null;
+  const job = rules(task, language);
+  return timing === undefined ? job : { ...job, urgency: timing };
 }
 function shortReply(value: unknown, language: Language): value is string {
   if (!textValue(value) || value.length > 500 || (value.match(/[?؟？]/gu)?.length ?? 0) > 1) return false;
@@ -179,29 +197,41 @@ export function createAssistant(deps: AssistantDependencies = {}): Assistant {
     await started; return session;
   };
   return {
-    async availability() {
-      if (!isNative()) return browserAvailability(browser());
+    async availability(language) {
+      if (!isNative()) return browserAvailability(browser(), language);
       try {
-        const value = await bounded(() => native.availability());
-        if (!record(value) || typeof value.onDeviceModel !== 'boolean' || typeof value.speechInput !== 'boolean' || typeof value.speechOutput !== 'boolean') throw new Error('Invalid availability.');
-        return { onDeviceModel: value.onDeviceModel, speechInput: value.speechInput, speechOutput: value.speechOutput, ...(typeof value.reason === 'string' ? { reason: value.reason } : {}) };
-      } catch { return { ...browserAvailability(browser()), reason: 'native-unavailable' }; }
+        const value = await bounded(() => native.availability({ language }));
+        const modelReasons = ['requires-iOS-26', 'unsupported-language', 'apple-intelligence-not-enabled', 'device-not-eligible', 'model-not-ready', 'model-unavailable', 'native-unavailable'];
+        const inputReasons = ['permission-denied', 'recognizer-unavailable', 'on-device-recognition-unavailable'];
+        if (!record(value) || value.language !== language || typeof value.onDeviceModel !== 'boolean' || typeof value.speechInput !== 'boolean' || typeof value.speechOutput !== 'boolean'
+          || (value.reason !== undefined && !modelReasons.includes(value.reason as string))
+          || (value.speechInputReason !== undefined && !inputReasons.includes(value.speechInputReason as string))
+          || (value.speechOutputReason !== undefined && value.speechOutputReason !== 'voice-unavailable')
+          || (value.onDeviceModel && value.reason !== undefined) || (value.speechInput && value.speechInputReason !== undefined) || (value.speechOutput && value.speechOutputReason !== undefined)) throw new Error('Invalid availability.');
+        return { language, onDeviceModel: value.onDeviceModel, speechInput: value.speechInput, speechOutput: value.speechOutput,
+          ...(value.reason !== undefined ? { reason: value.reason as NonNullable<AssistantAvailability['reason']> } : {}),
+          ...(value.speechInputReason !== undefined ? { speechInputReason: value.speechInputReason as NonNullable<AssistantAvailability['speechInputReason']> } : {}),
+          ...(value.speechOutputReason === 'voice-unavailable' ? { speechOutputReason: value.speechOutputReason } : {}) };
+      } catch { return { language, onDeviceModel: false, speechInput: false, speechOutput: false, reason: 'native-unavailable' }; }
     },
     async analyzeTask(text, language) {
       if (isNative()) { try { return nativeJob(await bounded(() => native.analyzeTask({ text, language })), language); } catch { /* Deterministic, labelled local fallback. */ } }
       return rules(text, language);
     },
     async chat(turns, language, context) {
+      const recent = conversationWindow(turns);
+      if (!recent) return { text: copy[language].question, job: null, engine: 'rules' };
+      const originalText = recent.filter(turn => turn.role === 'user').map(turn => turn.text).join('\n');
       if (isNative()) {
         try {
-          const value = await bounded(() => native.chat({ turns, language, firstName: context.firstName }));
+          const value = await bounded(() => native.chat({ turns: recent, language, firstName: context.firstName }));
           if (!record(value) || !shortReply(value.text, language)) throw new Error('Invalid assistant reply.');
-          return { text: value.text, job: value.job == null ? null : nativeJob(value.job, language), engine: 'apple-on-device' };
+          const job = value.job == null ? null : nativeJob(value.job, language);
+          return { text: value.text, job, engine: 'apple-on-device', ...(job ? { originalText } : {}) };
         } catch { /* A failed session never prevents typing a request. */ }
       }
-      const latest = turns.findLast((turn) => turn.role === 'user')?.text.trim() ?? '';
-      const enough = wordCount(latest, language) >= 3;
-      return { text: enough ? copy[language].ready : copy[language].question, job: enough ? rules(latest, language) : null, engine: 'rules' };
+      const job = rulesConversationJob(recent, language, rules);
+      return { text: job ? copy[language].ready : copy[language].question, job, engine: 'rules', ...(job ? { originalText } : {}) };
     },
     async startListening(language, onPartial, signal) {
       if (signal?.aborted) throw new Error('Speech input was cancelled.');
@@ -267,7 +297,7 @@ export function createAssistant(deps: AssistantDependencies = {}): Assistant {
           // Any native terminal is authoritative, even an error with no transcript.
           // A bridge failure without a terminal can still recover partial words.
           if (receivedTerminal || terminal?.text) return session;
-          if (!(error instanceof Error)) throw error;
+          throw new Error('On-device speech input is unavailable. You can type your request instead.', { cause: error });
         }
       }
       if (epoch !== listeningEpoch || signal?.aborted) throw new Error('Speech input was cancelled.');

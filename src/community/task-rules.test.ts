@@ -50,3 +50,35 @@ describe('multilingual rules fallback', () => {
     expect(quickPickAnalysis('light-bulb', 'en').tools).toEqual(['ladder']);
   });
 });
+
+describe('bounded urgency regression corpus (templates, not translation quality)', () => {
+  it.each([
+    ['en', 'Water plants, not urgent'], ['es', 'Regar plantas, no es urgente'],
+    ['ko', '화분 물 주기, 급하지 않아요'], ['zh', '浇水，不紧急'],
+    ['vi', 'Tưới cây, không khẩn cấp'], ['tl', 'Diligan ang halaman, hindi agaran'],
+    ['ru', 'Полить растения, не срочно'], ['fr', 'Arroser les plantes sans urgence'],
+    ['ar', 'سقي النباتات، غير عاجل'],
+  ] satisfies [Language, string][])('does not promote negated urgency in %s', (language, text) => {
+    expect(analyzeTaskWithRules(text, language).urgency).toBe('flexible');
+  });
+  it.each([
+    ['en', 'Not urgent, but please water plants today'], ['es', 'No es urgente, pero regar plantas hoy'],
+    ['ko', '급하지 않지만 오늘 화분에 물 주세요'], ['zh', '不紧急，但今天浇水'],
+    ['vi', 'Không khẩn cấp, nhưng tưới cây hôm nay'], ['tl', 'Hindi agaran, pero diligan ang halaman ngayon'],
+    ['ru', 'Не срочно, но полить растения сегодня'], ['fr', 'Sans urgence, mais arroser aujourd’hui'],
+    ['ar', 'غير عاجل، لكن سقي النباتات اليوم'],
+  ] satisfies [Language, string][])('preserves independent explicit today intent in %s', (language, text) => {
+    expect(analyzeTaskWithRules(text, language).urgency).toBe('today');
+  });
+  it.each([
+    ['en', 'Water plants, not today'], ['es', 'Regar plantas, no hoy'],
+    ['ko', '화분에 물 주기, 오늘 말고'], ['zh', '浇水，不是今天'],
+    ['vi', 'Tưới cây, không phải hôm nay'], ['tl', 'Diligan ang halaman, hindi ngayon'],
+    ['ru', 'Полить растения, не сегодня'], ['fr', 'Arroser, pas aujourd’hui'],
+    ['ar', 'سقي النباتات، ليس اليوم'], ['vi', 'Tưới cây, ngày mai'],
+    ['vi', 'Tưới cây ở đâyngayđó'], ['en', 'Water plants for the insurgent character in a story'],
+    ['es', 'Regar plantas y la hoya'],
+  ] satisfies [Language, string][])('does not infer today from negated dates or substrings: %s %s', (language, text) => {
+    expect(analyzeTaskWithRules(text, language).urgency).not.toBe('today');
+  });
+});
