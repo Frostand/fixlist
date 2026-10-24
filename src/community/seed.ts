@@ -4,6 +4,8 @@ import { SKILLS, TOOLS } from './types';
 import type { Account, AvailabilitySlot, CommunityState, Job, JobAnalysis, JobEvent, Language, VolunteerProfile, Weekday } from './types';
 
 const DAY = 86400000, HOUR = 3600000;
+export const NEW_ELDER_DEMO_ID = 'elder-new-demo';
+export const NEW_VOLUNTEER_DEMO_ID = 'volunteer-new-demo';
 const slots = (days: readonly Weekday[], parts: readonly AvailabilitySlot['part'][]): AvailabilitySlot[] => days.flatMap((day) => parts.map((part) => ({ day, part })));
 type SeedDraft = Pick<Job, 'id' | 'elderId' | 'originalText'> & {
   days: number;
@@ -34,14 +36,20 @@ export function createSeedState(now: string): CommunityState {
     return { id, role, name, firstName: name.split(' ')[0]!, avatarTone, language, provider: index % 2 ? 'google' : 'apple',
       area: id === 'volunteer-jordan' ? 'Cumming / south Forsyth, GA' : `${city}, GA`, location, createdAt: at(-120) };
   });
+  // Valid picker metadata only; these two unonboarded demos open empty setup forms.
+  const onboarded = accounts.map(a => a.id);
+  for (const [id, role, name] of [[NEW_ELDER_DEMO_ID, 'elder', 'New elder demo'], [NEW_VOLUNTEER_DEMO_ID, 'volunteer', 'New volunteer demo']] as const) {
+    accounts.push({ id, role, name, firstName: 'New', avatarTone: 'sage', language: 'en', provider: 'email', area: 'Not set (demo)', location: locationForArea(''), createdAt: at(0) });
+  }
   const volunteers: VolunteerProfile[] = [
     { accountId: 'volunteer-jordan', skills: ['general', 'electrical-basic', 'safety-install', 'lifting'], tools: ['ladder', 'drill', 'screwdriver-set'], availability: slots([6, 0], ['morning']), maxMiles: 10, school: 'Lambert High School', bio: 'Fictional student volunteer. Happy to help with small home tasks on weekend mornings.', badges: { idChecked: false, backgroundCheck: false } },
     { accountId: 'volunteer-priya', skills: ['tech-help', 'errands'], tools: ['screwdriver-set'], availability: slots([1, 2, 3, 4, 5], ['evening']), maxMiles: 12, school: 'Fictional local high school', bio: 'Fictional student volunteer. I speak English and Spanish and enjoy helping with phones.', badges: { idChecked: false, backgroundCheck: false } },
     { accountId: 'volunteer-marcus', skills: [...SKILLS.filter((s) => s !== 'tech-help')], tools: [...TOOLS.filter((t) => t !== 'watering-can')], availability: slots([1, 2, 3, 4, 5], ['morning', 'afternoon']), maxMiles: 15, bio: 'Fictional retired electrician. Available for small practical tasks; experience is self-reported.', badges: { idChecked: false, backgroundCheck: false } },
     { accountId: 'volunteer-ana', skills: ['general', 'errands'], tools: ['car', 'gloves'], availability: slots([0, 1, 2, 3, 4, 5, 6], ['afternoon']), maxMiles: 15, bio: 'Fictional volunteer. I can help with grocery trips and errands in the afternoon.', badges: { idChecked: false, backgroundCheck: false } },
     { accountId: 'volunteer-ethan', skills: ['yard', 'lifting', 'general'], tools: ['gloves'], availability: slots([6, 0], ['morning', 'afternoon']), maxMiles: 15, bio: 'Fictional volunteer. I enjoy light yard work and helping move things with a partner.', badges: { idChecked: false, backgroundCheck: false } },
+    { accountId: NEW_VOLUNTEER_DEMO_ID, skills: [], tools: [], availability: [], maxMiles: 10, bio: '', badges: { idChecked: false, backgroundCheck: false } },
   ];
-  const state: CommunityState = { version: 1, session: { accountId: null, onboarded: accounts.map((a) => a.id) }, accounts,
+  const state: CommunityState = { version: 1, session: { accountId: null, onboarded }, accounts,
     elders: [
       { accountId: 'elder-margaret', needs: ['Uses a cane', "Can't use ladders since hip surgery"], addressHint: 'Oak Hollow Ct area (fictional)', familyIds: ['family-alex'] },
       { accountId: 'elder-soonja', needs: ['Recovering from a knee injury', 'Needs help reaching high places'], addressHint: 'Willow Garden Ln area (fictional)', familyIds: [] },
@@ -49,6 +57,7 @@ export function createSeedState(now: string): CommunityState {
       { accountId: 'elder-linh', needs: ['Uses a walker indoors', 'New to tablets'], addressHint: 'Meadow Brook Ct area (fictional)', familyIds: [] },
       { accountId: 'elder-wei', needs: ['Needs support getting into the bath', 'Lives alone'], addressHint: 'River Birch Ln area (fictional)', familyIds: [] },
       { accountId: 'elder-harold', needs: ['Has arthritis in his hands', 'Needs help with lifting and yard work'], addressHint: 'Pine Hollow Way area (fictional)', familyIds: [] },
+      { accountId: NEW_ELDER_DEMO_ID, needs: [], addressHint: '', familyIds: [] },
     ], volunteers, families: [{ accountId: 'family-alex', elderIds: ['elder-margaret'] }], jobs: [], messages: [] };
   // These bilingual demo drafts are hand-authored, not evidence of a model or rules engine's output quality.
   const makeJob = (draft: SeedDraft): Job => {

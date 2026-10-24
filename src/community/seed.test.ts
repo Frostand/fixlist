@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSeedState } from './seed';
+import { createSeedState, NEW_ELDER_DEMO_ID } from './seed';
 import { scoreMatch } from './matching';
 import { quickPickAnalysis } from './task-rules';
 import { validateCommunityState } from './storage';
@@ -7,6 +7,19 @@ import { serviceLog, volunteerStats } from './queries';
 
 const NOW = '2026-10-23T12:00:00.000Z';
 describe('authored community demo stories', () => {
+  it('adds only two empty first-run demos and preserves every original seed record', async () => {
+    const state = createSeedState(NOW), newIds = ['elder-new-demo', 'volunteer-new-demo'];
+    const existing = { ...state, accounts: state.accounts.filter(a => !newIds.includes(a.id)), elders: state.elders.filter(e => !newIds.includes(e.accountId)), volunteers: state.volunteers.filter(v => !newIds.includes(v.accountId)) };
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(existing)));
+    expect(Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')).toBe('c0a6138e4dc232f57025c8e77fdbbf08d97481c9abf3bde76bac54709fa6c900');
+    expect(state.accounts).toHaveLength(14);
+    expect(state.elders.find(e => e.accountId === newIds[0])).toEqual({ accountId: newIds[0], needs: [], familyIds: [], addressHint: '' });
+    expect(state.volunteers.find(v => v.accountId === newIds[1])).toMatchObject({ skills: [], tools: [], availability: [], bio: '', badges: { idChecked: false, backgroundCheck: false } });
+    expect(state.session.onboarded).toEqual(existing.accounts.map(a => a.id));
+    expect(state.jobs.some(j => newIds.includes(j.elderId) || newIds.includes(j.volunteerId ?? ''))).toBe(false);
+    expect(state.families.some(f => newIds.includes(f.accountId) || f.elderIds.some(id => newIds.includes(id)))).toBe(false);
+    expect(validateCommunityState(state)).toBe(true);
+  });
   it('gives all jobs distinct specific titles, leaving the bulb quick pick for the new request', () => {
     const { jobs } = createSeedState(NOW);
     expect(jobs).toHaveLength(32);
@@ -62,7 +75,7 @@ describe('authored community demo stories', () => {
     expect(notes.every((note) => note.length > 40 && !note.includes('Fictional demo rating'))).toBe(true);
     expect(completed.every((j) => j.rating && j.hoursCredited !== null)).toBe(true);
     expect(completed.filter((j) => j.volunteerId === 'volunteer-jordan' && j.rating?.note)).toHaveLength(3);
-    expect(state.elders.every((e) => e.needs.length >= 2 && e.needs.length <= 4 && e.needs.every((n) => n.trim().length > 0))).toBe(true);
+    expect(state.elders.filter(e => e.accountId !== NEW_ELDER_DEMO_ID).every((e) => e.needs.length >= 2 && e.needs.length <= 4 && e.needs.every((n) => n.trim().length > 0))).toBe(true);
   });
   it('preserves the current open and active requests exactly', async () => {
     const protectedJobs = createSeedState(NOW).jobs.filter((j) => j.status !== 'completed');

@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { Account, AccountRole, AvailabilitySlot, Language, SignInProvider, Skill, Tool } from '../../community/types';
+import type { Account, AccountRole, Language, SignInProvider } from '../../community/types';
+import type { SetupValues } from '../../community/setup';
+export type { SetupValues } from '../../community/setup';
 import { SKILLS, TOOLS } from '../../community/types';
 import { quickPickAnalysis } from '../../community';
 import { useT } from '../../i18n';
@@ -30,19 +32,6 @@ export function RoleChoice({ onSelect, onBack }: {
     onSelect(r: AccountRole): void;
     onBack(): void;
 }) { const t = useT(); return <div className="c-narrow"><Back onClick={onBack}/><Heading>{t('c.role.title')}</Heading><div className="c-stack">{(['elder', 'volunteer', 'family'] as const).map((r) => <button className="c-role-card" key={r} onClick={() => onSelect(r)}><Icon name={r === 'elder' ? 'home' : r === 'volunteer' ? 'tools' : 'person'} size={34}/><span><strong>{t(`c.role.${r}`)}</strong><small>{t(`c.role.${r}Body`)}</small></span><Icon name="arrow"/></button>)}</div></div>; }
-export interface SetupValues {
-    name: string;
-    role: AccountRole;
-    language: Language;
-    area: string;
-    needs: string[];
-    skills: Skill[];
-    tools: Tool[];
-    availability: AvailabilitySlot[];
-    maxMiles: number;
-    school: string;
-    elderId: string;
-}
 export function Setup({ role, language, elders, onLanguage, onComplete, onBack }: {
     role: AccountRole;
     language: Language;
@@ -53,13 +42,13 @@ export function Setup({ role, language, elders, onLanguage, onComplete, onBack }
 }) {
     const t = useT();
     const [step, setStep] = useState(1);
-    const [v, setV] = useState<SetupValues>({ name: '', role, language, area: '', needs: [], skills: [], tools: [], availability: [{ day: 6, part: 'morning' }], maxMiles: 10, school: '', elderId: elders[0]?.id ?? '' });
+    const [v, setV] = useState<SetupValues>({ name: '', role, language, area: '', needs: [], skills: [], tools: [], availability: [], maxMiles: 10, school: '', elderId: elders[0]?.id ?? '' });
     const total = role === 'volunteer' ? 3 : 2;
     const update = <K extends keyof SetupValues>(key: K, value: SetupValues[K]) => setV((old) => ({ ...old, [key]: value }));
     return <div className="c-narrow"><Back onClick={() => step > 1 ? setStep(step - 1) : onBack()}/><p className="c-small">{t('c.setup.step', { step, total })}</p><Heading>{t('c.setup.title')}</Heading><form className="c-stack" onSubmit={(e) => { e.preventDefault(); if (step < total)
         setStep(step + 1);
     else
-        onComplete({ ...v, language }); }}>{step === 1 ? <><label className="c-field">{t('c.setup.name')}<input required maxLength={80} autoComplete="name" value={v.name} onChange={(e) => update('name', e.target.value)}/></label><label className="c-field">{t('c.setup.area')}<input required maxLength={100} placeholder={t('c.setup.areaPlaceholder')} value={v.area} onChange={(e) => update('area', e.target.value)}/></label><LanguageSelect value={language} onChange={onLanguage}/></> : role === 'elder' ? <><p>{t('c.setup.needsHint')}</p><Chips title={t('c.setup.needs')} values={['ladders', 'lifting', 'walking', 'tech', 'bending'] as const} selected={v.needs} label={(key) => t(`c.setup.need.${key as 'ladders' | 'lifting' | 'walking' | 'tech' | 'bending'}`)} onChange={(x) => update('needs', x)}/></> : role === 'family' ? <label className="c-field">{t('c.setup.family')}<select value={v.elderId} onChange={(e) => update('elderId', e.target.value)}>{elders.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.area}</option>)}</select></label> : step === 2 ? <><Chips title={t('c.setup.skills')} values={SKILLS} selected={v.skills} label={(s) => skillLabel(t, s)} onChange={(x) => update('skills', x)}/><Chips title={t('c.setup.tools')} values={TOOLS} selected={v.tools} label={(x) => toolLabel(t, x)} onChange={(x) => update('tools', x)}/></> : <><Availability value={v.availability} onChange={(x) => update('availability', x)}/><label className="c-field">{t('c.setup.distance')} <strong>{t('c.setup.miles', { count: v.maxMiles })}</strong><input type="range" min="1" max="50" value={v.maxMiles} onChange={(e) => update('maxMiles', Number(e.target.value))}/></label><label className="c-field">{t('c.setup.school')}<input maxLength={120} value={v.school} onChange={(e) => update('school', e.target.value)}/></label></>}<Button type="submit">{t(step === total ? 'c.setup.finish' : 'c.continue')}</Button></form></div>;
+        onComplete({ ...v, language, needs: v.needs.map(key => t(`c.setup.need.${key as 'ladders' | 'lifting' | 'walking' | 'tech' | 'bending'}`)) }); }}>{step === 1 ? <><label className="c-field">{t('c.setup.name')}<input required maxLength={80} autoComplete="name" value={v.name} onChange={(e) => update('name', e.target.value)}/></label><label className="c-field">{t('c.setup.area')}<input required maxLength={100} placeholder={t('c.setup.areaPlaceholder')} value={v.area} onChange={(e) => update('area', e.target.value)}/></label><LanguageSelect value={language} onChange={onLanguage}/></> : role === 'elder' ? <><p>{t('c.setup.needsHint')}</p><Chips title={t('c.setup.needs')} values={['ladders', 'lifting', 'walking', 'tech', 'bending'] as const} selected={v.needs} label={(key) => t(`c.setup.need.${key as 'ladders' | 'lifting' | 'walking' | 'tech' | 'bending'}`)} onChange={(x) => update('needs', x)}/></> : role === 'family' ? <label className="c-field">{t('c.setup.family')}<select value={v.elderId} onChange={(e) => update('elderId', e.target.value)}>{elders.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.area}</option>)}</select></label> : step === 2 ? <><Chips title={t('c.setup.skills')} values={SKILLS} selected={v.skills} label={(s) => skillLabel(t, s)} onChange={(x) => update('skills', x)}/><Chips title={t('c.setup.tools')} values={TOOLS} selected={v.tools} label={(x) => toolLabel(t, x)} onChange={(x) => update('tools', x)}/></> : <><Availability value={v.availability} onChange={(x) => update('availability', x)}/><label className="c-field">{t('c.setup.distance')} <strong>{t('c.setup.miles', { count: v.maxMiles })}</strong><input type="range" min="1" max="50" value={v.maxMiles} onChange={(e) => update('maxMiles', Number(e.target.value))}/></label><label className="c-field">{t('c.setup.school')}<input maxLength={120} value={v.school} onChange={(e) => update('school', e.target.value)}/></label></>}<Button type="submit">{t(step === total ? 'c.setup.finish' : 'c.continue')}</Button></form></div>;
 }
 export function DemoAccountChoices({ groups, onSelect, onCreate }: {
     groups: Record<AccountRole, readonly Account[]>;

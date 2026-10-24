@@ -16,14 +16,14 @@ class MemoryStorage implements Storage {
 describe('fictional seed data', () => {
   it('is valid, deterministic and has unique IDs and complete role references', () => {
     const state = createSeedState(NOW); expect(validateCommunityState(state)).toBe(true); expect(createSeedState(NOW)).toEqual(state);
-    expect(state.accounts).toHaveLength(12); expect(state.elders).toHaveLength(6); expect(state.volunteers).toHaveLength(5); expect(state.families).toHaveLength(1);
+    expect(state.accounts).toHaveLength(14); expect(state.elders).toHaveLength(7); expect(state.volunteers).toHaveLength(6); expect(state.families).toHaveLength(1);
     const ids = [...state.accounts.map((a) => a.id), ...state.jobs.map((j) => j.id), ...state.messages.map((m) => m.id)]; expect(new Set(ids).size).toBe(ids.length);
     expect(state.jobs.every((j) => state.accounts.some((a) => a.id === j.elderId && a.role === 'elder'))).toBe(true);
     expect(state.jobs.filter((j) => j.status === 'open')).toHaveLength(8); expect(state.jobs.filter((j) => j.status === 'accepted')).toHaveLength(1);
     expect(state.jobs.filter((j) => j.status === 'on-the-way')).toHaveLength(1); expect(state.jobs.filter((j) => j.status === 'completed')).toHaveLength(22);
     expect(state.jobs.filter((j) => j.elderId === 'elder-margaret')).toHaveLength(1); expect(state.jobs.filter((j) => j.elderId === 'elder-margaret')[0]!.status).toBe('completed');
     expect(state.accounts.every((a) => a.location.lat >= 33.9 && a.location.lat <= 34.5 && a.location.lng >= -84.3 && a.location.lng <= -83.9)).toBe(true);
-    expect(state.elders.every((e) => e.addressHint.includes('(fictional)'))).toBe(true);
+    expect(state.elders.every((e) => e.accountId === 'elder-new-demo' ? e.addressHint === '' : e.addressHint.includes('(fictional)'))).toBe(true);
     expect(state.jobs.find((j) => j.elderId === 'elder-soonja')!.originalText).toMatch(/[가-힣]/u);
     expect(state.jobs.find((j) => j.elderId === 'elder-wei')!.originalText).toMatch(/[\u4e00-\u9fff]/u);
     expect(() => createSeedState('bad')).toThrow(RangeError);
