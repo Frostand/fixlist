@@ -172,12 +172,17 @@ export interface AssistantReply {
   job: JobAnalysis | null; // present when the assistant has enough to draft a request
   engine: AnalysisEngine;
 }
-export interface ListeningSession { stop(): Promise<string>; cancel(): void }
+export interface ListeningSession {
+  readonly sessionId: string;
+  readonly done: Promise<{ sessionId: string; reason: 'final' | 'stopped' | 'cancelled' | 'error' | 'interrupted' | 'background'; text: string }>;
+  stop(): Promise<string>;
+  cancel(): void;
+}
 export interface Assistant {
   availability(): Promise<AssistantAvailability>;
   analyzeTask(text: string, language: Language): Promise<JobAnalysis>;
   chat(turns: readonly ChatTurn[], language: Language, context: { firstName: string }): Promise<AssistantReply>;
-  startListening(language: Language, onPartial: (text: string) => void): Promise<ListeningSession>;
+  startListening(language: Language, onPartial: (text: string) => void, signal?: AbortSignal): Promise<ListeningSession>;
   speak(text: string, language: Language): Promise<void>;
   stopSpeaking(): void;
   translate(text: string, from: Language, to: Language): Promise<string | null>;

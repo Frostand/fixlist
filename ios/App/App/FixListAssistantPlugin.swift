@@ -134,7 +134,7 @@ public class FixListAssistantPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthe
         CAPPluginMethod(name: "translate", returnType: CAPPluginReturnPromise)
     ]
     private let synthesizer = AVSpeechSynthesizer()
-    private var speechCall: CAPPluginCall?
+    private var speechID: String?
     private var spokenUtterance: AVSpeechUtterance?
     private var audioEngine: AVAudioEngine?
     // Mutable audio state is confined to the main queue, including delegate callbacks.
@@ -143,10 +143,9 @@ public class FixListAssistantPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthe
     private var recognitionTask: SFSpeechRecognitionTask?
     private var recognizer: SFSpeechRecognizer?
     private var transcript = ""
-    private var recognitionFailure: Error?
-    private var listenID: UUID?
+    private var listenID: String?
     private var pendingStart: CAPPluginCall?
-    private var pendingStop: CAPPluginCall?
+    private var pendingStops: [CAPPluginCall] = []
     private var stopTimer: DispatchWorkItem?
     private struct AudioSnapshot {
         let category: AVAudioSession.Category
@@ -157,12 +156,25 @@ public class FixListAssistantPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthe
 
     override public func load() {
         synthesizer.delegate = self
-        NotificationCenter.default.addObserver(self, selector: #selector(suspendAudio), name: UIApplication.didEnterBackgroundNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(suspendAudio), name: AVAudioSession.interruptionNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(suspendAudio(_:)), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(suspendAudio(_:)), name: AVAudioSession.interruptionNotification, object: nil)
     }
     deinit { NotificationCenter.default.removeObserver(self) }
-    @objc private func suspendAudio() {
-        DispatchQueue.main.async { self.cancelRecognition(); self.finishSpeech() }
+    @objc private func suspendAudio(_ notification: Notification) {
+        if notification.name == AVAudioSession.interruptionNotification,
+           let value = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+           value != AVAudioSession.InterruptionType.began.rawValue { return }
+        DispatchQueue.main.async {
+            let reason = notification.name == UIApplication.didEnterBackgroundNotification ? "background" : "interrupted"
+            if let id = self.listenID { self.finishRecognition(id: id, reason: reason) }
+            if let id = self.speechID { self.finishSpeech(id: id, reason: reason) }
+        }
+    }
+    private func sessionID(_ call: CAPPluginCall) -> String? {
+        guard let id = call.getString("sessionId"), !id.isEmpty, id.count <= 128 else {
+            call.reject("A speech session is required.", "INVALID_INPUT"); return nil
+        }
+        return id
     }
     private func language(_ call: CAPPluginCall, key: String = "language") -> String? {
         guard let value = call.getString(key), assistantLocales[value] != nil else {
@@ -286,24 +298,25 @@ public class FixListAssistantPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthe
         try? session.setCategory(previous.category, mode: previous.mode, options: previous.options)
     }
     @objc func startListening(_ call: CAPPluginCall) {
-        guard let language = language(call) else { return }
+        guard let language = language(call), let id = sessionID(call) else { return }
         DispatchQueue.main.async {
-            self.cancelRecognition(); self.finishSpeech()
-            let id = UUID(); self.listenID = id; self.pendingStart = call
+            if let previous = self.listenID { self.finishRecognition(id: previous, reason: "cancelled") }
+            if let previous = self.speechID { self.finishSpeech(id: previous, reason: "cancelled") }
+            self.listenID = id; self.pendingStart = call; self.transcript = ""
             Task { @MainActor in
                 let microphoneAllowed = await withCheckedContinuation { continuation in
                     AVAudioSession.sharedInstance().requestRecordPermission { continuation.resume(returning: $0) }
                 }
                 // Cancellation while a system permission sheet is open must not restart the microphone.
                 guard self.listenID == id else { return }
-                guard microphoneAllowed else { self.rejectStart("Allow microphone access in Settings, or type your request.", code: "PERMISSION_DENIED"); return }
+                guard microphoneAllowed else { self.rejectStart(id: id, "Allow microphone access in Settings, or type your request.", code: "PERMISSION_DENIED"); return }
                 let speechAllowed = await withCheckedContinuation { continuation in
                     SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
                 }
                 guard self.listenID == id else { return }
-                guard speechAllowed else { self.rejectStart("Allow speech recognition in Settings, or type your request.", code: "PERMISSION_DENIED"); return }
+                guard speechAllowed else { self.rejectStart(id: id, "Allow speech recognition in Settings, or type your request.", code: "PERMISSION_DENIED"); return }
                 guard let recognizer = SFSpeechRecognizer(locale: assistantLocale(language)), recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
-                    self.rejectStart("On-device speech input is unavailable for this language. You can type instead.", code: "UNAVAILABLE"); return
+                    self.rejectStart(id: id, "On-device speech input is unavailable for this language. You can type instead.", code: "UNAVAILABLE"); return
                 }
                 do {
                     try self.configureAudio(recording: true)
@@ -312,7 +325,6 @@ public class FixListAssistantPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthe
                     // No server fallback, including on devices without downloaded speech resources.
                     request.requiresOnDeviceRecognition = true
                     self.audioEngine = engine; self.recognitionRequest = request; self.recognizer = recognizer
-                    self.transcript = ""; self.recognitionFailure = nil
                     let input = engine.inputNode, format = input.outputFormat(forBus: 0)
                     guard format.sampleRate > 0, format.channelCount > 0 else { throw AssistantError.unavailable }
                     input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in request.append(buffer) }
@@ -322,51 +334,48 @@ public class FixListAssistantPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthe
                             guard self.listenID == id else { return }
                             if let result = result {
                                 self.transcript = result.bestTranscription.formattedString
-                                self.notifyListeners("partial", data: ["text": self.transcript])
+                                self.notifyListeners("partial", data: ["sessionId": id, "text": self.transcript])
                             }
-                            if let error = error { self.recognitionFailure = error }
-                            if result?.isFinal == true || error != nil { self.finishRecognition() }
+                            if error != nil { self.finishRecognition(id: id, reason: "error") }
+                            else if result?.isFinal == true { self.finishRecognition(id: id, reason: self.pendingStops.isEmpty ? "final" : "stopped") }
                         }
                     }
                     engine.prepare(); try engine.start()
-                    self.pendingStart = nil; call.resolve()
-                } catch { self.rejectStart("Speech input could not start. You can type instead.", code: "UNAVAILABLE") }
+                    self.pendingStart = nil; call.resolve(["sessionId": id])
+                } catch { self.rejectStart(id: id, "Speech input could not start. You can type instead.", code: "UNAVAILABLE") }
             }
         }
     }
-    private func rejectStart(_ message: String, code: String) {
+    private func rejectStart(id: String, _ message: String, code: String) {
+        guard listenID == id else { return }
         let call = pendingStart; pendingStart = nil
-        cancelRecognition(); call?.reject(message, code)
+        finishRecognition(id: id, reason: "error"); call?.reject(message, code)
     }
     @objc func stopListening(_ call: CAPPluginCall) {
+        guard let id = sessionID(call) else { return }
         DispatchQueue.main.async {
-            if self.pendingStart != nil { self.cancelRecognition(); call.resolve(["text": ""]); return }
-            guard self.recognitionTask != nil else {
-                if self.recognitionFailure != nil && self.transcript.isEmpty { call.reject("Speech input ended. You can type instead.", "UNAVAILABLE") }
-                else { call.resolve(["text": self.transcript]) }
-                return
-            }
-            guard self.pendingStop == nil else { call.reject("Speech input is already stopping.", "BUSY"); return }
-            self.pendingStop = call; self.audioEngine?.stop(); self.recognitionRequest?.endAudio()
-            let timeout = DispatchWorkItem { self.finishRecognition() }; self.stopTimer = timeout
+            guard self.listenID == id else { call.resolve(["sessionId": id, "text": ""]); return }
+            self.pendingStops.append(call)
+            if self.pendingStart != nil { self.finishRecognition(id: id, reason: "stopped"); return }
+            guard self.stopTimer == nil else { return }
+            self.audioEngine?.stop(); self.recognitionRequest?.endAudio()
+            let timeout = DispatchWorkItem { self.finishRecognition(id: id, reason: "stopped") }; self.stopTimer = timeout
             DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: timeout)
         }
     }
     @objc func cancelListening(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { self.cancelRecognition(); call.resolve() }
+        guard let id = sessionID(call) else { return }
+        DispatchQueue.main.async { self.finishRecognition(id: id, reason: "cancelled"); call.resolve(["sessionId": id]) }
     }
-    private func finishRecognition() {
-        let stop = pendingStop; pendingStop = nil
-        let failure = recognitionFailure
-        releaseRecognition()
-        if failure != nil && transcript.isEmpty { stop?.reject("Speech input ended. You can type instead.", "UNAVAILABLE") }
-        else { stop?.resolve(["text": transcript]) }
-    }
-    private func cancelRecognition() {
-        let start = pendingStart; pendingStart = nil
-        let stop = pendingStop; pendingStop = nil
-        releaseRecognition(); transcript = ""; recognitionFailure = nil
-        start?.reject("Speech input was cancelled.", "CANCELLED"); stop?.resolve(["text": ""])
+    private func finishRecognition(id: String, reason: String) {
+        guard listenID == id else { return }
+        let text = transcript, start = pendingStart, stops = pendingStops
+        pendingStart = nil; pendingStops = []
+        releaseRecognition(); transcript = ""
+        // Snapshot before release: background/interruption/error must not discard partial words.
+        notifyListeners("listeningEnded", data: ["sessionId": id, "reason": reason, "text": text])
+        start?.reject("Speech input was cancelled.", "CANCELLED")
+        for stop in stops { stop.resolve(["sessionId": id, "reason": reason, "text": text]) }
     }
     private func releaseRecognition() {
         listenID = nil; stopTimer?.cancel(); stopTimer = nil
@@ -381,9 +390,10 @@ public class FixListAssistantPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthe
     }
 
     @objc func speak(_ call: CAPPluginCall) {
-        guard let text = input(call), let language = language(call) else { return }
+        guard let text = input(call), let language = language(call), let id = sessionID(call) else { return }
         DispatchQueue.main.async {
-            self.cancelRecognition(); self.finishSpeech()
+            if let previous = self.listenID { self.finishRecognition(id: previous, reason: "cancelled") }
+            if let previous = self.speechID { self.finishSpeech(id: previous, reason: "cancelled") }
             do {
                 try self.configureAudio(recording: false)
                 let locale = assistantLocale(language).identifier.replacingOccurrences(of: "_", with: "-")
@@ -394,25 +404,38 @@ public class FixListAssistantPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthe
                 guard let voice = choices.max(by: { $0.quality.rawValue < $1.quality.rawValue }) ?? AVSpeechSynthesisVoice(language: locale) else { throw AssistantError.unavailable }
                 let utterance = AVSpeechUtterance(string: text)
                 utterance.voice = voice; utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
-                self.speechCall = call; self.spokenUtterance = utterance
+                self.speechID = id; self.spokenUtterance = utterance
                 self.synthesizer.speak(utterance)
+                // Startup ACK only. JS completion comes from speechEnded.
+                call.resolve(["sessionId": id])
             } catch { self.restoreAudio(); call.reject("Speech output is unavailable.", "UNAVAILABLE") }
         }
     }
     @objc func stopSpeaking(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { self.finishSpeech(); call.resolve() }
+        guard let id = sessionID(call) else { return }
+        DispatchQueue.main.async { self.finishSpeech(id: id, reason: "cancelled"); call.resolve(["sessionId": id]) }
     }
-    private func finishSpeech() {
-        let call = speechCall; speechCall = nil; spokenUtterance = nil
+    private func finishSpeech(id: String, reason: String) {
+        guard speechID == id else { return }
+        speechID = nil; spokenUtterance = nil
         synthesizer.stopSpeaking(at: .immediate)
         if audioEngine == nil { restoreAudio() }
-        // Stopping speech is normal cancellation, not a reason to speak again through a fallback.
-        call?.resolve()
+        notifyListeners("speechEnded", data: ["sessionId": id, "reason": reason])
+    }
+    private func speechProgress(_ utterance: AVSpeechUtterance, stage: String) {
+        guard spokenUtterance === utterance, let id = speechID else { return }
+        notifyListeners("speechProgress", data: ["sessionId": id, "stage": stage])
+    }
+    public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { self.speechProgress(utterance, stage: "started") }
+    }
+    public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { self.speechProgress(utterance, stage: "word") }
     }
     public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { if self.spokenUtterance === utterance { self.finishSpeech() } }
+        DispatchQueue.main.async { if self.spokenUtterance === utterance, let id = self.speechID { self.finishSpeech(id: id, reason: "completed") } }
     }
     public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { if self.spokenUtterance === utterance { self.finishSpeech() } }
+        DispatchQueue.main.async { if self.spokenUtterance === utterance, let id = self.speechID { self.finishSpeech(id: id, reason: "cancelled") } }
     }
 }

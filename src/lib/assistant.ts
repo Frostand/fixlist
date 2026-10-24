@@ -9,12 +9,12 @@ export interface NativeAssistantPlugin {
   availability(): Promise<unknown>;
   analyzeTask(options: { text: string; language: Language }): Promise<unknown>;
   chat(options: { turns: readonly ChatTurn[]; language: Language; firstName: string }): Promise<unknown>;
-  startListening(options: { language: Language }): Promise<unknown>;
-  stopListening(): Promise<unknown>;
-  cancelListening(): Promise<unknown>;
-  addListener(event: 'partial', callback: (value: { text: string }) => void): Promise<PluginListenerHandle>;
-  speak(options: { text: string; language: Language }): Promise<unknown>;
-  stopSpeaking(): Promise<unknown>;
+  startListening(options: { sessionId: string; language: Language }): Promise<unknown>;
+  stopListening(options: { sessionId: string }): Promise<unknown>;
+  cancelListening(options: { sessionId: string }): Promise<unknown>;
+  addListener(event: 'partial' | 'listeningEnded' | 'speechProgress' | 'speechEnded', callback: (value: { sessionId: string; text?: string; reason?: string; stage?: string }) => void): Promise<PluginListenerHandle>;
+  speak(options: { sessionId: string; text: string; language: Language }): Promise<unknown>;
+  stopSpeaking(options: { sessionId: string }): Promise<unknown>;
   translate(options: { text: string; from: Language; to: Language }): Promise<unknown>;
 }
 interface RecognitionResult { readonly [index: number]: { transcript: string }; isFinal: boolean; length: number }
@@ -71,9 +71,9 @@ function nativeJob(value: unknown, language: Language): JobAnalysis {
     estimatedMinutes: value.estimatedMinutes as number, peopleNeeded: value.peopleNeeded, urgency: value.urgency as JobAnalysis['urgency'], safetyNotes: [...value.safetyNotes] as string[], language, engine: 'apple-on-device' };
 }
 /** Promise.race attaches rejection handlers even when native completes after timeout. */
-async function bounded<T>(run: () => Promise<T>): Promise<T> {
+async function bounded<T>(run: () => Promise<T>, cancelled: Promise<never> = new Promise(() => {})): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  try { return await Promise.race([Promise.resolve().then(run), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Native assistant timed out.')), TIMEOUT_MS); })]); }
+  try { return await Promise.race([cancelled, Promise.resolve().then(run), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Native assistant timed out.')), TIMEOUT_MS); })]); }
   finally { clearTimeout(timer); }
 }
 function quietly(run: () => Promise<unknown>): void { void bounded(run).catch(() => {}); }
@@ -93,61 +93,89 @@ function shortReply(value: unknown, language: Language): value is string {
   return sentences.length <= 2;
 }
 
+let audioSequence = 0;
+const audioId = () => globalThis.crypto?.randomUUID?.() ?? `audio-${Date.now()}-${++audioSequence}`;
+type ListeningEnd = Awaited<ListeningSession['done']>;
+const listeningReasons: readonly ListeningEnd['reason'][] = ['final', 'stopped', 'cancelled', 'error', 'interrupted', 'background'];
+
 /** Injectable platform/audio adapters keep tests independent of the model, permissions, and DOM. */
 export function createAssistant(deps: AssistantDependencies = {}): Assistant {
   const native = deps.plugin ?? plugin, isNative = deps.isNative ?? (() => Capacitor.isNativePlatform());
   const browser = deps.browser ?? (() => typeof window === 'undefined' ? undefined : window as unknown as AssistantBrowser);
   const rules = deps.analyzeWithRules ?? analyzeTaskWithRules;
-  let speechEpoch = 0, finishBrowserSpeech: (() => void) | undefined;
+  let speechEpoch = 0, finishSpeech: (() => void) | undefined;
   let currentListening: ListeningSession | undefined, listeningEpoch = 0;
+  // Late listener-registration ACKs are removed as well as already registered handles.
+  const listeners = () => {
+    let closed = false;
+    const handles: PluginListenerHandle[] = [];
+    return {
+      async add(event: Parameters<NativeAssistantPlugin['addListener']>[0], callback: Parameters<NativeAssistantPlugin['addListener']>[1], cancelled: Promise<never>) {
+        await bounded(async () => {
+          const handle = await native.addListener(event, callback);
+          if (closed) quietly(() => handle.remove()); else handles.push(handle);
+        }, cancelled);
+      },
+      close() { closed = true; for (const handle of handles.splice(0)) quietly(() => handle.remove()); },
+    };
+  };
   const stopSpeaking = () => {
     speechEpoch++;
-    if (isNative()) quietly(() => native.stopSpeaking());
+    finishSpeech?.(); finishSpeech = undefined;
     try { browser()?.speechSynthesis?.cancel(); } catch { /* A missing audio device is recoverable. */ }
-    finishBrowserSpeech?.(); finishBrowserSpeech = undefined;
   };
-  const webListening = async (language: Language, onPartial: (text: string) => void): Promise<ListeningSession> => {
+  const webListening = async (language: Language, onPartial: (text: string) => void, signal?: AbortSignal): Promise<ListeningSession> => {
     const Constructor = browser()?.SpeechRecognition ?? browser()?.webkitSpeechRecognition;
     if (!Constructor) throw new Error('Speech input is unavailable in this browser. You can type your request instead.');
-    const recognition = new Constructor();
+    const recognition = new Constructor(), sessionId = audioId();
     recognition.lang = localeFor(language); recognition.continuous = true; recognition.interimResults = true;
-    let transcript = '', ended = false, cancelled = false, startSettled = false;
-    let finishStop: ((text: string) => void) | undefined, stopPromise: Promise<string> | undefined;
-    let stopTimer: ReturnType<typeof setTimeout> | undefined;
+    let transcript = '', terminal: ListeningEnd | undefined, startSettled = false;
+    let stopPromise: Promise<string> | undefined, stopTimer: ReturnType<typeof setTimeout> | undefined;
     let settleStart: (error?: Error) => void = () => {};
-    const cleanup = () => {
-      settleStart(new Error(cancelled ? 'Speech input was cancelled.' : 'Speech input ended before it started. You can type instead.'));
-      ended = true; clearTimeout(stopTimer);
+    let resolveDone!: (end: ListeningEnd) => void;
+    const done = new Promise<ListeningEnd>(resolve => { resolveDone = resolve; });
+    const abort = () => session.cancel();
+    const finish = (reason: ListeningEnd['reason']) => {
+      if (terminal) return;
+      terminal = { sessionId, reason, text: reason === 'cancelled' ? '' : transcript };
+      settleStart(new Error(reason === 'cancelled' ? 'Speech input was cancelled.' : 'Speech input ended before it started. You can type instead.'));
+      clearTimeout(stopTimer); signal?.removeEventListener('abort', abort);
       recognition.onstart = recognition.onresult = recognition.onend = recognition.onerror = null;
-      finishStop?.(cancelled ? '' : transcript); finishStop = undefined;
+      if (currentListening === session) currentListening = undefined;
+      resolveDone(terminal);
     };
-    const started = new Promise<void>((resolve, reject) => {
-      const startTimer = setTimeout(() => { try { recognition.abort(); } catch { /* Already stopped. */ } cleanup(); reject(new Error('Speech input did not start. You can type instead.')); }, TIMEOUT_MS);
-      settleStart = (error?: Error) => { if (startSettled) return; startSettled = true; clearTimeout(startTimer); if (error) reject(error); else resolve(); };
-      recognition.onstart = () => settleStart();
-      recognition.onresult = (event) => {
-        // Web Speech's result list contains all final segments plus current interim segments.
-        transcript = Array.from(event.results, (result) => result[0]?.transcript ?? '').join(' ').trim();
-        if (!cancelled) onPartial(transcript);
-      };
-      recognition.onerror = (event) => { settleStart(new Error(`Speech input could not start (${event.error}). You can type instead.`)); cleanup(); };
-      recognition.onend = () => { settleStart(new Error('Speech input ended before it started. You can type instead.')); cleanup(); };
-      try { recognition.start(); } catch { settleStart(new Error('Speech input could not start. You can type instead.')); cleanup(); }
-    });
     const session: ListeningSession = {
+      sessionId, done,
       stop() {
-        if (cancelled || ended) return Promise.resolve(cancelled ? '' : transcript);
-        if (!stopPromise) stopPromise = new Promise<string>((resolve) => {
-          finishStop = resolve;
-          stopTimer = setTimeout(() => { try { recognition.abort(); } catch { /* Already stopped. */ } cleanup(); }, 2000);
-          try { recognition.stop(); } catch { cleanup(); }
-        });
+        if (!stopPromise) {
+          stopPromise = done.then(end => end.text);
+          if (!terminal) {
+            stopTimer = setTimeout(() => { finish('stopped'); try { recognition.abort(); } catch { /* Already stopped. */ } }, 2000);
+            try { recognition.stop(); } catch { finish('error'); }
+          }
+        }
         return stopPromise;
       },
-      cancel() { cancelled = true; try { recognition.abort(); } catch { /* Already stopped. */ } cleanup(); },
+      cancel() { if (terminal) return; finish('cancelled'); try { recognition.abort(); } catch { /* Already stopped. */ } },
     };
-    // Store before permission resolves so another request can cancel it.
     currentListening = session;
+    const started = new Promise<void>((resolve, reject) => {
+      const startTimer = setTimeout(() => { finish('error'); try { recognition.abort(); } catch { /* Already stopped. */ } }, TIMEOUT_MS);
+      settleStart = (error?: Error) => { if (startSettled) return; startSettled = true; clearTimeout(startTimer); if (error) reject(error); else resolve(); };
+      recognition.onstart = () => settleStart();
+      recognition.onresult = event => {
+        transcript = Array.from(event.results, result => result[0]?.transcript ?? '').join(' ').trim();
+        onPartial(transcript);
+      };
+      recognition.onerror = event => {
+        settleStart(new Error(`Speech input could not start (${event.error}). You can type instead.`)); finish('error');
+        try { recognition.abort(); } catch { /* Already stopped. */ }
+      };
+      recognition.onend = () => finish(stopPromise ? 'stopped' : 'final');
+      try { recognition.start(); } catch { finish('error'); }
+    });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) session.cancel();
     await started; return session;
   };
   return {
@@ -175,76 +203,135 @@ export function createAssistant(deps: AssistantDependencies = {}): Assistant {
       const enough = wordCount(latest, language) >= 3;
       return { text: enough ? copy[language].ready : copy[language].question, job: enough ? rules(latest, language) : null, engine: 'rules' };
     },
-    async startListening(language, onPartial) {
+    async startListening(language, onPartial, signal) {
+      if (signal?.aborted) throw new Error('Speech input was cancelled.');
       const epoch = ++listeningEpoch;
       currentListening?.cancel(); stopSpeaking();
       if (isNative()) {
-        let live = true, listener: PluginListenerHandle | undefined, transcript = '';
-        const remove = () => { live = false; if (listener) { const handle = listener; listener = undefined; quietly(() => handle.remove()); } };
+        const sessionId = audioId(), events = listeners();
+        let transcript = '', terminal: ListeningEnd | undefined, stopped: Promise<string> | undefined;
+        let resolveDone!: (end: ListeningEnd) => void, rejectStart!: (error: Error) => void;
+        const done = new Promise<ListeningEnd>(resolve => { resolveDone = resolve; });
+        const cancelled = new Promise<never>((_, reject) => { rejectStart = reject; });
+        void cancelled.catch(() => {});
+        const abort = () => session.cancel();
+        const finish = (reason: ListeningEnd['reason'], text = transcript) => {
+          if (terminal) return;
+          terminal = { sessionId, reason, text: reason === 'cancelled' ? '' : text };
+          events.close(); signal?.removeEventListener('abort', abort);
+          if (currentListening === session) currentListening = undefined;
+          resolveDone(terminal);
+        };
+        const session: ListeningSession = {
+          sessionId, done,
+          stop() {
+            if (!stopped) {
+              stopped = done.then(end => end.text);
+              if (!terminal) void bounded(() => native.stopListening({ sessionId }), cancelled).then(result => {
+                // Responses carry the same terminal reason as the event, whichever arrives first.
+                if (record(result) && result.sessionId === sessionId) finish(listeningReasons.includes(result.reason as ListeningEnd['reason']) ? result.reason as ListeningEnd['reason'] : 'stopped', typeof result.text === 'string' ? result.text : transcript);
+                else if (!terminal) { quietly(() => native.cancelListening({ sessionId })); finish('error'); }
+              }).catch(() => { if (!terminal) { quietly(() => native.cancelListening({ sessionId })); finish('error'); } });
+            }
+            return stopped;
+          },
+          cancel() {
+            if (terminal) return;
+            finish('cancelled'); rejectStart(new Error('Speech input was cancelled.'));
+            quietly(() => native.cancelListening({ sessionId }));
+          },
+        };
+        currentListening = session;
+        signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) session.cancel();
         try {
-          listener = await bounded(async () => {
-            const handle = await native.addListener('partial', (event) => { if (live && typeof event.text === 'string') { transcript = event.text; onPartial(event.text); } });
-            if (!live) quietly(() => handle.remove());
-            return handle;
-          });
+          await events.add('partial', event => {
+            if (!terminal && event.sessionId === sessionId && typeof event.text === 'string') { transcript = event.text; onPartial(transcript); }
+          }, cancelled);
+          await events.add('listeningEnded', event => {
+            if (event.sessionId === sessionId && listeningReasons.includes(event.reason as ListeningEnd['reason'])) finish(event.reason as ListeningEnd['reason'], typeof event.text === 'string' ? event.text : transcript);
+          }, cancelled);
           if (epoch !== listeningEpoch) throw new Error('Speech input was cancelled.');
-          let stopped: Promise<string> | undefined;
-          const session: ListeningSession = {
-            stop() {
-              if (stopped) return stopped;
-              if (!live) return Promise.resolve('');
-              stopped = (async () => {
-                try {
-                  const result = await bounded(() => native.stopListening());
-                  if (!live || epoch !== listeningEpoch) return '';
-                  return record(result) && typeof result.text === 'string' ? result.text : transcript;
-                } catch {
-                  if (!live || epoch !== listeningEpoch) return '';
-                  quietly(() => native.cancelListening()); return transcript;
-                }
-                finally { remove(); }
-              })();
-              return stopped;
-            },
-            cancel() {
-              const wasLive = live; remove();
-              // A retained handle from an older session cannot stop the current microphone.
-              if (wasLive && currentListening === session) quietly(() => native.cancelListening());
-            },
-          };
-          currentListening = session;
-          await bounded(() => native.startListening({ language }));
-          if (!live || epoch !== listeningEpoch) throw new Error('Speech input was cancelled.');
+          await bounded(() => {
+            if (epoch !== listeningEpoch || terminal?.reason === 'cancelled') throw new Error('Speech input was cancelled.');
+            return native.startListening({ sessionId, language });
+          }, cancelled);
+          if (epoch !== listeningEpoch) throw new Error('Speech input was cancelled.');
+          // A terminal event may arrive before the startup ACK. done retains it for the UI.
           return session;
-        } catch {
-          const cancelled = !live || epoch !== listeningEpoch; remove();
-          if (cancelled) throw new Error('Speech input was cancelled.');
-          quietly(() => native.cancelListening());
+        } catch (error) {
+          const superseded = epoch !== listeningEpoch || terminal?.reason === 'cancelled';
+          if (!terminal) { quietly(() => native.cancelListening({ sessionId })); finish('error'); }
+          if (superseded) throw new Error('Speech input was cancelled.');
+          if (terminal && terminal.reason !== 'error') return session;
+          // Preserve an interrupted transcript instead of starting another microphone.
+          if (terminal?.text) return session;
+          if (!(error instanceof Error)) throw error;
         }
       }
-      if (epoch !== listeningEpoch) throw new Error('Speech input was cancelled.');
-      return webListening(language, onPartial);
+      if (epoch !== listeningEpoch || signal?.aborted) throw new Error('Speech input was cancelled.');
+      return webListening(language, onPartial, signal);
     },
     async speak(text, language) {
       stopSpeaking(); const epoch = speechEpoch;
       if (!text.trim()) return;
       if (isNative()) {
-        try { await bounded(() => native.speak({ text, language })); return; }
-        catch { if (epoch !== speechEpoch) return; quietly(() => native.stopSpeaking()); }
+        const sessionId = audioId(), events = listeners();
+        let ended = false, began = false, fallback = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let resolveDone!: () => void, rejectAck!: (error: Error) => void;
+        const done = new Promise<void>(resolve => { resolveDone = resolve; });
+        const cancelled = new Promise<never>((_, reject) => { rejectAck = reject; });
+        void cancelled.catch(() => {});
+        const finish = (cancel = false) => {
+          if (ended) return;
+          ended = true; clearTimeout(timer); events.close();
+          if (finishSpeech === stop) finishSpeech = undefined;
+          rejectAck(new Error('Speech output ended.'));
+          if (cancel) quietly(() => native.stopSpeaking({ sessionId }));
+          resolveDone();
+        };
+        const stop = () => finish(true);
+        const progress = () => { clearTimeout(timer); timer = setTimeout(stop, TIMEOUT_MS); };
+        finishSpeech = stop;
+        try {
+          await events.add('speechProgress', event => {
+            if (!ended && event.sessionId === sessionId && (event.stage === 'started' || event.stage === 'word')) { began = true; progress(); }
+          }, cancelled);
+          await events.add('speechEnded', event => { if (event.sessionId === sessionId && typeof event.reason === 'string') finish(); }, cancelled);
+          if (ended || epoch !== speechEpoch) return;
+          await bounded(() => {
+            if (ended || epoch !== speechEpoch) throw new Error('Speech output ended.');
+            return native.speak({ sessionId, text, language });
+          }, cancelled);
+          if (!ended) progress();
+        } catch (error) {
+          // Only the bridge's explicit pre-playback rejection permits a browser fallback.
+          fallback = !ended && !began && epoch === speechEpoch && record(error) && error.code === 'UNAVAILABLE';
+          if (!ended) finish(!fallback);
+        }
+        if (!fallback) { await done; return; }
       }
       if (epoch !== speechEpoch) return;
       const web = browser(), synthesis = web?.speechSynthesis, Utterance = web?.SpeechSynthesisUtterance;
       if (!synthesis || !Utterance) return;
-      await new Promise<void>((resolve) => {
-        const finish = () => { if (finishBrowserSpeech === finish) finishBrowserSpeech = undefined; resolve(); };
+      await new Promise<void>(resolve => {
+        let utterance: SpeechSynthesisUtterance | undefined, timer: ReturnType<typeof setTimeout> | undefined, ended = false;
+        const finish = () => {
+          if (ended) return; ended = true; clearTimeout(timer);
+          if (utterance) utterance.onend = utterance.onerror = utterance.onstart = utterance.onboundary = null;
+          if (finishSpeech === finish) finishSpeech = undefined; resolve();
+        };
+        const progress = () => { clearTimeout(timer); timer = setTimeout(() => { finish(); try { synthesis.cancel(); } catch { /* Already stopped. */ } }, TIMEOUT_MS); };
+        finishSpeech = finish;
         try {
-          const utterance = new Utterance(text);
+          utterance = new Utterance(text);
           utterance.lang = localeFor(language); utterance.rate = 0.85;
           const voices = synthesis.getVoices();
-          const voice = voices.find((v) => v.lang === utterance.lang && v.localService) ?? voices.find((v) => v.lang === utterance.lang) ?? voices.find((v) => v.lang.split('-')[0] === utterance.lang.split('-')[0]);
+          const voice = voices.find(v => v.lang === utterance!.lang && v.localService) ?? voices.find(v => v.lang === utterance!.lang) ?? voices.find(v => v.lang.split('-')[0] === utterance!.lang.split('-')[0]);
           if (voice) utterance.voice = voice;
-          finishBrowserSpeech = finish; utterance.onend = finish; utterance.onerror = finish;
-          synthesis.speak(utterance);
+          utterance.onend = finish; utterance.onerror = finish; utterance.onstart = progress; utterance.onboundary = progress;
+          progress(); synthesis.speak(utterance);
         } catch { finish(); }
       });
     },
