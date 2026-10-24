@@ -25,22 +25,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 /// Registers app-local native plugins on the Capacitor bridge.
 class FixListBridgeViewController: CAPBridgeViewController {
-    private var offsetObservation: NSKeyValueObservation?
-
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(FixListPrintPlugin())
         bridge?.registerPluginInstance(FixListCapturePlugin())
         bridge?.registerPluginInstance(FixListHazardsPlugin())
         bridge?.registerPluginInstance(FixListAssistantPlugin())
 
-        // The app scrolls inside its own shell. Pin the outer page so iOS cannot pan the
-        // fixed header under the status bar when the keyboard opens.
-        if let scrollView = bridge?.webView?.scrollView {
-            scrollView.isScrollEnabled = false
-            offsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { scrollView, _ in
-                if scrollView.contentOffset != .zero { scrollView.contentOffset = .zero }
-            }
-        }
+        // Community screens scroll the document; retain normal WebView scrolling.
+        // The classic checklist constrains scrolling inside its CSS shell.
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillChangeFrame(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
     }
