@@ -100,6 +100,78 @@ let stoppedGeneration = capture.worldGeneration
 capture.resetWorld()
 expect(capture.worldGeneration == stoppedGeneration && capture.arView.session.resets == 2,
        "A closed capture cannot restart its AR session")
+
+func nativeOptions(_ id: String = "cap-options-0001", language: String = "en") -> [String: Any] {
+    ["captureId": id, "roomId": "living-room", "roomName": "Room", "language": language,
+     "prompts": [["checklistItemId": NSNull(), "text": "Overview"], ["checklistItemId": "rug-check", "text": "Rug"]],
+     "strings": ["done": "Localized done", "cancel": "", "undo": 17]]
+}
+for code in ["en", "es", "zh", "vi", "ko", "tl", "ru", "fr", "ar"] {
+    let options = CaptureOptions(call: CAPPluginCall(nativeOptions(language: code)))
+    expect(options != nil, "Actual Swift CaptureOptions accepts \(code)")
+    expect(options?.strings["done"] == "Localized done", "Bridged localized string retained for \(code)")
+    expect(options?.strings["cancel"] == CaptureOptions.english["cancel"] && options?.strings["undo"] == CaptureOptions.english["undo"],
+           "Individual empty/non-string translations use English fallback for \(code)")
+}
+expect(CaptureOptions(call: CAPPluginCall(nativeOptions(language: "xx"))) == nil, "Unknown language rejected")
+for bad in [["text": "Missing ID"], ["checklistItemId": 4, "text": "Numeric ID"], ["checklistItemId": "", "text": "Empty ID"]] as [[String: Any]] {
+    var options = nativeOptions(); options["prompts"] = [bad]
+    expect(CaptureOptions(call: CAPPluginCall(options)) == nil, "Actual Swift parser rejects malformed prompt IDs")
+}
+func drain(until condition: () -> Bool) {
+    let deadline = Date().addingTimeInterval(3)
+    while !condition() && Date() < deadline { _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005)) }
+    expect(condition(), "Native callback completed within host-test deadline")
+}
+let lifecycle = NativeLifecycleHarness()
+AVCaptureDevice.status = .notDetermined
+let permissionA = CAPPluginCall(nativeOptions("cap-permission-a01"))
+lifecycle.start(permissionA)
+drain { AVCaptureDevice.permissions.count == 1 }
+let permissionCallback = AVCaptureDevice.permissions.removeFirst()
+let discardPermission = CAPPluginCall()
+lifecycle.discard(discardPermission, id: "cap-permission-a01")
+drain { discardPermission.resolutions.count == 1 }
+expect(permissionA.resolutions.count == 1 && permissionA.resolutions[0]["status"] as? String == "cancelled", "Pending permission cancellation settles start once")
+let permissionB = CAPPluginCall(nativeOptions("cap-permission-b01"))
+lifecycle.start(permissionB)
+drain { AVCaptureDevice.permissions.count == 1 }
+permissionCallback(true)
+_ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+expect(lifecycle.pendingCall === permissionB && lifecycle.bridge?.viewController?.presentations == 0, "Late permission A cannot present or cancel B")
+let discardOld = CAPPluginCall(); lifecycle.discard(discardOld, id: "cap-permission-a01")
+drain { discardOld.resolutions.count == 1 }
+expect(lifecycle.pendingCall === permissionB && permissionB.resolutions.isEmpty, "Late ID-scoped discard cannot cancel B")
+let discardB = CAPPluginCall(); lifecycle.discard(discardB, id: "cap-permission-b01")
+drain { discardB.resolutions.count == 1 }
+AVCaptureDevice.permissions.removeFirst()(true)
+AVCaptureDevice.status = .authorized
+CaptureFiles.queue.suspend()
+let prep = CAPPluginCall(nativeOptions("cap-file-prep-001"))
+lifecycle.start(prep)
+drain { lifecycle.pendingCall === prep }
+let discardPrep = CAPPluginCall(); lifecycle.discard(discardPrep, id: "cap-file-prep-001")
+drain { prep.resolutions.count == 1 }
+CaptureFiles.queue.resume()
+drain { discardPrep.resolutions.count == 1 }
+expect(!FileManager.default.fileExists(atPath: CaptureFiles.folder("cap-file-prep-001").path), "Cancellation cleans queued directory creation")
+expect(lifecycle.bridge?.viewController?.presentations == 0 && prep.resolutions.count == 1, "Queued creation callback cannot present or settle again")
+let active = CAPPluginCall(nativeOptions("cap-active-test-01"))
+lifecycle.start(active)
+drain { lifecycle.activeCapture != nil }
+let oldController = lifecycle.activeCapture!
+let discardActive = CAPPluginCall(); lifecycle.discard(discardActive, id: "cap-active-test-01")
+drain { discardActive.resolutions.count == 1 }
+expect(oldController.aborts == 1 && active.resolutions.count == 1 && lifecycle.pendingCall == nil, "Active cancellation invalidates and settles before delayed dismissal callback")
+let newer = CAPPluginCall(nativeOptions("cap-active-test-02"))
+lifecycle.bridge?.viewController?.presentedViewController = nil
+lifecycle.start(newer)
+drain { lifecycle.pendingCall === newer }
+oldController.completion(["status": "completed"])
+expect(lifecycle.pendingCall === newer && active.resolutions.count == 1 && newer.resolutions.isEmpty, "Late controller completion cannot settle or clear the new ID")
+let discardNewer = CAPPluginCall(); lifecycle.discard(discardNewer, id: "cap-active-test-02")
+drain { discardNewer.resolutions.count == 1 }
+try? CaptureFiles.remove(CaptureFiles.root)
 if failures.isEmpty { print("PASS: \(checks) native capture helper checks (no ARKit/device claim)") }
 else {
     failures.forEach { print("FAIL: \($0)") }

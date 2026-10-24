@@ -33,9 +33,9 @@ async function checked(record: StoredCapture): Promise<StoredCapture> {
 }
 type Change = (rooms: Map<string, StoredCapture>) => void;
 interface Backend { observeGeneration(): Promise<void>; read(roomId: string): Promise<StoredCapture | null>; change(update: Change, reset?: boolean): Promise<void> }
-function storeFromBackend(backend: Backend): CaptureStore {
+function storeFromBackend(backend: Backend, key: (roomId: string) => string = (id) => id): CaptureStore {
   return serializeCaptureStore({
-    read: async (roomId) => { const r = await backend.read(roomId); return r ? checked(r) : null; },
+    read: async (roomId) => { const r = await backend.read(key(roomId)); return r ? checked(r) : null; },
     writeCapture: async (manifest, photos, replaceConfirmed = false, isCurrent, expectedCaptureId) => {
       // Clone before awaiting: caller changes cannot alter queued data or bypass validation.
       const snapshot: StoredCapture = { manifest: structuredClone(manifest), photos: new Map(photos), flags: null };
@@ -45,24 +45,25 @@ function storeFromBackend(backend: Backend): CaptureStore {
       const record = await checked(snapshot);
       await backend.change((rooms) => {
         assertCurrent(isCurrent);
-        if (expectedCaptureId !== undefined && (rooms.get(record.manifest.roomId)?.manifest.captureId ?? null) !== expectedCaptureId) throw new CaptureError('CAPTURE_MISMATCH', 'This walk-through changed. Reload before replacing.');
-        if (rooms.has(record.manifest.roomId) && !replaceConfirmed) throw new CaptureError('INVALID_CAPTURE', 'Confirm before replacing this room walk-through.');
-        rooms.set(record.manifest.roomId, record);
+        const id = key(record.manifest.roomId);
+        if (expectedCaptureId !== undefined && (rooms.get(id)?.manifest.captureId ?? null) !== expectedCaptureId) throw new CaptureError('CAPTURE_MISMATCH', 'This walk-through changed. Reload before replacing.');
+        if (rooms.has(id) && !replaceConfirmed) throw new CaptureError('INVALID_CAPTURE', 'Confirm before replacing this room walk-through.');
+        rooms.set(id, record);
       });
     },
     writeFlags: async (roomId, flags, isCurrent) => { const snapshot = structuredClone(flags); await backend.change((rooms) => {
       assertCurrent(isCurrent);
-      const r = rooms.get(roomId);
+      const id = key(roomId), r = rooms.get(id);
       if (!r) throw new CaptureError('CAPTURE_MISMATCH', 'These flags belong to a different capture.');
       const valid = validateCaptureSuggestions(snapshot, r.manifest);
       if (!valid.ok) throw new CaptureError(valid.code, valid.error);
-      rooms.set(roomId, { ...r, flags: valid.value });
+      rooms.set(id, { ...r, flags: valid.value });
     }); },
     remove: (roomId, captureId, isCurrent) => backend.change((rooms) => {
       assertCurrent(isCurrent);
-      const r = rooms.get(roomId);
+      const id = key(roomId), r = rooms.get(id);
       if (r && r.manifest.captureId !== captureId) throw new CaptureError('CAPTURE_MISMATCH', 'This walk-through changed. Reload before deleting.');
-      rooms.delete(roomId);
+      rooms.delete(id);
     }),
     clear: () => backend.change((rooms) => rooms.clear(), true),
   });
@@ -77,7 +78,11 @@ export function createMemoryCaptureStore(budget = MAX_CAPTURE_STORAGE_BYTES): Ca
   } });
 }
 /** The read/budget check/replacement and durable reset generation share one IDB transaction. */
-export function createIndexedDbCaptureStore(factory: IDBFactory | undefined): CaptureStore {
+export function createIndexedDbCaptureStore(factory: IDBFactory | undefined, scope?: { elderId: string; resetEpoch: string }): CaptureStore {
+  // Namespace only the database key. Manifests/exports retain ordinary room IDs
+  // and contain no account metadata. Legacy string room keys stay classic-only.
+  if (scope && (typeof scope.elderId !== 'string' || !scope.elderId || typeof scope.resetEpoch !== 'string' || !scope.resetEpoch)) throw new CaptureError('STORAGE', 'A current community capture owner and reset epoch are required.');
+  const prefix = scope ? `community:${JSON.stringify([scope.resetEpoch, scope.elderId])}:` : '';
   // A new client adopts its first successful transaction generation. Readonly
   // refreshes never re-arm a client after a reset in another tab.
   let observedGeneration: number | undefined;
@@ -128,7 +133,7 @@ export function createIndexedDbCaptureStore(factory: IDBFactory | undefined): Ca
       };
     }); } finally { db.close(); }
   }
-  return storeFromBackend({ observeGeneration: () => transaction('readonly', null), read: (id) => transaction('readonly', (rooms) => rooms.get(id) ?? null), change: (update, reset) => transaction('readwrite', update, reset) });
+  return storeFromBackend({ observeGeneration: () => transaction('readonly', null), read: (id) => transaction('readonly', (rooms) => rooms.get(id) ?? null), change: (update, reset) => transaction('readwrite', update, reset) }, (id) => prefix + id);
 }
 /** Invalidate immediately; clear waits for already running operations, then removes them. */
 export function serializeCaptureStore(store: CaptureStore): CaptureStore {
@@ -143,9 +148,14 @@ export function serializeCaptureStore(store: CaptureStore): CaptureStore {
   }, writeFlags: (id, f, current) => { const flags = structuredClone(f); return enqueue(() => store.writeFlags(id, flags, current), true); }, remove: (id, captureId, current) => enqueue(() => store.remove(id, captureId, current), true), clear: () => enqueue(() => store.clear()), invalidate: () => { invalidated = true; store.invalidate?.(); } };
 }
 let browserStore: CaptureStore | undefined;
+function browserFactory(): IDBFactory | undefined { try { return globalThis.indexedDB; } catch { return undefined; } }
 export function getCaptureStore(): CaptureStore {
-  if (!browserStore) { let factory: IDBFactory | undefined; try { factory = globalThis.indexedDB; } catch { /* denied */ } browserStore = createIndexedDbCaptureStore(factory); }
+  if (!browserStore) browserStore = createIndexedDbCaptureStore(browserFactory());
   return browserStore;
+}
+/** Call only after authorizing the current actor for this elder. Memoize per view. */
+export function getCommunityCaptureStore(elderId: string, resetEpoch: string): CaptureStore {
+  return createIndexedDbCaptureStore(browserFactory(), { elderId, resetEpoch });
 }
 export async function resetCaptureStorage(store = getCaptureStore()): Promise<{ ok: boolean; message: string }> {
   store.invalidate?.();

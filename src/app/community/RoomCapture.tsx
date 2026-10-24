@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { demoScenario } from '../../data/demo-scenario';
 import type { JobAnalysis, ScanEvidence } from '../../community/types';
 import { scanFlagAnalysis } from '../../community';
 import { useLanguage, useT } from '../../i18n';
 import { catalogText } from '../../i18n/catalog';
 import { captureAvailability, runNativeCapture } from '../../lib/native-capture';
-import { getCaptureStore, type StoredCapture } from '../../lib/capture-storage';
+import { getCommunityCaptureStore, type StoredCapture } from '../../lib/capture-storage';
 import { newCaptureId } from '../../lib/capture-model';
 import { analyzeAndSaveFlags, ondeviceFlagCopy } from '../../lib/ondevice-flags';
 import { capturePrompts, GuidedPhotoTour } from '../CaptureScreens';
@@ -101,14 +101,29 @@ async function thumbnail(blob: Blob): Promise<string> { const image = await crea
 finally {
     image.close();
 } }
-export function RoomCapture({ onDraft, onType }: {
+export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
+    ownerId: string;
+    resetEpoch: string;
     onDraft(a: JobAnalysis, e: ScanEvidence): void;
     onType(): void;
 }) {
     const t = useT(), language = useLanguage(), alive = useRef(true), epoch = useRef(0);
+    const store = useMemo(() => getCommunityCaptureStore(ownerId, resetEpoch), [ownerId, resetEpoch]);
+    const scope = useMemo(() => ({ ownerId, resetEpoch, store }), [ownerId, resetEpoch, store]);
+    const latestScope = useRef(scope), pendingNative = useRef<AbortController | null>(null), photoOperation = useRef<(() => boolean) | null>(null);
+    latestScope.current = scope;
+    function invalidate() { epoch.current++; pendingNative.current?.abort(); pendingNative.current = null; photoOperation.current = null; }
     const [roomId, setRoomId] = useState<string | null>(null), [record, setRecord] = useState<StoredCapture | null>(null), [areas, setAreas] = useState<ReviewArea[]>([]), [phase, setPhase] = useState<'choose' | 'ready' | 'busy' | 'photos' | 'review'>('choose'), [error, setError] = useState(''), [replace, setReplace] = useState(false), [sample, setSample] = useState(false);
-    useEffect(() => { alive.current = true; return () => { alive.current = false; epoch.current++; }; }, []);
-    function guard() { const version = ++epoch.current; return () => alive.current && version === epoch.current; }
+    useEffect(() => {
+        alive.current = true;
+        setRoomId(null); setRecord(null); setAreas([]); setPhase('choose'); setError(''); setReplace(false); setSample(false);
+        return () => { alive.current = false; invalidate(); };
+    }, [scope]);
+    function guard() {
+        if (!alive.current || scope !== latestScope.current) return () => false;
+        invalidate(); const version = epoch.current;
+        return () => alive.current && scope === latestScope.current && version === epoch.current;
+    }
     async function readAreas(saved: StoredCapture, current: () => boolean) { const next: ReviewArea[] = []; for (const flag of saved.flags?.items ?? []) {
         if (flag.status !== 'suggested' || !flag.bestPhotoId)
             continue;
@@ -124,8 +139,8 @@ export function RoomCapture({ onDraft, onType }: {
         setSample(false);
         setPhase('review');
     } }
-    async function selectRoom(id: string) { const current = guard(); setRoomId(id); setAreas([]); setSample(false); setError(''); setRecord(null); setPhase('busy'); try {
-        const saved = await getCaptureStore().read(id);
+    async function selectRoom(id: string) { const current = guard(); if (!current()) return; setRoomId(id); setAreas([]); setSample(false); setError(''); setRecord(null); setPhase('busy'); try {
+        const saved = await store.read(id);
         if (!current())
             return;
         setRecord(saved);
@@ -141,10 +156,15 @@ export function RoomCapture({ onDraft, onType }: {
         }
     } }
     async function analyze(id: string, current: () => boolean) { try {
-        await analyzeAndSaveFlags(id, { isCurrent: current });
+        // Capture replacement is already durable. Retain its identity even when
+        // the optional model step fails, so the next consent targets this save.
+        const durable = await store.read(id);
+        if (!current()) return;
+        setRecord(durable);
+        await analyzeAndSaveFlags(id, { store, isCurrent: current });
         if (!current())
             return;
-        const saved = await getCaptureStore().read(id);
+        const saved = await store.read(id);
         if (saved && current()) {
             setRecord(saved);
             await readAreas(saved, current);
@@ -157,21 +177,26 @@ export function RoomCapture({ onDraft, onType }: {
         }
     } }
     async function start() { if (!roomId)
-        return; const current = guard(); setError(''); setPhase('busy'); try {
+        return; const current = guard(); if (!current()) return; setError(''); setPhase('busy'); try {
+        const controller = new AbortController();
+        pendingNative.current = controller;
         const a = await captureAvailability();
         if (!current())
             return;
         if (!a.arkit) {
+            photoOperation.current = current;
             setPhase('photos');
             return;
         }
-        const outcome = await runNativeCapture({ roomId, roomName: catalogText(t, 'room', roomId), language, prompts: capturePrompts(demoScenario, roomId, t), replaceConfirmed: !!record, expectedCaptureId: record?.manifest.captureId ?? null, isCurrent: current });
+        const outcome = await runNativeCapture({ roomId, roomName: catalogText(t, 'room', roomId), language, prompts: capturePrompts(demoScenario, roomId, t), replaceConfirmed: !!record, expectedCaptureId: record?.manifest.captureId ?? null, store, isCurrent: current, signal: controller.signal });
         if (!current())
             return;
         if (outcome.status === 'completed')
             await analyze(roomId, current);
-        else if (outcome.status === 'unavailable' || outcome.status === 'denied')
+        else if (outcome.status === 'unavailable' || outcome.status === 'denied') {
+            photoOperation.current = current;
             setPhase('photos');
+        }
         else {
             setPhase('ready');
             if (outcome.status !== 'cancelled')
@@ -185,8 +210,8 @@ export function RoomCapture({ onDraft, onType }: {
         }
     } }
     function useSample() {
-        if (!roomId) return;
-        epoch.current++;
+        if (!roomId || !alive.current || scope !== latestScope.current) return;
+        invalidate();
         setError('');
         try {
             // The practice picture belongs to the selected room in this local flow.
@@ -200,8 +225,9 @@ export function RoomCapture({ onDraft, onType }: {
             setPhase('review');
         } catch { setError(t('c.scan.captureFailed')); }
     }
-    return <div className="c-stack"><Heading intro={t('c.scan.body')}>{roomId ? catalogText(t, 'room', roomId) : t('c.scan.title')}</Heading>{!roomId ? <div className="c-room-list">{demoScenario.rooms.map((r) => <Button key={r.id} kind="secondary" icon="room" onClick={() => void selectRoom(r.id)}>{catalogText(t, 'room', r.id)}</Button>)}</div> : <>{phase === 'busy' ? <p role="status">{t('c.scan.checking')}</p> : null}{error ? <p className="c-notice" role="status">{error}</p> : null}{phase === 'photos' ? <GuidedPhotoTour prompts={capturePrompts(demoScenario, roomId, t)} onCancel={() => setPhase('ready')} onSave={async (photos, blobs) => { const current = guard(); setPhase('busy'); try {
-        await getCaptureStore().writeCapture({ format: 'fixlist-room-capture', version: 1, captureId: newCaptureId(), roomId, createdAt: new Date().toISOString(), mode: 'photos', floorY: null, outline: null, doors: [], photos }, blobs, !!record, current, record?.manifest.captureId ?? null);
+    const photoCurrent = photoOperation.current;
+    return <div className="c-stack"><Heading intro={t('c.scan.body')}>{roomId ? catalogText(t, 'room', roomId) : t('c.scan.title')}</Heading>{!roomId ? <div className="c-room-list">{demoScenario.rooms.map((r) => <Button key={r.id} kind="secondary" icon="room" onClick={() => void selectRoom(r.id)}>{catalogText(t, 'room', r.id)}</Button>)}</div> : <>{phase === 'busy' ? <p role="status">{t('c.scan.checking')}</p> : null}{error ? <p className="c-notice" role="status">{error}</p> : null}{phase === 'photos' ? <GuidedPhotoTour prompts={capturePrompts(demoScenario, roomId, t)} onCancel={() => { if (photoCurrent?.()) { invalidate(); setPhase('ready'); } }} onSave={async (photos, blobs) => { if (!photoCurrent?.()) return; const current = guard(); if (!current()) return; setPhase('busy'); try {
+        await store.writeCapture({ format: 'fixlist-room-capture', version: 1, captureId: newCaptureId(), roomId, createdAt: new Date().toISOString(), mode: 'photos', floorY: null, outline: null, doors: [], photos }, blobs, !!record, current, record?.manifest.captureId ?? null);
         if (current())
             await analyze(roomId, current);
     }
@@ -210,5 +236,5 @@ export function RoomCapture({ onDraft, onType }: {
             setError(t('c.scan.captureFailed'));
             setPhase('ready');
         }
-    } }}/> : null}{phase === 'review' ? <><h2>{t('c.scan.review')}</h2><p className="c-small">{t(sample ? 'c.scan.sampleNote' : 'c.scan.unverified')}</p>{areas.length ? areas.map((area) => <article className="c-review-area" key={area.evidence.flagId}><EvidencePhoto evidence={area.evidence} caption={false}/><p>{t('c.scan.question', { question: area.question })}</p><Button kind={areas.length === 1 ? 'primary' : 'secondary'} onClick={() => onDraft(scanFlagAnalysis(area.checklistItemId, area.evidence.label, language), area.evidence)}>{t('c.scan.ask')}</Button></article>) : <><p>{t('c.scan.empty')}</p><Button onClick={onType}>{t('c.home.type')}</Button></>}</> : null}{phase === 'ready' ? <Button icon="room" onClick={() => record ? setReplace(true) : void start()}>{t('c.scan.start')}</Button> : null}{phase !== 'busy' ? <Button kind="secondary" onClick={useSample}>{t('c.scan.sample')}</Button> : null}<Button kind="quiet" onClick={() => { epoch.current++; setRoomId(null); setPhase('choose'); setError(''); }}>{t('c.scan.restart')}</Button></>}<p className="c-small">{t('c.scan.privacy')}</p>{replace ? <Sheet title={t('c.scan.start')} onClose={() => setReplace(false)}><p>{t('c.scan.replace')}</p><Button onClick={() => { setReplace(false); void start(); }}>{t('c.scan.replaceYes')}</Button></Sheet> : null}</div>;
+    } }}/> : null}{phase === 'review' ? <><h2>{t('c.scan.review')}</h2><p className="c-small">{t(sample ? 'c.scan.sampleNote' : 'c.scan.unverified')}</p>{areas.length ? areas.map((area) => <article className="c-review-area" key={area.evidence.flagId}><EvidencePhoto evidence={area.evidence} caption={false}/><p>{t('c.scan.question', { question: area.question })}</p><Button kind={areas.length === 1 ? 'primary' : 'secondary'} onClick={() => { if (alive.current && scope === latestScope.current) onDraft(scanFlagAnalysis(area.checklistItemId, area.evidence.label, language), area.evidence); }}>{t('c.scan.ask')}</Button></article>) : <><p>{t('c.scan.empty')}</p><Button onClick={onType}>{t('c.home.type')}</Button></>}</> : null}{phase === 'ready' ? <Button icon="room" onClick={() => record ? setReplace(true) : void start()}>{t('c.scan.start')}</Button> : null}{phase !== 'busy' ? <Button kind="secondary" onClick={useSample}>{t('c.scan.sample')}</Button> : null}<Button kind="quiet" onClick={() => { invalidate(); setRoomId(null); setPhase('choose'); setError(''); }}>{t('c.scan.restart')}</Button></>}<p className="c-small">{t('c.scan.privacy')}</p>{replace ? <Sheet title={t('c.scan.start')} onClose={() => setReplace(false)}><p>{t('c.scan.replace')}</p><Button onClick={() => { setReplace(false); void start(); }}>{t('c.scan.replaceYes')}</Button></Sheet> : null}</div>;
 }

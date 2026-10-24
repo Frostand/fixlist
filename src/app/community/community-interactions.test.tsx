@@ -51,14 +51,20 @@ vi.mock('react', async importOriginal => {
                 driver.effects.push(() => { driver.cleanups[i]?.(); const cleanup = effect(); driver.cleanups[i] = typeof cleanup === 'function' ? cleanup : () => {}; });
             }
         },
-        useMemo<T>(factory: () => T, deps: readonly unknown[]) { return runtime.active ? factory() : actual.useMemo(factory, deps); },
+        useMemo<T>(factory: () => T, deps: readonly unknown[]) {
+            const driver = runtime.active;
+            if (!driver) return actual.useMemo(factory, deps);
+            const i = driver.cursor++, prior = driver.values[i] as { deps: readonly unknown[]; value: T } | undefined;
+            if (!prior || deps.some((value, index) => !Object.is(value, prior.deps[index]))) driver.values[i] = { deps, value: factory() };
+            return (driver.values[i] as { value: T }).value;
+        },
     };
 });
 vi.mock('../../i18n', async importOriginal => {
     const actual = await importOriginal<typeof import('../../i18n')>();
     return { ...actual, useLanguage: () => runtime.language, useT: () => Object.assign((key: import('../../i18n').MessageKey, values?: import('../../i18n').Values) => actual.translate(runtime.language, key, values), { language: runtime.language }) };
 });
-vi.mock('../../lib/capture-storage', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/capture-storage')>(), getCaptureStore: () => ({ read: runtime.readCapture }) }));
+vi.mock('../../lib/capture-storage', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/capture-storage')>(), getCaptureStore: () => ({ read: runtime.readCapture }), getCommunityCaptureStore: () => ({ read: runtime.readCapture }) }));
 vi.mock('./NearbyMap', () => ({ default: () => null }));
 function driver(render: () => ReactNode) {
     const state: Driver = { cursor: 0, values: [], effects: [], cleanups: [] };
@@ -187,7 +193,7 @@ describe('community polish interactions', () => {
         runtime.readCapture.mockResolvedValue(null);
         const context = new Proxy({}, { get: () => () => {}, set: () => true });
         vi.stubGlobal('document', { createElement: () => ({ getContext: () => context, toDataURL: () => 'data:image/jpeg;base64,/9j/2Q==' }) });
-        const onDraft = vi.fn(), view = driver(() => RoomCapture({ onDraft, onType: () => {} }));
+        const onDraft = vi.fn(), view = driver(() => RoomCapture({ ownerId: 'elder-margaret', resetEpoch: 'test-reset', onDraft, onType: () => {} }));
         press(view.render(), 'Hallway'); await settle(); press(view.render(), 'Use the sample room photos');
         const review = view.render(); const photo = nodes(review, EvidencePhoto)[0]!;
         expect(photo.props.caption).toBe(false); expect(photo.props.evidence).toMatchObject({ roomId: 'hallway', point: { u: .23, v: .92 } });

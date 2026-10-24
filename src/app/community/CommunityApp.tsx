@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import * as domain from '../../community';
+import { canManageElder } from '../../community/commands';
 import type { Account, AccountRole, Language, SignInProvider } from '../../community/types';
 import { I18nProvider, useT } from '../../i18n';
 import { discardAllNativeCaptures } from '../../lib/native-capture';
@@ -107,8 +108,12 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
             if (result.ok) goCommunity('help');
             return result.ok;
         }}/> : <Missing onHome={() => goCommunity(mainRoute)}/>;
-    else if (screen === 'rooms')
-        content = account.role === 'elder' ? <Suspense fallback={<p role="status">{t('c.loading')}</p>}><RoomCapture key={account.id} onDraft={(analysis, evidence) => draftJob({ analysis, source: 'scan', text: evidence.label, evidence: [evidence] })} onType={() => goCommunity('type')}/></Suspense> : <Missing onHome={() => goCommunity(mainRoute)}/>;
+    else if (screen === 'rooms') {
+        const ownerId = domain.currentAccount(state)?.id === account.id
+            ? (account.role === 'elder' ? [account.id] : state.families.find(f => f.accountId === account.id)?.elderIds ?? []).find(id => canManageElder(state, account.id, id))
+            : undefined;
+        content = ownerId && c.resetEpoch ? <Suspense fallback={<p role="status">{t('c.loading')}</p>}><RoomCapture key={JSON.stringify([account.id, c.resetEpoch, ownerId])} ownerId={ownerId} resetEpoch={c.resetEpoch} onDraft={(analysis, evidence) => draftJob({ analysis, source: 'scan', text: evidence.label, evidence: [evidence] })} onType={() => goCommunity('type')}/></Suspense> : <Missing onHome={() => goCommunity(mainRoute)}/>;
+    }
     else if (screen === 'home')
         content = elder ? <ElderHome account={account} elder={elder} state={state} jobs={elderJobs} onNavigate={goCommunity} onDraft={draftJob}/> : <><Heading>{t('c.family.title', { name: account.firstName })}</Heading><p>{t('c.family.noLink')}</p><Button onClick={() => { c.run(domain.signOut); setNotice(''); goCommunity('signin'); }}>{t('c.settings.switch')}</Button></>;
     else if (screen === 'help')
