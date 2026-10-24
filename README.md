@@ -1,21 +1,18 @@
 # FixList
 
-FixList is a demo app that connects older adults and their families with volunteers for household jobs. It uses fictional accounts and local data, with no live backend and no real Apple sign-in.
+FixList explores how older adults and their families can describe household jobs, review requests, and coordinate help from volunteers. The local demo walks through requesting a job, accepting it, tracking progress, and confirming completion.
 
-## How it works
+Choose **demo mode** for fictional accounts and local data, including two blank starting profiles: older adult/requester and volunteer. On a compatible iPhone, optional guided room photos, an outline, and a silent clip up to 30 seconds can support a request. Photos and outlines can be exported or shared when you choose; video stays local. Experimental AI suggestions use photos, not video, and require human review.
 
-1. **Request:** A requester describes the job by typing, speaking, or capturing the room.
-2. **Review and post:** The requester checks the request and posts it.
-3. **Volunteer:** A volunteer accepts the job and tracks its progress.
-4. **Confirm:** The requester confirms the job is done.
+The new Supabase auth foundation provides account sign-in and private profile setup when configured. Real community jobs, messages, volunteer hours, and account-linked captures are not implemented; this is not yet a full community service.
 
-## Built with
+## Stack
 
-React, TypeScript, Vite, Capacitor, Swift, ARKit, Core ML, Three.js/Spark, Leaflet, and Vitest. No paid API keys are needed.
+React, TypeScript, Vite, Capacitor, Swift, ARKit, Core ML, Supabase Auth, Three.js/Spark, Leaflet, and Vitest. The local demo needs no paid API keys.
 
-## Run it yourself
+## Run locally
 
-You need Node 24 (24.18.0 or newer, below 25) and npm 11.
+Use Node 24.18+ within 24.x and npm 11.
 
 ```sh
 GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/Frostand/fixlist.git
@@ -24,13 +21,13 @@ npm run setup
 npm run dev
 ```
 
-Open <http://127.0.0.1:5173>. Setup checks your versions and installs the locked dependencies without downloading the native model. On the web, the writing helper uses simple rules and templates.
+Open <http://127.0.0.1:5173> and choose demo mode. Setup installs locked dependencies without downloading the native model. The web writing helper uses rules and templates. Run `npm run typecheck`, `npm test`, and `npm run build` to check your copy.
 
-To check your copy, run `npm run typecheck`, `npm test`, and `npm run build`. `npm run test:setup` is an optional check of the setup script.
+For real-account setup, copy `.env.example` to ignored `.env.local` and supply `VITE_SUPABASE_URL` and the public `VITE_SUPABASE_PUBLISHABLE_KEY` from your own project. Keep provider flags false until configured; never put provider secrets or service-role keys in the client. Follow the [Supabase setup guide](docs/supabase-auth-setup.md) for the migration, email/redirect settings, provider configuration and verification limits.
 
-## Optional: iPhone app
+## Optional iPhone app
 
-You need a Mac with full Xcode (opened once so first-launch setup is complete) and [Git LFS](https://git-lfs.com).
+Use a Mac with full Xcode (opened once to finish setup) and [Git LFS](https://git-lfs.com).
 
 ```sh
 npm run setup -- --ios
@@ -38,8 +35,6 @@ npm run ios:sync
 npx cap open ios
 ```
 
-In Xcode, choose your signing team and device, then run. Setup downloads about 181 MB of model weights from GitHub, and builds verify them. If an older build has a bad model, use **Product > Clean Build Folder**.
+Choose your signing team and device in Xcode, then run. Setup downloads about 181 MB of model weights; sync and native builds verify them. Apple's writing/chat model needs a supported device on iOS 26+ with the model and language available. Capture and voice need compatible hardware and permissions. Native auth is registered, but Apple capability/provisioning and live provider behavior still need configuration and signed-iPhone testing. A build or Simulator run does not qualify real-device behavior.
 
-The photo-relevance model comes through Git LFS. Apple's writing and chat model is provided by the operating system, so it needs a supported device on iOS 26 or newer with the model and language available. Capture and voice need a compatible device and permissions. A successful build or Simulator run does not confirm behavior on a real iPhone.
-
-`npm run ios:demo` and the Mac research scripts need extra private data and model setup. The main demo does not need them.
+`npm run ios:demo` and the Mac research scripts require extra private data and model setup; the main demo does not.
