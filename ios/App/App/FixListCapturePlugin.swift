@@ -18,11 +18,11 @@ enum CaptureUIPreview {
         guard let index = args.firstIndex(of: "-FixListCaptureUIPreview"), index + 1 < args.count else { return false }
         return args[index + 1] == "1"
     }
-    /// Optional `-FixListCaptureUIPreviewState N` (0-4) starts the preview at a given state for screenshots.
+    /// Optional `-FixListCaptureUIPreviewState N` (0-6) starts the preview at a given state for screenshots.
     static var initialState: Int {
         let args = ProcessInfo.processInfo.arguments
         guard let index = args.firstIndex(of: "-FixListCaptureUIPreviewState"), index + 1 < args.count,
-              let value = Int(args[index + 1]), (0..<5).contains(value) else { return 0 }
+              let value = Int(args[index + 1]), (0..<7).contains(value) else { return 0 }
         return value
     }
 }
@@ -71,7 +71,19 @@ struct CaptureOptions {
         "retake": "Retake", "skip": "Skip", "next": "Next", "done": "Done",
         "cancel": "Cancel", "cancelConfirmTitle": "Stop this walk-through?",
         "cancelConfirmMessage": "The photos from this walk-through will be removed.",
-        "cancelConfirmStop": "Stop and remove photos", "cancelConfirmKeep": "Keep going"
+        "cancelConfirmStop": "Stop and remove photos", "cancelConfirmKeep": "Keep going",
+        "recordVideo": "Record video",
+        "stopVideo": "Stop recording",
+        "useVideo": "Use video",
+        "retakeVideo": "Retake video",
+        "videoRecording": "Recording {seconds} / 30 s",
+        "videoReview": "Review video",
+        "videoSaved": "Video saved",
+        "videoFailed": "The video could not be saved. Try again or take a photo.",
+        "videoStopped": "Recording was interrupted. Your saved photos and video are kept.",
+        "videoNeedsPhoto": "Take at least one photo to finish the room scan.",
+        "videoLimit": "One silent video, up to 30 seconds.",
+        "videoCancel": "Stop this scan and delete its photos and video?"
     ]
 
     #if DEBUG && targetEnvironment(simulator)
@@ -126,7 +138,7 @@ enum CaptureFiles {
     static let queue = DispatchQueue(label: "org.fixlist.capture-files", qos: .userInitiated)
     static var root: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("fixlist-captures", isDirectory: true)
+            .appendingPathComponent("fixlist-captures", isDirectory: true).resolvingSymlinksInPath()
     }
     static func validId(_ id: String) -> Bool {
         id.range(of: "\\Acap-[a-z0-9-]{8,40}\\z", options: .regularExpression) != nil

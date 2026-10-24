@@ -7,13 +7,15 @@ It never opens a capture, private photo, Simulator, or physical device.
 """
 from pathlib import Path
 import re
+import os
 import subprocess
 import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "ios/App/App/FixListCapturePlugin.swift").read_text()
-CONTROLLER = (ROOT / "ios/App/App/FixListCaptureViewController.swift").read_text()
+CONTROLLER = Path(os.environ.get("FIXLIST_NATIVE_CONTROLLER", ROOT / "ios/App/App/FixListCaptureViewController.swift")).read_text()
+VIDEO = (ROOT / "ios/App/App/CaptureVideoWriter.swift").read_text()
 
 
 def declaration(marker: str, source: str = SOURCE) -> str:
@@ -41,6 +43,13 @@ late_photo = declaration("if generation != self.worldGeneration", CONTROLLER)
 stubs = (ROOT / "scripts/native-capture-stubs.swift").read_text() + "\n" + (ROOT / "scripts/native-capture-tests-stubs.swift").read_text()
 lifecycle_methods = "\n".join(declaration(marker).replace("@objc func", "func").replace("private func", "func")
                               for marker in ("@objc func start(", "private func resolveStart(", "private func presentCapture(", "private func discard(_ call: CAPPluginCall, id:"))
+baseline = subprocess.check_output(["git", "show", "d830860:ios/App/App/FixListCaptureViewController.swift"], cwd=ROOT, text=True) if os.environ.get("FIXLIST_NATIVE_BASELINE") else None
+video_methods = "\n".join(declaration(marker, baseline if baseline and marker not in ("private func discardActiveVideo(", "private func pauseCaptureForBackground()", "@objc private func useVideoTapped()") else CONTROLLER).replace("@objc private func", "func").replace("private func", "func")
+                          for marker in ("@objc private func skipTapped()", "private func completeCapture()", "func abort()",
+                                         "private func finish(", "private func discardActiveVideo(", "private func pauseCaptureForBackground()", "@objc private func useVideoTapped()",
+                                         "func sessionWasInterrupted(", "func session(_ session: ARSession, didFailWithError"))
+stubs = stubs.replace("/* PRODUCTION_VIDEO_LIFECYCLE_METHODS */", video_methods)
+helpers += "\n" + declaration("struct CaptureVideo", VIDEO)
 stubs = stubs.replace("/* PRODUCTION_PLUGIN_METHODS */", lifecycle_methods)
 stubs = stubs.replace("/* PRODUCTION_VALID_ID */", declaration("static func validId("))
 stubs = stubs.replace("/* PRODUCTION_RESTART_METHODS */", restart_methods)
@@ -61,6 +70,6 @@ with tempfile.TemporaryDirectory(prefix="fixlist-native-tests-") as directory:
                     "-target", "arm64-apple-ios15.0-simulator", str(sdk_source)], check=True)
     source = Path(directory) / "main.swift"
     binary = Path(directory) / "native-capture-tests"
-    source.write_text("import Foundation\nimport simd\n" + helpers + "\n" + stubs + "\n" + tests)
+    source.write_text('import Foundation\nimport simd\nimport os.log\nlet captureLog = OSLog(subsystem: "fixlist.test", category: "capture")\n' + helpers + "\n" + stubs + "\n" + tests)
     subprocess.run(["xcrun", "swiftc", str(source), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

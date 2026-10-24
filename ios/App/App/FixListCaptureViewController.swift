@@ -1,4 +1,5 @@
 import ARKit
+import AVKit
 import os.log
 import RealityKit
 import UIKit
@@ -40,6 +41,41 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private var retakeButton = UIButton()
     private var skipButton = UIButton()
     private var nextButton = UIButton()
+    private enum VideoState { case idle, recording, finishing, reviewing, saving }
+    private var videoState = VideoState.idle
+    private var videoGeneration: UUID?
+    private var videoCommitPending = false
+    private var acceptedVideo: CaptureVideo?
+    private var candidateVideo: CaptureVideo?
+    private var videoNotice: String?
+    private var videoTimer: Timer?
+    private var videoStarted = 0.0
+    private let videoControls = UIStackView()
+    private let videoSpinner = UIActivityIndicatorView(style: .medium)
+    private var recordVideoButton = UIButton()
+    private var stopVideoButton = UIButton()
+    private var reviewVideoButton = UIButton()
+    private var retakeVideoButton = UIButton()
+    private var useVideoButton = UIButton()
+    private lazy var videoWriter = CaptureVideoWriter(directory: CaptureFiles.folder(options.captureId)) { [weak self] id, event in
+        guard let self = self, !self.finished, self.videoGeneration == id else { return }
+        switch event {
+        case .finishing:
+            self.videoState = .finishing
+            self.videoTimer?.invalidate()
+        case .review(let video):
+            self.videoState = .reviewing
+            self.candidateVideo = video
+            self.videoNotice = nil
+        case .failed:
+            self.videoState = .idle
+            self.videoGeneration = nil
+            self.candidateVideo = nil
+            self.videoNotice = self.text("videoFailed")
+            self.videoTimer?.invalidate()
+        }
+        self.refresh()
+    }
     private var aimPosition: SIMD2<Float>?
     private var aimSnapsToFirst = false
     #if DEBUG && targetEnvironment(simulator)
@@ -94,7 +130,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     override var shouldAutorotate: Bool { false }
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
-    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+    deinit { videoTimer?.invalidate(); observers.forEach(NotificationCenter.default.removeObserver) }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -141,11 +177,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         let center = NotificationCenter.default
         observers = [
             center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                guard let self = self, !self.finished else { return }
-                self.interrupted = true
-                self.trackingNormal = false
-                self.arView.session.pause()
-                self.refresh()
+                self?.pauseCaptureForBackground()
             },
             center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
                 guard let self = self, !self.finished, self.view.window != nil else { return }
@@ -370,7 +402,24 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         pin(shutterDisc, to: shutterButton, inset: 7)
         shutterButton.accessibilityIdentifier = "capture.shutter"
         skipButton = button("skip", action: #selector(skipTapped))
-        layoutCameraControls(in: photoControls, leading: skipButton, center: shutterButton)
+        recordVideoButton = button("recordVideo", symbol: "video", action: #selector(recordVideoTapped))
+        recordVideoButton.accessibilityIdentifier = "capture.recordVideo"
+        recordVideoButton.accessibilityHint = text("videoLimit")
+        layoutCameraControls(in: photoControls, leading: skipButton, center: shutterButton, trailing: recordVideoButton)
+        stopVideoButton = button("stopVideo", action: #selector(stopVideoTapped))
+        reviewVideoButton = button("videoReview", action: #selector(reviewVideoTapped))
+        retakeVideoButton = button("retakeVideo", action: #selector(retakeVideoTapped))
+        useVideoButton = button("useVideo", action: #selector(useVideoTapped))
+        useVideoButton.accessibilityIdentifier = "capture.useVideo"
+        stopVideoButton.accessibilityIdentifier = "capture.stopVideo"
+        videoSpinner.color = .white
+        videoSpinner.hidesWhenStopped = true
+        videoControls.addArrangedSubview(videoSpinner)
+        videoControls.axis = .horizontal
+        videoControls.spacing = 6
+        videoControls.distribution = .fillEqually
+        pin(videoControls, to: bottomBar.contentView, inset: 10)
+        [stopVideoButton, reviewVideoButton, retakeVideoButton, useVideoButton].forEach(videoControls.addArrangedSubview)
 
         retakeButton = button("retake", action: #selector(retakeTapped))
         nextButton = button("usePhoto", action: #selector(nextTapped))
@@ -443,6 +492,16 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
                                 state: doorMode ? .on : .off) { [weak self] _ in self?.doorTapped() }
             actions.append(door)
         }
+        if isVideoIdle, !saving, pendingPhoto == nil, !photos.isEmpty {
+            actions.append(UIAction(title: text("done"), image: UIImage(systemName: "checkmark")) { [weak self] _ in
+                self?.completeCapture()
+            })
+        }
+        if acceptedVideo != nil {
+            actions.append(UIAction(title: text("videoReview"), image: UIImage(systemName: "play.rectangle")) { [weak self] _ in
+                self?.reviewVideoTapped()
+            })
+        }
         menuButton.menu = UIMenu(children: actions)
     }
 
@@ -457,7 +516,11 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         let progress = text("photoProgress").replacingOccurrences(of: "{current}", with: String(promptIndex + 1))
             .replacingOccurrences(of: "{total}", with: String(prompts.count))
         let status: String
-        if interrupted { status = text("interrupted") }
+        if videoState == .recording {
+            status = text("videoRecording").replacingOccurrences(of: "{seconds}", with: String(min(30, Int(ProcessInfo.processInfo.systemUptime - videoStarted))))
+        } else if let notice = videoNotice { status = notice }
+        else if videoState == .finishing || videoState == .reviewing || videoState == .saving { status = text("videoReview") }
+        else if interrupted { status = text("interrupted") }
         else if resetNotice && !trackingNormal { status = text("relocalizeFailed") }
         else if step == .floor && !relocalizing { status = text("findFloor") }
         else if !trackingNormal { status = text("trackingLimited") }
@@ -478,8 +541,20 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         promptLabel.isHidden = !isPhotos
         if isPhotos { promptLabel.text = prompts[promptIndex].text }
         outlineControls.isHidden = isPhotos
-        photoControls.isHidden = !isPhotos || hasPhoto
-        reviewControls.isHidden = !isPhotos || !hasPhoto
+        photoControls.isHidden = !isPhotos || hasPhoto || !isVideoIdle
+        reviewControls.isHidden = !isPhotos || !hasPhoto || !isVideoIdle
+        videoControls.isHidden = isVideoIdle
+        if videoState == .finishing || videoState == .saving { videoSpinner.startAnimating() }
+        else { videoSpinner.stopAnimating() }
+        videoSpinner.isHidden = videoState != .finishing && videoState != .saving
+        stopVideoButton.isHidden = videoState != .recording && videoState != .finishing
+        stopVideoButton.isEnabled = videoState == .recording
+        reviewVideoButton.isHidden = videoState != .reviewing && videoState != .saving
+        retakeVideoButton.isHidden = reviewVideoButton.isHidden
+        useVideoButton.isHidden = reviewVideoButton.isHidden
+        [reviewVideoButton, retakeVideoButton, useVideoButton].forEach { $0.isEnabled = videoState == .reviewing }
+        recordVideoButton.isEnabled = trackingNormal && !interrupted && !saving && isVideoIdle
+        recordVideoButton.alpha = recordVideoButton.isEnabled ? 1 : 0.45
         countLabel.isHidden = !isOutline
         undoButton.isEnabled = isOutline && !history.isEmpty
         closeButton.isEnabled = isOutline && corners.count >= 3 && trackingNormal && !interrupted
@@ -487,11 +562,11 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             (doorMode ? doors.count < 8 : corners.count < 32 || aimSnapsToFirst)
         addButton.alpha = addButton.isEnabled ? 1 : 0.45
         addButton.accessibilityLabel = text(doorMode ? "markDoor" : aimSnapsToFirst ? "closeOutline" : "addCorner")
-        shutterButton.isEnabled = trackingNormal && !interrupted && !saving
+        shutterButton.isEnabled = trackingNormal && !interrupted && !saving && isVideoIdle
         shutterButton.alpha = shutterButton.isEnabled ? 1 : 0.45
-        retakeButton.isEnabled = !saving
-        skipButton.isEnabled = !saving
-        nextButton.isEnabled = !saving && hasPhoto
+        retakeButton.isEnabled = !saving && isVideoIdle
+        skipButton.isEnabled = !saving && isVideoIdle
+        nextButton.isEnabled = !saving && isVideoIdle && hasPhoto
         let nextKey = promptIndex == prompts.count - 1 ? "done" : "usePhoto"
         nextButton.configuration?.title = text(nextKey)
         nextButton.accessibilityLabel = text(nextKey)
@@ -664,11 +739,105 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         UIAccessibility.post(notification: .screenChanged, argument: promptLabel)
     }
 
+    private func pauseCaptureForBackground() {
+        guard !finished else { return }
+        discardActiveVideo(showInterrupted: true)
+        interrupted = true
+        trackingNormal = false
+        arView.session.pause()
+        refresh()
+    }
+
+    private var isVideoIdle: Bool { videoState == .idle && !videoCommitPending }
+
+    @objc private func recordVideoTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { setUIPreviewState(5); return }
+        #endif
+        guard !finished, step == .photos, isVideoIdle, !saving, pendingPhoto == nil,
+              trackingNormal, !interrupted else { return }
+        let id = UUID()
+        videoGeneration = id
+        candidateVideo = nil
+        videoNotice = nil
+        videoState = .recording
+        videoStarted = ProcessInfo.processInfo.systemUptime
+        videoWriter.start(generation: id, takenAt: CaptureFiles.timestamp())
+        videoTimer?.invalidate()
+        videoTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.refresh() }
+        refresh()
+    }
+    @objc private func stopVideoTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { setUIPreviewState(6); return }
+        #endif
+        guard videoState == .recording, let id = videoGeneration else { return }
+        videoState = .finishing
+        videoTimer?.invalidate()
+        videoWriter.stop(generation: id)
+        refresh()
+    }
+    @objc private func reviewVideoTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { return } // Layout only: no file/player/camera assets.
+        #endif
+        guard !finished, presentedViewController == nil, let clip = candidateVideo ?? acceptedVideo else { return }
+        let player = AVPlayerViewController()
+        player.player = AVPlayer(url: clip.url)
+        present(player, animated: true) // System controls; no automatic playback.
+    }
+    @objc private func retakeVideoTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { setUIPreviewState(5); return }
+        #endif
+        guard videoState == .reviewing else { return }
+        discardActiveVideo(showInterrupted: false)
+        recordVideoTapped()
+    }
+    @objc private func useVideoTapped() {
+        #if DEBUG && targetEnvironment(simulator)
+        if CaptureUIPreview.enabled { setUIPreviewState(3); return }
+        #endif
+        guard !finished, videoState == .reviewing, let id = videoGeneration else { return }
+        videoState = .saving
+        videoCommitPending = true
+        refresh()
+        videoWriter.use(generation: id) { [weak self] result in
+            guard let self = self, !self.finished else { return }
+            let stillCurrent = self.videoGeneration == id
+            self.videoCommitPending = false
+            switch result {
+            case .success(let video):
+                self.acceptedVideo = video
+                self.candidateVideo = nil
+                self.videoGeneration = nil
+                self.videoState = .idle
+                self.videoNotice = self.text(stillCurrent ? "videoSaved" : "videoStopped")
+            case .failure:
+                self.videoState = stillCurrent ? .reviewing : .idle
+                if stillCurrent { self.videoNotice = self.text("videoFailed") }
+            }
+            self.refresh()
+        }
+    }
+    private func discardActiveVideo(showInterrupted: Bool) {
+        videoTimer?.invalidate()
+        videoTimer = nil
+        let hadCandidate = videoGeneration != nil
+        if hadCandidate { videoWriter.discard() }
+        videoGeneration = nil
+        candidateVideo = nil
+        // A committed replacement may be awaiting its main-thread callback. Wait for its
+        // result before allowing Done, so the sidecar can never describe the old bytes.
+        videoState = videoCommitPending ? .saving : .idle
+        if hadCandidate && showInterrupted { videoNotice = text("videoStopped") }
+    }
+
     @objc private func shutterTapped() {
         #if DEBUG && targetEnvironment(simulator)
         if CaptureUIPreview.enabled { setUIPreviewState(4, prompt: promptIndex); return }
         #endif
-        guard step == .photos, trackingNormal, !interrupted, !saving, pendingPhoto == nil, !finished,
+        guard step == .photos, trackingNormal, !interrupted, !saving, isVideoIdle, pendingPhoto == nil, !finished,
               let frame = arView.session.currentFrame, case .normal = frame.camera.trackingState else { return }
         saving = true
         let generation = worldGeneration
@@ -708,16 +877,21 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         #if DEBUG && targetEnvironment(simulator)
         if CaptureUIPreview.enabled { setUIPreviewState(3, prompt: promptIndex); return }
         #endif
-        guard !saving else { return }; removePendingPhoto(); refresh()
+        guard !saving, isVideoIdle else { return }; removePendingPhoto(); refresh()
     }
     @objc private func skipTapped() {
         #if DEBUG && targetEnvironment(simulator)
         if CaptureUIPreview.enabled { advanceUIPreviewPhoto(); return }
         #endif
-        guard !saving else { return }
+        guard !saving, isVideoIdle, !finished else { return }
         // Skipping the final prompt with no retained photos closes as a benign
         // cancellation. Never emit an empty/invalid completed manifest.
         if promptIndex == prompts.count - 1 && photos.isEmpty {
+            if acceptedVideo != nil {
+                videoNotice = text("videoNeedsPhoto")
+                refresh()
+                return
+            }
             removePendingPhoto()
             abort()
             return
@@ -729,7 +903,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         #if DEBUG && targetEnvironment(simulator)
         if CaptureUIPreview.enabled { advanceUIPreviewPhoto(); return }
         #endif
-        guard !saving, !finished else { return }
+        guard !saving, isVideoIdle, !finished else { return }
         if let photo = pendingPhoto {
             photos.append(photo)
             pendingPhoto = nil
@@ -746,22 +920,29 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     }
 
     private func completeCapture() {
-        guard !photos.isEmpty, photos.count <= 40 else { return }
+        guard !finished, !saving, isVideoIdle, pendingPhoto == nil, !photos.isEmpty, photos.count <= 40 else { return }
         let outline: Any = corners.count >= 3 ? ["closed": closed, "points": corners.map { [Double($0.x), Double($0.y)] }] : NSNull()
-        let result: [String: Any] = [
+        var result: [String: Any] = [
             "format": "fixlist-room-capture", "version": 1, "captureId": options.captureId,
             "roomId": options.roomId, "createdAt": createdAt, "mode": "arkit",
             "floorY": floorY.map { Double($0) } as Any? ?? NSNull(), "outline": outline,
             "doors": doors.map { [Double($0.x), Double($0.y)] }, "photos": photos.map(\.json),
             "files": Dictionary(uniqueKeysWithValues: photos.map { ($0.photoId, $0.url.absoluteString) })
         ]
+        if let video = acceptedVideo {
+            result["videos"] = ["format": "fixlist-capture-videos", "version": 1,
+                                "captureId": options.captureId, "roomId": options.roomId, "clips": [video.json]]
+            var files = Dictionary(uniqueKeysWithValues: photos.map { ($0.photoId, $0.url.absoluteString) })
+            files["v01"] = video.url.absoluteString
+            result["files"] = files
+        }
         finish(["status": "completed", "capture": result], keepFiles: true)
     }
 
     @objc private func cancelTapped() {
         guard !finished else { return }
-        guard !photos.isEmpty || pendingPhoto != nil || saving else { abort(); return }
-        let alert = UIAlertController(title: text("cancelConfirmTitle"), message: text("cancelConfirmMessage"), preferredStyle: .alert)
+        guard !photos.isEmpty || pendingPhoto != nil || saving || acceptedVideo != nil || !isVideoIdle else { abort(); return }
+        let alert = UIAlertController(title: text("cancelConfirmTitle"), message: text("videoCancel"), preferredStyle: .alert)
         let keep = UIAlertAction(title: text("cancelConfirmKeep"), style: .cancel)
         keep.accessibilityLabel = text("cancelConfirmKeep")
         alert.addAction(keep)
@@ -774,6 +955,8 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private func finish(_ outcome: [String: Any], keepFiles: Bool) {
         guard !finished else { return }
         finished = true
+        // This must precede UIKit dismissal and the plugin's synchronous discard enqueue.
+        discardActiveVideo(showInterrupted: false)
         aimOverlay.isEnabled = false
         coaching.setActive(false, animated: false)
         arView.session.pause()
@@ -791,9 +974,14 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             if keepFiles { self.completion(outcome) }
             else {
                 CaptureFiles.queue.async {
+                    var result = outcome
                     do { try CaptureFiles.remove(CaptureFiles.folder(self.options.captureId)) }
-                    catch { os_log("FixListCapture cancelled cache cleanup failed", log: captureLog, type: .error) }
-                    DispatchQueue.main.async { self.completion(outcome) }
+                    catch {
+                        result["cleanupFailed"] = true
+                        os_log("FixListCapture cancelled cache cleanup failed", log: captureLog, type: .error)
+                    }
+                    let delivered = result
+                    DispatchQueue.main.async { self.completion(delivered) }
                 }
             }
         }
@@ -822,6 +1010,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         if CaptureUIPreview.enabled { setUIPreviewState(0); return }
         #endif
         guard !finished else { return }
+        discardActiveVideo(showInterrupted: true)
         worldGeneration += 1
         floorY = nil
         planeHeights.removeAll()
@@ -842,6 +1031,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     func sessionShouldAttemptRelocalization(_ session: ARSession) -> Bool { true }
     func sessionWasInterrupted(_ session: ARSession) {
         guard !finished else { return }
+        discardActiveVideo(showInterrupted: true)
         interrupted = true
         trackingNormal = false
         refresh()
@@ -867,6 +1057,11 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             // A plane may have been added while tracking was limited. Recheck
             // only after the current world frame is usable again.
             if normal { updatePlanes(frame.anchors) }
+        }
+        if normal, !interrupted, videoState == .recording, let generation = videoGeneration {
+            let buffer = frame.capturedImage
+            let timestamp = frame.timestamp
+            videoWriter.submit(generation: generation, buffer: buffer, timestamp: timestamp)
         }
         updateAim()
     }
@@ -910,7 +1105,13 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         if failure.domain == ARError.errorDomain, failure.code == ARError.Code.worldTrackingFailed.rawValue, trackingFailures == 0 {
             trackingFailures += 1
             resetWorld()
-        } else { finish(["status": "failed", "reason": "ar-session-failed"], keepFiles: false) }
+        } else {
+            discardActiveVideo(showInterrupted: true)
+            trackingNormal = false
+            interrupted = true
+            // Saved photos remain finishable through Done even if tracking cannot recover.
+            beginPhotos()
+        }
     }
 
     #if DEBUG && targetEnvironment(simulator)
@@ -931,7 +1132,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         setUIPreviewState(CaptureUIPreview.initialState)
     }
 
-    @objc private func advanceUIPreview() { setUIPreviewState((uiPreviewState + 1) % 5) }
+    @objc private func advanceUIPreview() { setUIPreviewState((uiPreviewState + 1) % 7) }
 
     private func advanceUIPreviewPhoto() {
         if promptIndex + 1 < prompts.count { setUIPreviewState(3, prompt: promptIndex + 1) }
@@ -940,6 +1141,9 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
 
     private func setUIPreviewState(_ state: Int, prompt: Int? = nil) {
         uiPreviewState = state
+        videoState = state == 5 ? .recording : state == 6 ? .reviewing : .idle
+        videoStarted = ProcessInfo.processInfo.systemUptime - 7
+        videoNotice = nil
         uiPreviewHasPhoto = state == 4
         step = state == 0 ? .floor : state < 3 ? .outline : .photos
         trackingNormal = state != 0
