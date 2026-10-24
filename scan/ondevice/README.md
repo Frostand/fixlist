@@ -40,3 +40,22 @@ For a **new, unevaluated** combined dataset, additional disjoint rows may set `d
 All candidate artifacts must stay outside Git. `productionPromotion` is always false; independent empirical acceptance is required. This workflow never exports Core ML, changes the eight app categories/resources/thresholds/catalog, or removes native human review.
 
 Latest local pilot (2026-10-24): 53 public images, including a development-only supplement. After excluding unresolved provenance and ambiguous labels, training used 31 images (21 positive, 10 negative); the untouched test had seven usable images (four positive, three negative). The fixed max-ten-view contrast beat the best trained linear head on development Brier loss (0.096 vs 0.168) and test Brier loss (0.158 vs 0.196; lower is better). Both produced four true positives and one false positive on the small test. These AI-labeled results do not establish a reliable deployed classifier, so the shipped app model remains unchanged.
+
+`annotation_packet.py` provides **private DEVELOPMENT annotation tooling only**. It exports all eligible dev images from a verified prepared run, with no test-export option. Only explicit `CC0`/`CC0-1.0` or `PDM`/`PDM-1.0` declarations (also their canonical Creative Commons URLs) are supported; conflicting license URLs or declared attribution/redistribution conditions are refused. Resolve rights and provenance privately before preparation; the tool does not verify rights. Other licenses require a separately reviewed workflow that preserves required attribution. Existing exclusions and exact grouping/splits remain bound in the private map. No freshness, independence, holdout recovery, expert verification, or production acceptance follows from annotation; existing/exposed test images never become fresh through relabeling.
+
+```sh
+# BUNDLE must be a new directory outside every Git checkout and outside DATA/RUN.
+# RUN must have eligible CC0/PDM development images; other licenses are refused.
+BUNDLE="$HOME/.local/share/fixlist-annotations/private-dev-packet"
+"$PY" scan/ondevice/annotation_packet.py export --run "$RUN" --output "$BUNDLE"
+# Open BUNDLE/reviewer/index.html locally. Distribute ONLY reviewer/, never PRIVATE.json.
+# Edit a copy of reviewer/responses.blank.json offline and save it OUTSIDE reviewer/.
+"$PY" scan/ondevice/annotation_packet.py import --private-map "$BUNDLE/PRIVATE.json" \
+  --responses "$HOME/.local/share/fixlist-annotations/completed.json" \
+  --output "$HOME/.local/share/fixlist-annotations/private-dev-labels.jsonl"
+scan/venv-python -m unittest discover -s scan/tests -p test_annotation_packet.py -v
+# Optional synthetic-only demo, including synthetic answers/import; use a new outside-Git path.
+scan/venv-python scan/tests/test_annotation_packet.py --demo /tmp/fixlist-annotation-demo
+```
+
+The reviewer packet is a static local HTML index, full-resolution oriented metadata-free PNGs, and a blank JSON template, with random opaque IDs and order. It has no server or annotation UI. Each response must explicitly set `answered: true`, `label: true/false/null`, a 1–64 character reviewer alias (letters, digits, `_`, `-`), and boolean `uncertainty`; null requires true uncertainty. Aliases make no identity/expertise claim. Leave the blank template unchanged. Import rejects incomplete/extra/duplicate responses and altered packet/source/map bindings; it writes dev-only flat JSONL compatible with `floor_objects.read_labels`, plus annotation provenance. Both commands print image counts only and refuse overwrite, publishing complete results atomically (macOS/Linux). Keep the bundle private; hash locks detect edits, not coordinated malicious rewriting of every artifact. Neither command trains, selects, evaluates, or changes the production model.
