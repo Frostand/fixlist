@@ -1,23 +1,21 @@
 # FixList
 
-FixList is a local demo that connects older adults and their families with volunteers for household tasks.
+FixList is a demo app that connects older adults and their families with volunteers for household jobs. It uses fictional accounts and local data, with no live backend and no real Apple sign-in.
 
 ## How it works
 
-1. A requester describes a task by typing, by voice, or with room capture. Native features depend on the device.
-2. The requester reviews the request and posts the job.
-3. A volunteer accepts the job and tracks its progress.
-4. The requester confirms completion, and the demo records service hours.
+1. **Request:** A requester describes the job by typing, speaking, or capturing the room.
+2. **Review and post:** The requester checks the request and posts it.
+3. **Volunteer:** A volunteer accepts the job and tracks its progress.
+4. **Confirm:** The requester confirms the job is done.
 
-The demo uses fictional accounts and local data. It has no production backend and no real Apple authentication.
+## Built with
 
-Built with React, TypeScript, Vite, Capacitor/Swift, ARKit, Core ML, Three.js/Spark, Leaflet, and Vitest.
+React, TypeScript, Vite, Capacitor, Swift, ARKit, Core ML, Three.js/Spark, Leaflet, and Vitest. No paid API keys are needed.
 
 ## Run it yourself
 
-**Requirements:** Node 24.x (24.18.0 or newer, see `.nvmrc`) and npm 11.
-
-Web setup needs no Git LFS or Xcode. Skip native weight downloads when cloning:
+You need Node 24 (24.18.0 or newer, below 25) and npm 11.
 
 ```sh
 GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/Frostand/fixlist.git
@@ -26,20 +24,13 @@ npm run setup
 npm run dev
 ```
 
-Open <http://127.0.0.1:5173>. Default setup (also `npm run setup -- --web`) checks Node/npm, installs locked dependencies, and leaves native weights unhydrated.
+Open <http://127.0.0.1:5173>. Setup checks your versions and installs the locked dependencies without downloading the native model. On the web, the writing helper uses simple rules and templates.
 
-### Checks
+To check your copy, run `npm run typecheck`, `npm test`, and `npm run build`. `npm run test:setup` is an optional check of the setup script.
 
-```sh
-npm run typecheck
-npm test
-npm run test:setup
-npm run build
-```
+## Optional: iPhone app
 
-### iOS (optional)
-
-Install [Git LFS](https://git-lfs.com) and full Xcode on macOS. Complete Xcode's first-launch setup and select its developer directory with `xcode-select`.
+You need a Mac with full Xcode (opened once so first-launch setup is complete) and [Git LFS](https://git-lfs.com).
 
 ```sh
 npm run setup -- --ios
@@ -47,8 +38,8 @@ npm run ios:sync
 npx cap open ios
 ```
 
-Native setup checks prerequisites, configures repository-local LFS without forcing hook replacement, downloads about 181 MB of pinned weights, verifies them, then installs dependencies. Sync and direct Xcode builds verify model identity without downloading anything. For an older failed build, use Xcode's **Product > Clean Build Folder**, then rebuild. `npm run ios:model:check` checks the source model independently.
+In Xcode, choose your signing team and device, then run. Setup downloads about 181 MB of model weights from GitHub, and builds verify them. If an older build has a bad model, use **Product > Clean Build Folder**.
 
-The bundled Core ML photo model is separate from the iOS 26 Apple Foundation Models writing assistant. The assistant requires supported hardware and passing OS availability and locale checks. A successful build or Simulator launch does not validate physical iPhone capture, speech, or Apple model behavior.
+The photo-relevance model comes through Git LFS. Apple's writing and chat model is provided by the operating system, so it needs a supported device on iOS 26 or newer with the model and language available. Capture and voice need a compatible device and permissions. A successful build or Simulator run does not confirm behavior on a real iPhone.
 
-`ios:demo` is a maintainer workflow requiring ignored private scans and optional Python tooling; it is unnecessary for the public demo. Optional Mac scan research tools are outside this setup path.
+`npm run ios:demo` and the Mac research scripts need extra private data and model setup. The main demo does not need them.
