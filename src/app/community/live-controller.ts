@@ -36,7 +36,7 @@ export class LiveCommunityController {
     private active = true;
     private listeners = new Set<() => void>();
     private reads = new Map<string, AbortController>();
-    private mutation = new AbortController();
+    private mutation: AbortController | null = null;
     private readonly namespace: string;
     constructor(readonly port: AsyncLiveCommunityPort, private readonly retryScope = new LiveRetryScope()) {
         this.namespace = JSON.stringify(['live', port.identity.backendId, port.identity.userId]);
@@ -47,7 +47,7 @@ export class LiveCommunityController {
         const pending = this.retryScope.read(this.namespace);
         this.state = { ...this.state, pending: pending?.running ? { ...pending, running: false, error: 'aborted' } : pending };
     }
-    start() { this.active = true; this.mutation = new AbortController(); this.restoreRetry(); return this.refresh(); }
+    start() { this.retireMutation(); this.active = true; this.restoreRetry(); return this.refresh(); }
     subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
     private publish(patch: Partial<LiveViewState>) { if (this.active) {
         this.state = { ...this.state, ...patch };
@@ -60,9 +60,15 @@ export class LiveCommunityController {
         return { signal: controller.signal, current: () => this.active && !controller.signal.aborted && this.reads.get(name) === controller };
     }
     private abortReads() { this.reads.forEach(c => c.abort()); this.reads.clear(); }
+    private retireMutation() {
+        const prior = this.mutation; this.mutation = null;
+        prior?.abort();
+    }
     private deny(code: LiveFailureCode) {
-        this.abortReads();
-        this.publish({ ...initial(), access: { value: null, loading: false, error: code }, pending: this.state.pending });
+        this.abortReads(); this.retireMutation();
+        const pending = this.state.pending;
+        this.publish({ ...initial(), access: { value: null, loading: false, error: code },
+            pending: pending?.running ? { ...pending, running: false, error: 'aborted' } : pending });
     }
     private async safely<T>(work: () => Promise<LiveResult<T>>): Promise<LiveResult<T>> {
         try { return await work(); } catch { return { ok: false, code: 'retry' }; }
@@ -138,8 +144,10 @@ export class LiveCommunityController {
     async retry(): Promise<boolean> {
         const pending = this.state.pending;
         if (!this.active || !pending || pending.running || this.state.access.value?.state !== 'approved') return false;
+        this.retireMutation();
+        const attempt = new AbortController(); this.mutation = attempt;
         this.publish({ pending: { ...pending, running: true, error: null } });
-        const { command: c, key } = pending, signal = this.mutation.signal;
+        const { command: c, key } = pending, signal = attempt.signal;
         const result = await this.safely<LiveMutation>(() => {
             switch (c.kind) {
                 case 'post': return this.port.postRequest(c.input, key, signal);
@@ -151,7 +159,9 @@ export class LiveCommunityController {
                 case 'rate': return this.port.rateJob(c.jobId, c.stars, c.note, key, signal);
             }
         });
-        if (!this.active || signal.aborted) return false;
+        // A retired transport may ignore abort and settle during a newer attempt.
+        if (!this.active || signal.aborted || this.mutation !== attempt) return false;
+        this.mutation = null;
         if (!result.ok) {
             this.publish({ pending: { ...pending, running: false, error: result.code } });
             if (blocked(result.code)) this.deny(result.code);
@@ -166,7 +176,7 @@ export class LiveCommunityController {
         this.publish({ pending: null, notice: 'Retry record discarded. A lost response may already have saved. Refresh and check your jobs/messages before creating a replacement.' });
     }
     dispose() {
-        this.active = false; this.abortReads(); this.mutation.abort();
+        this.active = false; this.abortReads(); this.retireMutation();
         const pending = this.state.pending;
         if (pending) this.retryScope.write(this.namespace, pending.running ? { ...pending, running: false, error: 'aborted' } : pending);
         this.state = initial(); this.listeners.clear();

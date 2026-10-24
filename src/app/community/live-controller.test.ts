@@ -5,6 +5,22 @@ import { LiveCommunityController, LiveRetryScope } from './live-controller';
 import { ELDER, VOLUNTEER, TEST_JOB, liveFixture } from './live-fixture.test-support';
 const draft = (): PostLiveRequest => ({ requestId: TEST_JOB, source: 'typed', originalText: 'Please water my plants', analysis: analyzeTaskWithRules('Please water my plants', 'en'), address: 'PRIVATE test address' });
 function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
+const denialCodes = ['permission_denied', 'pending_access', 'session_changed'] as const;
+const lateOutcomes: Array<{ label: string; result(jobId: string): LiveResult<LiveMutation> }> = [
+    { label: 'success', result: jobId => ({ ok: true, value: { jobId, status: 'open', messageId: null } }) },
+    { label: 'access failure', result: () => ({ ok: false, code: 'session_changed' }) },
+];
+async function heldPost() {
+    const f = liveFixture(), p = f.port(ELDER, 'elder'), c = new LiveCommunityController(p);
+    await c.start(); await c.execute({ kind: 'post', input: draft() });
+    const old = deferred<LiveResult<LiveMutation>>(), next = deferred<LiveResult<LiveMutation>>();
+    const post = vi.spyOn(p, 'postRequest').mockImplementationOnce(() => old.promise).mockImplementationOnce(() => next.promise);
+    const access = vi.spyOn(p, 'access');
+    const input = { ...draft(), requestId: crypto.randomUUID() };
+    const operation = c.execute({ kind: 'post', input }), pending = c.state.pending!, signal = post.mock.calls[0]![2];
+    input.address = 'Edited after dispatch'; input.analysis.title = 'Edited after dispatch';
+    return { f, p, c, old, next, post, access, operation, pending, signal, requestId: input.requestId };
+}
 
 describe('mounted live workspace async controller', () => {
     it('completes resident → helper → resident confirmation/rating and policy-credit cycle', async () => {
@@ -49,6 +65,55 @@ describe('mounted live workspace async controller', () => {
         vi.spyOn(p, 'messages').mockResolvedValueOnce({ ok: false, code }); await c.loadMessages();
         expect(c.state.details.value).toBeNull(); expect(c.state.jobs.value).toBeNull(); expect(c.state.messages.value).toBeNull(); expect(c.state.access.error).toBe(code);
         const count = f.calls.length; await c.refresh(); expect(f.calls).toHaveLength(count); expect(c.state.access.value?.state).toBe('approved');
+    });
+    it.each(denialCodes.flatMap(code => lateOutcomes.map(outcome => ({ code, ...outcome }))))('retires an in-flight mutation on $code; late $label cannot change its explicit fresh retry', async ({ code, result }) => {
+        const h = await heldPost(), { c } = h;
+        try {
+            vi.spyOn(h.p, 'ownJobs').mockResolvedValueOnce({ ok: false, code }); await c.loadList('jobs');
+            expect(h.signal.aborted).toBe(true);
+            expect(c.state.pending).toMatchObject({ key: h.pending.key, command: h.pending.command, running: false, error: 'aborted' });
+            expect(c.state.access.error).toBe(code); expect(c.state.jobs.value).toBeNull(); expect(c.state.details.value).toBeNull(); expect(c.state.messages.value).toBeNull();
+            expect(c.state.selectedId).toBeNull(); expect(c.state.notice).toBeNull();
+            expect(await c.retry()).toBe(false); expect(h.post).toHaveBeenCalledOnce();
+            h.f.setAccess('pending'); await c.refresh(); expect(h.access).toHaveBeenCalledOnce();
+            expect(c.state.access.value?.state).toBe('pending'); expect(await c.retry()).toBe(false); expect(h.post).toHaveBeenCalledOnce();
+            h.f.setAccess('approved'); await c.refresh(); expect(h.access).toHaveBeenCalledTimes(2);
+            expect(c.state.access.value?.state).toBe('approved'); expect(h.post).toHaveBeenCalledOnce();
+            const retrying = c.retry(), retry = c.state.pending, newSignal = h.post.mock.calls[1]![2];
+            expect(newSignal).not.toBe(h.signal); expect(newSignal.aborted).toBe(false);
+            expect(h.post.mock.calls[1]![0]).toBe(h.post.mock.calls[0]![0]); expect(h.post.mock.calls[1]![1]).toBe(h.pending.key);
+            expect(h.post.mock.calls[1]![0].address).toBe('PRIVATE test address'); expect(Object.isFrozen(h.post.mock.calls[1]![0].analysis)).toBe(true);
+            h.old.resolve(result(h.requestId)); expect(await h.operation).toBe(false);
+            expect(c.state.pending).toBe(retry); expect(c.state.pending?.running).toBe(true); expect(c.state.access.value?.state).toBe('approved'); expect(c.state.notice).toBeNull();
+            h.next.resolve({ ok: false, code: 'retry' }); expect(await retrying).toBe(false);
+            expect(c.state.pending).toMatchObject({ key: h.pending.key, command: h.pending.command, running: false, error: 'retry' });
+            expect(await c.retry()).toBe(true); expect(h.post).toHaveBeenCalledTimes(3);
+            expect(h.post.mock.calls[2]![2]).not.toBe(newSignal); expect(h.post.mock.calls[2]![2].aborted).toBe(false);
+            expect(h.post.mock.calls[2]!.slice(0, 2)).toEqual(h.post.mock.calls[0]!.slice(0, 2));
+        } finally { c.dispose(); h.old.resolve({ ok: false, code: 'aborted' }); h.next.resolve({ ok: false, code: 'aborted' }); }
+    });
+    it.each(lateOutcomes)('ignores old $label after the fresh attempt already failed', async ({ result }) => {
+        const h = await heldPost(), { c } = h;
+        try {
+            vi.spyOn(h.p, 'ownJobs').mockResolvedValueOnce({ ok: false, code: 'permission_denied' }); await c.loadList('jobs'); await c.refresh();
+            const retrying = c.retry(); h.next.resolve({ ok: false, code: 'retry' }); expect(await retrying).toBe(false);
+            const retry = c.state.pending; expect(retry?.error).toBe('retry');
+            h.old.resolve(result(h.requestId)); expect(await h.operation).toBe(false);
+            expect(c.state.pending).toBe(retry); expect(c.state.notice).toBeNull(); expect(c.state.access.value?.state).toBe('approved');
+            await c.refresh(); expect(h.post).toHaveBeenCalledTimes(2); expect(c.state.pending).toBe(retry);
+        } finally { c.dispose(); h.old.resolve({ ok: false, code: 'aborted' }); h.next.resolve({ ok: false, code: 'aborted' }); }
+    });
+    it.each([false, true])('retires an old mutation across start with dispose=%s and never lets it finish a newer attempt', async dispose => {
+        const h = await heldPost(), { c } = h;
+        try {
+            if (dispose) c.dispose(); await c.start();
+            expect(h.signal.aborted).toBe(true); expect(c.state.pending).toMatchObject({ key: h.pending.key, running: false, error: 'aborted' });
+            expect(h.post).toHaveBeenCalledOnce(); const retrying = c.retry(), retry = c.state.pending;
+            expect(h.post.mock.calls[1]![2]).not.toBe(h.signal); expect(h.post.mock.calls[1]![2].aborted).toBe(false);
+            h.old.resolve({ ok: true, value: { jobId: h.requestId, status: 'open', messageId: null } }); expect(await h.operation).toBe(false);
+            expect(c.state.pending).toBe(retry); expect(c.state.notice).toBeNull();
+            h.next.resolve({ ok: false, code: 'retry' }); expect(await retrying).toBe(false); expect(c.state.pending?.error).toBe('retry');
+        } finally { c.dispose(); h.old.resolve({ ok: false, code: 'aborted' }); h.next.resolve({ ok: false, code: 'aborted' }); }
     });
     it('keeps the immutable payload and UUID after a committed lost response, then replays without a duplicate', async () => {
         const f = liveFixture(), c = new LiveCommunityController(f.port(ELDER, 'elder')); await c.start(); f.loseResponse();
