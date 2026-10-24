@@ -28,6 +28,11 @@ describe('SQL runner process exit status (actual pgTAP)', () => {
     expect(result.status).toBe(0);
     expect(result.output).toContain('PASS: 1/1');
   });
+  it('applies both production migrations before suites in dependency order', async () => {
+    const result = await execute(wrap("select plan(3); select has_table('public','account_profiles','Profile migration applied'); select has_table('public','community_jobs','Workflow migration applied'); select has_function('public','community_post_request',array['uuid','jsonb']); select * from finish();"));
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('PASS: 3/3');
+  });
   it.each([
     ['not ok', "select plan(1); select ok(false, 'intentional failure'); select * from finish();", /not ok 1/],
     ['plan under-run', 'select plan(2); select ok(true); select * from finish();', /planned 2 tests but ran 1/],

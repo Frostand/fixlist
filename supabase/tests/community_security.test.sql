@@ -1,0 +1,84 @@
+-- Genuine DB roles/RLS with synthetic AUTH. No network, JWT verification or races.
+begin;
+set local search_path=public,extensions;
+select plan(42);
+insert into auth.users(id,email_confirmed_at) values
+ ('11111111-1111-4111-8111-111111111111',now()),('22222222-2222-4222-8222-222222222222',now());
+insert into public.account_profiles(user_id,role,name,area,language) values
+ ('11111111-1111-4111-8111-111111111111','elder','Private Elder','Private area','en'),
+ ('22222222-2222-4222-8222-222222222222','volunteer','Private Volunteer','Private area','en');
+insert into public.pilot_communities(id,label,coarse_area,enabled) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Pilot','District',true);
+insert into public.pilot_memberships(user_id,community_id,role,status) select user_id,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',role,'approved' from public.account_profiles;
+insert into public.pilot_task_policies(category,enabled,approved_credit_minutes,needed_skills) values('yard',true,30,array['yard']);
+create function pg_temp.request() returns jsonb language sql as $$
+ select '{"requestId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","source":"typed","originalText":"Private user provenance","address":"Private address","analysis":{"title":"Private title","titleEnglish":"Private title","summary":"Private summary","summaryEnglish":"Private summary","category":"yard","skills":["general"],"tools":[],"estimatedMinutes":99,"peopleNeeded":1,"urgency":"flexible","safetyNotes":[],"language":"en","engine":"rules"}}'::jsonb;
+$$;
+set local role authenticated;
+set local request.jwt.claims='{"sub":"11111111-1111-4111-8111-111111111111","is_anonymous":false}';
+select ok(row_security_active('public.community_jobs'),'Actual workflow RLS is active');
+select ok((select bool_and(relrowsecurity and relforcerowsecurity) from pg_class where relnamespace='public'::regnamespace and relkind='r' and relname like 'community_%'),'All workflow tables force RLS');
+select ok((select bool_and(not has_table_privilege('authenticated',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE')) from pg_class c where relnamespace='public'::regnamespace and relkind='r' and (relname like 'community_%' or relname like 'pilot_%')),'No workflow table has direct write privileges');
+select ok((select bool_and(not has_sequence_privilege('authenticated',c.oid,'USAGE,SELECT,UPDATE')) from pg_class c where relnamespace='public'::regnamespace and relkind='S' and relname like 'community_%'),'Private sequences have no client grants');
+select ok((select bool_and(p.prosecdef and 'search_path=""'=any(p.proconfig)) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname like 'community_%'),'Every public workflow function has secure definer path');
+select ok((select bool_and(not has_function_privilege('anon',p.oid,'EXECUTE')) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname like 'community_%'),'Anon cannot execute any workflow RPC');
+select ok((select bool_and(not has_function_privilege('authenticated',p.oid,'EXECUTE')) from pg_proc p where p.pronamespace='fixlist_private'::regnamespace),'Client cannot execute any private helper');
+select is(public.community_post_request('cccccccc-cccc-4ccc-8ccc-cccccccccccc',pg_temp.request()||'{"evidence":[{"thumbnail":"data:image/jpeg;base64,abc"}]}')->>'code','invalid_input','Image authority fields rejected');
+select is(public.community_post_request('cccccccc-cccc-4ccc-8ccc-cccccccccccc',jsonb_set(pg_temp.request(),'{originalText}','"file:///private/native-photo"'))->>'code','invalid_input','Native file references rejected server side');
+select is(public.community_post_request('cccccccc-cccc-4ccc-8ccc-cccccccccccc',jsonb_set(pg_temp.request(),'{analysis,safetyNotes}','["blob:private-capture"]'))->>'code','invalid_input','Nested capture references rejected');
+select is(public.community_post_request('cccccccc-cccc-4ccc-8ccc-cccccccccccc',jsonb_set(pg_temp.request(),'{analysis,summary}','"data:image/jpeg;base64,abc"'))->>'code','invalid_input','Data URLs rejected in analysis');
+select is(public.community_post_request('cccccccc-cccc-4ccc-8ccc-cccccccccccc',jsonb_set(pg_temp.request(),'{source}','null'))->>'code','invalid_input','Null source cannot bypass validation');
+select is(public.community_post_request('cccccccc-cccc-4ccc-8ccc-cccccccccccc',jsonb_set(pg_temp.request(),'{analysis,language}','null'))->>'code','invalid_input','Null analysis enum cannot bypass validation');
+select is(public.community_post_request('cccccccc-cccc-4ccc-8ccc-cccccccccccc',jsonb_set(pg_temp.request(),'{analysis,safetyNotes}','[null]'))->>'code','invalid_input','Null safety note cannot bypass validation');
+select is(public.community_post_request('cccccccc-cccc-4ccc-8ccc-cccccccccccc',pg_temp.request())->>'ok','true','Same key succeeds after rejected attempts roll back');
+select is(public.community_job_details('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')->'value'->'job'->>'approvedServiceCreditMinutes','30','Initial approved policy is snapshotted');
+reset role;
+-- Simulate accidental grants in this rolled-back test transaction. RLS must
+-- independently hide the nonempty rows and block mutations, even from a participant.
+grant select,update,delete on public.community_jobs,public.community_job_details,public.community_events,public.community_receipts to authenticated;
+set local role authenticated;
+select is((select count(*) from public.community_jobs),0::bigint,'Deny-all RLS hides jobs even with accidental SELECT');
+select is((select count(*) from public.community_job_details),0::bigint,'Deny-all RLS hides private details even with accidental SELECT');
+select is((select count(*) from public.community_events),0::bigint,'Deny-all RLS hides events even with accidental SELECT');
+select is((select count(*) from public.community_receipts),0::bigint,'Deny-all RLS hides own receipts even with accidental SELECT');
+with changed as (update public.community_jobs set status='cancelled' returning id) select is((select count(*) from changed),0::bigint,'RLS prevents direct updates despite accidental UPDATE');
+with changed as (delete from public.community_jobs returning id) select is((select count(*) from changed),0::bigint,'RLS prevents direct deletes despite accidental DELETE');
+reset role;
+revoke all on public.community_jobs,public.community_job_details,public.community_events,public.community_receipts from authenticated;
+update public.pilot_task_policies set approved_credit_minutes=90,needed_skills=array['general'];
+set local role authenticated;
+select is(public.community_job_details('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')->'value'->'job'->>'approvedServiceCreditMinutes','30','Later policy edit cannot inflate old credit');
+select is(public.community_job_details('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')->'value'->'job'->'neededSkills','["yard"]'::jsonb,'Needed skills are also snapshotted');
+set local request.jwt.claims='{"sub":"22222222-2222-4222-8222-222222222222","is_anonymous":true}';
+select is(public.community_discover()->>'code','permission_denied','Anonymous JWT claim fails even for approved persisted account');
+set local request.jwt.claims='{}';
+select is(public.community_access()->>'code','permission_denied','Missing auth subject fails closed');
+set local request.jwt.claims='{"sub":"22222222-2222-4222-8222-222222222222","is_anonymous":false}';
+reset role;
+update public.pilot_memberships set status='revoked' where user_id='11111111-1111-4111-8111-111111111111';
+set local role authenticated;
+select is(jsonb_array_length(public.community_discover()->'value'->'items'),0,'Revoked poster disappears from discovery');
+select is(public.community_accept_job('dddddddd-dddd-4ddd-8ddd-dddddddddddd','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}')->>'code','permission_denied','Cannot accept revoked poster request');
+reset role;
+update public.pilot_memberships set status='approved' where user_id='11111111-1111-4111-8111-111111111111';
+set local role authenticated;
+select is(public.community_accept_job('dddddddd-dddd-4ddd-8ddd-dddddddddddd','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}')->>'ok','true','Rejected accept leaves no poisoned receipt');
+select is(public.community_advance_job('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","step":"on-the-way","hours":999}')->>'code','invalid_input','Advance rejects client hours');
+select is(public.community_send_message('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","text":"hello","language":null}')->>'code','invalid_input','Null message language rejected');
+select is(public.community_send_message('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","text":"hello","language":"en","fromId":"forged"}')->>'code','invalid_input','Message rejects forged sender');
+select is(public.community_cancel_job('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}')->>'ok','true','Assigned volunteer may terminally cancel');
+select is(public.community_advance_job('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","step":"on-the-way"}')->>'code','invalid_state','Cannot advance cancelled assignment');
+select is(public.community_send_message('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee5','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","text":"hello","language":"en"}')->>'code','invalid_state','Cannot message cancelled assignment');
+set local request.jwt.claims='{"sub":"11111111-1111-4111-8111-111111111111","is_anonymous":false}';
+select is(public.community_confirm_done('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee6','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}')->>'code','invalid_state','Cannot confirm cancelled assignment');
+select is(public.community_rate_job('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee7','{"jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","stars":5,"note":""}')->>'code','invalid_state','Cannot rate cancelled assignment');
+reset role;
+select is((select count(*) from public.community_service_credits),0::bigint,'Cancelled assignments earn no credit');
+update public.pilot_communities set enabled=false;
+set local role authenticated;
+select is(public.community_own_jobs()->>'code','pending_access','Disabled pilot fails closed on data access');
+select is(public.community_access()->'value'->>'state','pending','Disabled pilot reports pending access');
+reset role;
+select ok(fixlist_private.valid_text(to_jsonb(E'Photograph: please help\nMy data: stays local'::text),4000),'Natural language labels are not capture URLs');
+select is((select count(*) from public.community_receipts),3::bigint,'Rejected operations roll back their provisional receipts');
+select * from finish();
+rollback;

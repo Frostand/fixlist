@@ -47,11 +47,14 @@ async function main() {
     : (await readdir(new URL('../supabase/tests/', import.meta.url)))
       .filter(name => name.endsWith('.test.sql')).sort().map(name => resolve(root, 'supabase/tests', name));
   if (!testPaths.length) throw new Error('No SQL tests found');
-  const [fixture, migration, ...suites] = await Promise.all([
+  const migrationPaths = (await readdir(new URL('../supabase/migrations/', import.meta.url)))
+    .filter(name => /^\d+_.+\.sql$/.test(name)).sort();
+  if (!migrationPaths.length) throw new Error('No production migrations found');
+  const [fixture, migrations, suites] = await Promise.all([
     readFile(new URL('./db/auth-fixture.sql', import.meta.url), 'utf8'),
-    // Execute the production file verbatim, never a translated/copy migration.
-    readFile(new URL('../supabase/migrations/202610240001_account_profiles.sql', import.meta.url), 'utf8'),
-    ...testPaths.map(path => readFile(path, 'utf8')),
+    // Execute every production file verbatim, in filename order.
+    Promise.all(migrationPaths.map(name => readFile(resolve(root, 'supabase/migrations', name), 'utf8'))),
+    Promise.all(testPaths.map(path => readFile(path, 'utf8'))),
   ]);
   const { version: pgliteVersion } = JSON.parse(await readFile(new URL('../node_modules/@electric-sql/pglite/package.json', import.meta.url), 'utf8'));
   const db = await PGlite.create({ dataDir: 'memory://', extensions: { pgtap } });
@@ -62,7 +65,7 @@ async function main() {
     if (!engine?.pgtap) throw new Error('Actual pgTAP extension is missing');
     console.log(`PGlite ${pgliteVersion}; ${engine.postgres}; pgTAP ${engine.pgtap}`);
     console.log('TEST ONLY: mocked AUTH users/JWT GUCs; PostgreSQL roles/RLS are real. No provider JWT verification.');
-    await db.exec(migration);
+    for (const migration of migrations) await db.exec(migration);
     for (const [index, sql] of suites.entries()) {
       console.log(`\n${testPaths[index]}`);
       const results = await db.exec(sql);
