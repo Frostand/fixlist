@@ -17,6 +17,135 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
+function audioBridge() {
+  const listeners = new Map<string, Set<(event: Record<string, unknown>) => void>>();
+  mock.addListener.mockImplementation(async (name: string, callback: (event: Record<string, unknown>) => void) => {
+    const callbacks = listeners.get(name) ?? new Set(); listeners.set(name, callbacks); callbacks.add(callback);
+    return { remove: vi.fn(async () => { callbacks.delete(callback); }) };
+  });
+  return {
+    emit(name: string, event: Record<string, unknown>) { for (const callback of listeners.get(name) ?? []) callback(event); },
+    count() { return [...listeners.values()].reduce((total, callbacks) => total + callbacks.size, 0); },
+  };
+}
+const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+describe('session-scoped native speech lifecycle', () => {
+  it.each(['final', 'error', 'background', 'interrupted'] as const)('settles %s before startup ACK, retaining partial text', async reason => {
+    const bridge = audioBridge(); let ack!: () => void;
+    mock.startListening.mockImplementation(({ sessionId }) => {
+      expect(bridge.count()).toBe(2);
+      bridge.emit('partial', { sessionId, text: 'Move the chair' });
+      bridge.emit('listeningEnded', { sessionId, reason, text: 'Move the chair' });
+      return new Promise<void>(resolve => { ack = resolve; });
+    });
+    const api = createAssistant(), partial = vi.fn(), starting = api.startListening('en', partial);
+    await flush(); ack(); const session = await starting;
+    expect(await session.done).toMatchObject({ reason, text: 'Move the chair' });
+    expect(await session.stop()).toBe('Move the chair'); session.cancel();
+    expect(partial).toHaveBeenCalledOnce(); expect(bridge.count()).toBe(0);
+    expect(mock.stopListening).not.toHaveBeenCalled();
+  });
+  it('ignores stale IDs and scopes repeated stop/cancel to their own session', async () => {
+    const bridge = audioBridge(), api = createAssistant(), partial = vi.fn();
+    const first = await api.startListening('en', vi.fn());
+    const firstId = mock.startListening.mock.calls[0]![0].sessionId;
+    const second = await api.startListening('es', partial), secondId = mock.startListening.mock.calls[1]![0].sessionId;
+    expect(firstId).toEqual(expect.any(String)); expect(secondId).not.toBe(firstId);
+    bridge.emit('listeningEnded', { sessionId: firstId, reason: 'final', text: 'old' });
+    bridge.emit('partial', { sessionId: firstId, text: 'old' });
+    bridge.emit('partial', { sessionId: secondId, text: 'new' });
+    first.cancel(); expect(await first.stop()).toBe(''); expect(partial).toHaveBeenCalledExactlyOnceWith('new');
+    mock.stopListening.mockImplementation(async ({ sessionId }) => {
+      bridge.emit('listeningEnded', { sessionId, reason: 'stopped', text: 'new' }); return { sessionId, text: 'new' };
+    });
+    const stop = second.stop(); expect(second.stop()).toBe(stop);
+    expect(await stop).toBe('new'); expect(await second.done).toMatchObject({ reason: 'stopped', text: 'new' });
+    second.cancel(); second.cancel(); expect(mock.stopListening).toHaveBeenCalledExactlyOnceWith({ sessionId: secondId });
+    expect(mock.cancelListening).toHaveBeenCalledExactlyOnceWith({ sessionId: firstId }); expect(bridge.count()).toBe(0);
+  });
+  it('keeps healthy native output alive beyond 20 seconds and waits for completion', async () => {
+    vi.useFakeTimers(); const bridge = audioBridge(), replay = vi.fn(); let settled = false;
+    const api = createAssistant({ browser: () => ({ speechSynthesis: { cancel: vi.fn(), speak: replay }, SpeechSynthesisUtterance: class {} } as unknown as AssistantBrowser) });
+    const speaking = api.speak('A long reply', 'en').then(() => { settled = true; }); await flush();
+    const sessionId = mock.speak.mock.calls[0]![0].sessionId;
+    bridge.emit('speechProgress', { sessionId, stage: 'started' });
+    for (let i = 0; i < 5; i++) { await vi.advanceTimersByTimeAsync(10_000); bridge.emit('speechProgress', { sessionId, stage: 'word' }); }
+    expect(settled).toBe(false); expect(mock.stopSpeaking).not.toHaveBeenCalled(); expect(replay).not.toHaveBeenCalled();
+    bridge.emit('speechEnded', { sessionId, reason: 'completed' }); await speaking; await flush();
+    expect(bridge.count()).toBe(0); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('cancels stalled playback by ID without browser replay and releases listeners/timers', async () => {
+    vi.useFakeTimers(); const bridge = audioBridge(), browserSpeak = vi.fn();
+    const api = createAssistant({ browser: () => ({ speechSynthesis: { cancel: vi.fn(), speak: browserSpeak }, SpeechSynthesisUtterance: class {} } as unknown as AssistantBrowser) });
+    const speaking = api.speak('A reply', 'en'); await flush(); const sessionId = mock.speak.mock.calls[0]![0].sessionId;
+    bridge.emit('speechProgress', { sessionId, stage: 'started' });
+    await vi.advanceTimersByTimeAsync(20_001); await speaking;
+    expect(mock.stopSpeaking).toHaveBeenCalledExactlyOnceWith({ sessionId }); expect(browserSpeak).not.toHaveBeenCalled();
+    expect(bridge.count()).toBe(0); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('settles stopped speech immediately and ignores late callbacks after new output', async () => {
+    const bridge = audioBridge(), api = createAssistant(); mock.speak.mockImplementation(() => new Promise(() => {}));
+    const first = api.speak('First', 'en'); await flush(); const oldId = mock.speak.mock.calls[0]![0].sessionId;
+    api.stopSpeaking(); await first;
+    mock.speak.mockResolvedValue({}); let secondDone = false;
+    const second = api.speak('Second', 'en').then(() => { secondDone = true; }); await flush();
+    const sessionId = mock.speak.mock.calls[1]![0].sessionId;
+    bridge.emit('speechEnded', { sessionId: oldId, reason: 'completed' }); await flush(); expect(secondDone).toBe(false);
+    bridge.emit('speechEnded', { sessionId, reason: 'completed' }); await second;
+    expect(mock.stopSpeaking).toHaveBeenCalledExactlyOnceWith({ sessionId: oldId }); expect(bridge.count()).toBe(0);
+  });
+  it('settles output terminal before ACK without waiting for a lost ACK or replaying', async () => {
+    vi.useFakeTimers(); const bridge = audioBridge(), api = createAssistant();
+    mock.speak.mockImplementation(({ sessionId }) => {
+      expect(bridge.count()).toBe(2);
+      bridge.emit('speechEnded', { sessionId, reason: 'completed' });
+      return new Promise(() => {});
+    });
+    await api.speak('Short reply', 'en'); await flush();
+    expect(mock.stopSpeaking).not.toHaveBeenCalled(); expect(bridge.count()).toBe(0); expect(vi.getTimerCount()).toBe(0);
+  });
+  it.each([false, true])('bounds only a missing startup ACK (playback began: %s) without speculative fallback', async began => {
+    vi.useFakeTimers(); const bridge = audioBridge(), replay = vi.fn();
+    const api = createAssistant({ browser: () => ({ speechSynthesis: { cancel: vi.fn(), speak: replay }, SpeechSynthesisUtterance: class {} } as unknown as AssistantBrowser) });
+    mock.speak.mockImplementation(() => new Promise(() => {}));
+    const speaking = api.speak('Reply', 'en'); await flush(); const sessionId = mock.speak.mock.calls[0]![0].sessionId;
+    if (began) bridge.emit('speechProgress', { sessionId, stage: 'started' });
+    await vi.advanceTimersByTimeAsync(20_001); await speaking; await flush();
+    expect(mock.stopSpeaking).toHaveBeenCalledExactlyOnceWith({ sessionId }); expect(replay).not.toHaveBeenCalled();
+    expect(bridge.count()).toBe(0); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('never replays after playback began even if the startup promise rejects UNAVAILABLE', async () => {
+    const bridge = audioBridge(), replay = vi.fn();
+    const api = createAssistant({ browser: () => ({ speechSynthesis: { cancel: vi.fn(), speak: replay }, SpeechSynthesisUtterance: class {} } as unknown as AssistantBrowser) });
+    mock.speak.mockImplementation(({ sessionId }) => {
+      bridge.emit('speechProgress', { sessionId, stage: 'started' });
+      return Promise.reject(Object.assign(new Error('UNAVAILABLE'), { code: 'UNAVAILABLE' }));
+    });
+    await api.speak('Reply', 'en'); await flush();
+    expect(replay).not.toHaveBeenCalled(); expect(mock.stopSpeaking).toHaveBeenCalledOnce(); expect(bridge.count()).toBe(0);
+  });
+  it('cancels during listener registration without starting old native audio and removes the late handle', async () => {
+    vi.useFakeTimers(); audioBridge(); let register!: (handle: { remove(): Promise<void> }) => void;
+    mock.addListener.mockImplementationOnce(() => new Promise(resolve => { register = resolve; }));
+    const api = createAssistant(), first = api.startListening('en', vi.fn()).catch(error => error); await flush();
+    const second = await api.startListening('es', vi.fn());
+    const remove = vi.fn(async () => {}); register({ remove }); await flush();
+    expect(await first).toBeInstanceOf(Error); expect(remove).toHaveBeenCalledOnce();
+    expect(mock.startListening).toHaveBeenCalledExactlyOnceWith({ sessionId: second.sessionId, language: 'es' });
+    second.cancel(); await flush(); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('aborts a permission/startup ACK wait immediately by ID and cleans its listeners', async () => {
+    vi.useFakeTimers(); const bridge = audioBridge(), api = createAssistant(), controller = new AbortController();
+    mock.startListening.mockImplementation(() => new Promise(() => {}));
+    const starting = api.startListening('en', vi.fn(), controller.signal).catch(error => error); await flush();
+    const sessionId = mock.startListening.mock.calls[0]![0].sessionId; controller.abort(); await flush();
+    expect(await starting).toBeInstanceOf(Error);
+    expect(mock.cancelListening).toHaveBeenCalledExactlyOnceWith({ sessionId });
+    expect(bridge.count()).toBe(0); expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
 describe('assistant bridge (mocked native model and audio)', () => {
   it('uses native generation, chat, translation and honest availability', async () => {
     expect(await assistant.availability()).toEqual({ onDeviceModel: true, speechInput: true, speechOutput: true });
@@ -24,7 +153,9 @@ describe('assistant bridge (mocked native model and audio)', () => {
     expect(mock.analyzeTask).toHaveBeenCalledWith({ text: 'Move a chair', language: 'en' });
     expect(await assistant.chat([{ role: 'user', text: 'Move a chair' }], 'en', { firstName: 'Margaret' })).toEqual({ text: 'Shall I post this?', job, engine: 'apple-on-device' });
     expect(await assistant.translate('Move a chair', 'en', 'es')).toBe('Mover una silla');
-    await assistant.speak('Hello', 'en'); expect(mock.speak).toHaveBeenCalledWith({ text: 'Hello', language: 'en' });
+    const bridge = audioBridge();
+    mock.speak.mockImplementation(async ({ sessionId }) => { bridge.emit('speechEnded', { sessionId, reason: 'completed' }); return { sessionId }; });
+    await assistant.speak('Hello', 'en'); expect(mock.speak).toHaveBeenCalledWith({ text: 'Hello', language: 'en', sessionId: expect.any(String) });
   });
   it('falls back on native rejection or malformed model output, preserving language and engine', async () => {
     mock.analyzeTask.mockRejectedValueOnce(new Error('UNAVAILABLE'));
@@ -59,20 +190,20 @@ describe('assistant bridge (mocked native model and audio)', () => {
     expect(result.job).toMatchObject({ language: 'zh', engine: 'rules' });
   });
   it('wires partial events before starting and removes them on stop, ignoring late events', async () => {
-    const partial = vi.fn(), remove = vi.fn(); let listener: ((event: { text: string }) => void) | undefined;
-    mock.addListener.mockImplementation(async (event, callback) => { expect(event).toBe('partial'); listener = callback; return { remove }; });
+    const partial = vi.fn(), bridge = audioBridge();
     const session = await assistant.startListening('es', partial);
-    expect(mock.startListening).toHaveBeenCalledWith({ language: 'es' });
-    listener?.({ text: 'Una silla' }); expect(partial).toHaveBeenCalledWith('Una silla');
-    expect(await session.stop()).toBe('Move a chair'); expect(remove).toHaveBeenCalledOnce();
-    listener?.({ text: 'late' }); expect(partial).toHaveBeenCalledTimes(1);
+    expect(mock.startListening).toHaveBeenCalledWith({ language: 'es', sessionId: session.sessionId });
+    mock.stopListening.mockResolvedValueOnce({ sessionId: session.sessionId, text: 'Move a chair' });
+    bridge.emit('partial', { sessionId: session.sessionId, text: 'Una silla' }); expect(partial).toHaveBeenCalledWith('Una silla');
+    expect(await session.stop()).toBe('Move a chair'); await flush(); expect(bridge.count()).toBe(0);
+    bridge.emit('partial', { sessionId: session.sessionId, text: 'late' }); expect(partial).toHaveBeenCalledTimes(1);
     expect(await session.stop()).toBe('Move a chair'); expect(mock.stopListening).toHaveBeenCalledOnce();
   });
   it('cancels native listening and catches cleanup rejection', async () => {
     const remove = vi.fn().mockRejectedValue(new Error('gone')); mock.addListener.mockResolvedValue({ remove });
     const session = await assistant.startListening('en', vi.fn());
     mock.cancelListening.mockRejectedValue(new Error('gone')); session.cancel();
-    expect(await session.stop()).toBe(''); expect(remove).toHaveBeenCalledOnce();
+    expect(await session.stop()).toBe(''); expect(remove).toHaveBeenCalledTimes(2);
   });
   it('bounds a stalled native call to 20 seconds and falls back', async () => {
     vi.useFakeTimers(); mock.analyzeTask.mockImplementation(() => new Promise(() => {}));
@@ -91,7 +222,7 @@ describe('assistant bridge (mocked native model and audio)', () => {
     class Utterance { text: string; lang = ''; rate = 1; onend: (() => void) | null = null; onerror: (() => void) | null = null; constructor(text: string) { this.text = text; } }
     const speech = { getVoices: () => [], speak: vi.fn((utterance: Utterance) => utterance.onend?.()), cancel: vi.fn() };
     const browser = { speechSynthesis: speech, SpeechSynthesisUtterance: Utterance } as unknown as AssistantBrowser;
-    mock.speak.mockRejectedValueOnce(new Error('UNAVAILABLE'));
+    mock.speak.mockRejectedValueOnce(Object.assign(new Error('UNAVAILABLE'), { code: 'UNAVAILABLE' }));
     const api = createAssistant({ browser: () => browser }); await api.speak('Bonjour', 'fr');
     expect(speech.speak.mock.calls[0]?.[0]).toMatchObject({ text: 'Bonjour', lang: 'fr-FR', rate: 0.85 });
     api.stopSpeaking(); expect(speech.cancel).toHaveBeenCalled();
@@ -121,6 +252,36 @@ describe('assistant bridge (mocked native model and audio)', () => {
     recognition.onresult?.({ results: [{ 0: { transcript: 'Move this chair' }, isFinal: true, length: 1 }], resultIndex: 0 });
     expect(partial).toHaveBeenCalledWith('Move this chair'); expect(await session.stop()).toBe('Move this chair');
     expect(recognition.onresult).toBeNull();
+  });
+  it.each(['final', 'error'] as const)('exposes browser %s through done and preserves the transcript', async reason => {
+    let recognition!: BrowserRecognition;
+    const abort = vi.fn();
+    class Recognition {
+      lang = ''; continuous = false; interimResults = false;
+      onstart: (() => void) | null = null; onend: (() => void) | null = null;
+      onerror: BrowserRecognition['onerror'] = null; onresult: BrowserRecognition['onresult'] = null;
+      constructor() { recognition = this; }
+      start() { this.onstart?.(); } stop() { this.onend?.(); } abort() { abort(); }
+    }
+    const api = createAssistant({ isNative: () => false, browser: () => ({ SpeechRecognition: Recognition }) });
+    const session = await api.startListening('en', vi.fn());
+    recognition.onresult?.({ results: [{ 0: { transcript: 'Recover these words' }, isFinal: false, length: 1 }], resultIndex: 0 });
+    if (reason === 'final') recognition.onend?.(); else recognition.onerror?.({ error: 'network' });
+    expect(await session.done).toEqual({ sessionId: session.sessionId, reason, text: 'Recover these words' });
+    expect(await session.stop()).toBe('Recover these words'); expect(recognition.onresult).toBeNull();
+    if (reason === 'error') expect(abort).toHaveBeenCalledOnce();
+  });
+  it('settles browser output on stop and clears its progress watchdog and callbacks', async () => {
+    vi.useFakeTimers(); let utterance!: SpeechSynthesisUtterance;
+    class Utterance {
+      lang = ''; rate = 1; onend = null; onerror = null; onstart = null; onboundary = null;
+      constructor() { utterance = this as unknown as SpeechSynthesisUtterance; }
+    }
+    const synthesis = { cancel: vi.fn(), getVoices: () => [], speak: vi.fn() };
+    const api = createAssistant({ isNative: () => false, browser: () => ({ speechSynthesis: synthesis, SpeechSynthesisUtterance: Utterance } as unknown as AssistantBrowser) });
+    const speaking = api.speak('Browser reply', 'en'); await flush();
+    expect(vi.getTimerCount()).toBe(1); api.stopSpeaking(); await speaking;
+    expect(vi.getTimerCount()).toBe(0); expect(utterance.onend).toBeNull(); expect(utterance.onboundary).toBeNull();
   });
   it('does not restart listening through a fallback when a pending native start is superseded', async () => {
     let rejectFirst: ((error: Error) => void) | undefined;

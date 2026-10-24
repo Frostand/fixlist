@@ -70,55 +70,80 @@ export function AskScreen({ talk, account, onDraft, onPost }: {
     onPost?(d: Draft, slots: readonly import('../../community/types').AvailabilitySlot[], analysis: JobAnalysis): boolean;
 }) {
     const t = useT(), language = useLanguage(), alive = useRef(true), listening = useRef<ListeningSession | null>(null), pending = useRef(false);
+    const identity = `${account.id}:${language}:${talk}`, scope = useRef({ identity });
+    if (scope.current.identity !== identity) scope.current = { identity };
+    const partialText = useRef(''), starting = useRef(false), listeningAbort = useRef<AbortController | null>(null);
     const [phase, setPhase] = useState<TalkPhase>('idle');
     const [text, setText] = useState(''), [partial, setPartial] = useState(''), [turns, setTurns] = useState<ChatTurn[]>([]);
     const [voice, setVoice] = useState<boolean | null>(null), [error, setError] = useState(''), [typing, setTyping] = useState(!talk), [draft, setDraft] = useState<Draft | null>(null);
     const typingRef = useRef<HTMLTextAreaElement>(null);
     const busy = phase === 'thinking', recording = phase === 'starting' || phase === 'listening';
     useEffect(() => {
-        alive.current = true;
-        void assistant.availability().then(a => { if (alive.current) setVoice(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && a.reason !== 'native-unavailable' && a.speechInput); }).catch(() => { if (alive.current) setVoice(false); });
-        return () => { alive.current = false; listening.current?.cancel(); assistant.stopSpeaking(); };
-    }, []);
+        const owner = { identity }; scope.current = owner;
+        alive.current = true; pending.current = false; starting.current = false;
+        setPhase('idle'); setText(''); setPartial(''); partialText.current = ''; setTurns([]); setDraft(null); setError(''); setVoice(null); setTyping(!talk);
+        void assistant.availability().then(a => { if (alive.current && scope.current === owner) setVoice(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && a.reason !== 'native-unavailable' && a.speechInput); }).catch(() => { if (alive.current && scope.current === owner) setVoice(false); });
+        return () => { alive.current = false; listeningAbort.current?.abort(); listeningAbort.current = null; listening.current?.cancel(); listening.current = null; assistant.stopSpeaking(); };
+    }, [account.id, language, talk]);
     useEffect(() => { if (typing) typingRef.current?.focus(); }, [typing]);
     function speak(words: string) { assistant.stopSpeaking(); void assistant.speak(words, language).catch(() => {}); }
     async function submit(words: string, source: JobSource) {
         if (!words.trim() || pending.current) return;
+        const owner = scope.current, active = () => alive.current && scope.current === owner;
         pending.current = true; setPhase('thinking'); setError(''); setText(''); setDraft(null); assistant.stopSpeaking();
         try {
             if (talk) {
                 const next: ChatTurn[] = [...turns, { role: 'user', text: words.trim() }];
                 setTurns(next);
                 const reply = await assistant.chat(next, language, { firstName: account.firstName });
-                if (!alive.current) return;
+                if (!active()) return;
                 setTurns([...next, { role: 'assistant', text: reply.text }]);
                 setPhase('replied'); speak(reply.text);
                 if (reply.job) setDraft({ analysis: reply.job, source, text: words.trim(), evidence: [] });
             } else {
                 const analysis = await assistant.analyzeTask(words.trim(), language);
-                if (alive.current) onDraft({ analysis, source, text: words.trim(), evidence: [] });
+                if (active()) onDraft({ analysis, source, text: words.trim(), evidence: [] });
             }
         } catch {
-            if (alive.current) { setError(t('c.error')); setText(words); setPhase(turns.length ? 'replied' : 'idle'); }
-        } finally { pending.current = false; if (alive.current && !talk) setPhase('idle'); }
+            if (active()) { setError(t('c.error')); setText(words); setPhase(turns.length ? 'replied' : 'idle'); }
+        } finally { if (active()) { pending.current = false; if (!talk) setPhase('idle'); } }
     }
     async function start() {
-        if (pending.current || voice !== true || recording) return;
-        setError(''); setPartial(''); setPhase('starting'); assistant.stopSpeaking();
+        if (pending.current || voice !== true || recording || starting.current || listening.current) return;
+        const owner = scope.current, active = () => alive.current && scope.current === owner;
+        const controller = new AbortController(); listeningAbort.current = controller;
+        starting.current = true;
+        setError(''); setPartial(''); partialText.current = ''; setPhase('starting'); assistant.stopSpeaking();
         try {
-            const session = await assistant.startListening(language, words => { if (alive.current) setPartial(words); });
-            if (!alive.current) { session.cancel(); return; }
+            const session = await assistant.startListening(language, words => { if (active()) { partialText.current = words; setPartial(words); } }, controller.signal);
+            if (!active()) { session.cancel(); return; }
             listening.current = session; setPhase('listening');
-        } catch { if (alive.current) { setVoice(false); setPhase(turns.length ? 'replied' : 'idle'); setTyping(true); } }
+            // This is the sole consumer for both natural termination and manual stop.
+            void session.done.then(async end => {
+                if (!active() || listening.current !== session) return;
+                listening.current = null; setPartial(''); partialText.current = '';
+                if (end.reason === 'final' || end.reason === 'stopped') {
+                    if (end.text.trim()) await submit(end.text, 'voice');
+                    else setPhase(turns.length ? 'replied' : 'idle');
+                } else {
+                    setPhase(turns.length ? 'replied' : 'idle');
+                    if (end.reason !== 'cancelled') { setText(end.text); setTyping(true); setError(t('c.talk.unavailable')); }
+                }
+            });
+        } catch { if (active()) { setVoice(false); setPhase(turns.length ? 'replied' : 'idle'); setText(partialText.current); setPartial(''); setTyping(true); } }
+        finally { if (active()) starting.current = false; }
     }
     async function stop() {
-        const session = listening.current;
+        const session = listening.current, owner = scope.current;
         if (!session) return;
-        listening.current = null; setPhase('thinking');
-        try {
-            const words = await session.stop();
-            if (alive.current) { setPartial(''); if (words.trim()) await submit(words, 'voice'); else setPhase(turns.length ? 'replied' : 'idle'); }
-        } catch { if (alive.current) { setPhase(turns.length ? 'replied' : 'idle'); setError(t('c.talk.unavailable')); setTyping(true); } }
+        setPhase('thinking');
+        try { await session.stop(); }
+        catch {
+            if (alive.current && scope.current === owner && listening.current === session) {
+                listening.current = null; session.cancel(); setText(partialText.current); setPartial('');
+                setPhase(turns.length ? 'replied' : 'idle'); setError(t('c.talk.unavailable')); setTyping(true);
+            }
+        }
     }
     return <div className="c-stack" data-talk-phase={phase}>
         <Heading intro={t(talk ? 'c.talk.prompt' : 'c.type.body')}>{t(talk ? 'c.talk.title' : 'c.type.title')}</Heading>
