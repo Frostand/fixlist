@@ -35,7 +35,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('community routing and first run', () => {
     it.each(['#/r/home', '#/v/tasks', '#/start', '#/people', '#/guide/elder'])('preserves the legacy route %s', (hash) => expect(usesClassic(null, hash)).toBe(true));
     it('chooses classic mode explicitly and keeps c routes in the new app', () => { expect(usesClassic('classic', '#/c/home')).toBe(true); expect(usesClassic(null, '#/c/home')).toBe(false); expect(parseCommunityRoute('#/c/job/job-12')).toEqual({ screen: 'job', id: 'job-12' }); expect(parseCommunityRoute('#/c/job/%zz').id).toBe(''); });
-    it('renders the actual community Root by default and the classic return control for legacy', () => { const storage = memoryStorage(); vi.stubGlobal('window', { location: { hash: '#/c/intro' }, localStorage: storage }); vi.stubGlobal('localStorage', storage); expect(renderToStaticMarkup(<Root />)).toContain('A little help at home.'); storage.setItem('fixlist.mode', 'classic'); const classic = renderToStaticMarkup(<Root />); expect(classic).toContain('Back to new FixList'); expect(classic).not.toContain('c-landing-nav'); });
+    it('renders the actual community Root by default and the classic return control for legacy', () => { const storage = memoryStorage(); vi.stubGlobal('window', { location: { hash: '#/c/intro' }, localStorage: storage }); vi.stubGlobal('localStorage', storage); expect(renderToStaticMarkup(<Root />)).toContain('Loading FixList'); storage.setItem('fixlist.mode', 'classic'); const classic = renderToStaticMarkup(<Root />); expect(classic).toContain('Back to new FixList'); expect(classic).not.toContain('c-landing-nav'); });
     it('renders all sign-in providers and grouped account choices, then role and elder home', () => { let state = d.createSeedState(NOW), route = 'signin'; const sign = capture(() => SignIn({ groups: { elder: d.accountsByRole(state, 'elder'), volunteer: d.accountsByRole(state, 'volunteer'), family: d.accountsByRole(state, 'family') }, onSignIn: noop, onCreate: noop, onBack: noop })); expect(sign.html).toContain('Continue with Apple'); expect(sign.html).toContain('Continue with Google'); expect(sign.html).toContain('Continue with email'); expect(sign.html).toContain('sign-in uses sample accounts on this phone'); const groups = { elder: d.accountsByRole(state, 'elder'), volunteer: d.accountsByRole(state, 'volunteer'), family: d.accountsByRole(state, 'family') }; const sheet = capture(() => DemoAccountChoices({ groups, onSelect: (id) => { state = stateOf(d.signIn(state, id)); route = 'home'; }, onCreate: () => { route = 'role'; } })); expect(sheet.html).toContain('People who want help'); expect(sheet.html).toContain('Volunteers'); expect(sheet.html).toContain('Family'); click(button(sheet.tree, translate('en', 'c.signin.new'))); expect(route).toBe('role'); let role = ''; const roles = capture(() => RoleChoice({ onSelect: (r) => { role = r; }, onBack: noop })); const cards = elements(roles.tree, 'button'); click(cards[0]!); expect(role).toBe('elder'); const accountChoice = elements(sheet.tree, 'button').find((e) => (e.props.onClick as () => void) && renderToStaticMarkup(e).includes('Margaret Lee'))!; click(accountChoice); expect(route).toBe('home'); const elder = d.currentAccount(state)!; const home = capture(() => ElderHome({ state, account: elder, elder, jobs: d.jobsForElder(state, elder.id), onNavigate: noop, onDraft: noop })); expect(home.html).toContain('Hello, Margaret.'); expect(home.html).toContain('Talk to FixList'); });
     it('keeps every new English key available in Spanish', () => { for (const key of Object.keys(en).filter((k) => k.startsWith('c.'))) {
         expect(es[key as keyof typeof es], key).toBeTruthy();
@@ -104,14 +104,15 @@ describe('volunteer matching, privacy and the trust loop', () => {
 
 
 describe('role return routes and new elder accounts', () => {
-    it('returns an existing volunteer from the classic button’s home route to Nearby', () => {
+    it('requires explicit demo mode before showing a cached fictional volunteer', () => {
         const storage = memoryStorage();
         const state = stateOf(d.signIn(d.createSeedState(NOW), VOL));
         expect(d.saveCommunity(storage, state)).toBe(true);
         vi.stubGlobal('window', { location: { hash: '#/c/home' }, localStorage: storage });
         vi.stubGlobal('localStorage', storage);
         const html = renderToStaticMarkup(<Root/>);
-        expect(html).toContain('A little help, close by.');
+        expect(html).toContain('Loading FixList');
+        expect(html).not.toContain('A little help, close by.');
         expect(html).not.toContain('This account isn’t linked yet');
     });
     it('creates and completes a new elder account before rendering their home', () => {

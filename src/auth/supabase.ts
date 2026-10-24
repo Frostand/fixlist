@@ -1,0 +1,132 @@
+import { createClient, type SupabaseClient, type SupportedStorage } from '@supabase/supabase-js';
+import { CallbackTransactions } from './callbacks';
+import type { AuthConfig } from './config';
+import type { NativeAuthPlugin } from './native';
+import { parseProfile } from './validation';
+import type { AuthGateway, AuthSession, CallbackResult, ProfileInput } from './types';
+
+function check(error: unknown) { if (error) throw new Error('Authentication request failed'); }
+export function createSupabaseGateway(config: AuthConfig, storage: SupportedStorage, native: NativeAuthPlugin | null, navigate = (url: string) => window.location.assign(url)) {
+    const client = createClient(config.url, config.publishableKey, { auth: { flowType: 'pkce', storage, storageKey: config.storageKey, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, debug: false } });
+    return new SupabaseAuthGateway(config, storage, client, native, navigate);
+}
+/** Auth mutations share a queue. A late login cannot write tokens after signOut has finished. */
+export class SupabaseAuthGateway implements AuthGateway {
+    readonly backendId: string;
+    private transactions: CallbackTransactions;
+    private tail: Promise<unknown> = Promise.resolve();
+    private cancelled = 0;
+    private exchanges = new Map<string, Promise<CallbackResult>>();
+    constructor(readonly config: AuthConfig, private storage: SupportedStorage, private client: SupabaseClient, private native: NativeAuthPlugin | null, private navigate: (url: string) => void) {
+        this.backendId = config.backendId;
+        this.transactions = new CallbackTransactions(storage, config.storageKey, config.redirectUrl);
+    }
+    private serial<T>(fn: () => Promise<T>): Promise<T> { const result = this.tail.then(fn); this.tail = result.catch(() => {}); return result; }
+    private mutation<T>(work: () => Promise<T>): Promise<T> {
+        const generation = this.cancelled;
+        return this.serial(async () => {
+            if (generation !== this.cancelled) throw new Error('Request cancelled');
+            return work();
+        });
+    }
+    setForeground(active: boolean) { if (active) this.client.auth.startAutoRefresh(); else this.client.auth.stopAutoRefresh(); }
+    subscribe(changed: () => void) {
+        const { data } = this.client.auth.onAuthStateChange(event => {
+            if (event !== 'INITIAL_SESSION') queueMicrotask(changed);
+        });
+        return () => { data.subscription.unsubscribe(); };
+    }
+    async getVerifiedSession(): Promise<AuthSession | null> {
+        const { data, error } = await this.client.auth.getSession(); check(error);
+        if (!data.session) return null;
+        const { data: verified, error: verifyError } = await this.client.auth.getUser(data.session.access_token); check(verifyError);
+        if (!verified.user || verified.user.id !== data.session.user.id || !verified.user.confirmed_at || verified.user.is_anonymous) throw new Error('Unverified identity');
+        return { userId: verified.user.id, backendId: this.backendId, email: verified.user.email ?? null, expiresAt: data.session.expires_at ?? 0,
+            recovery: await this.storage.getItem(`${this.config.storageKey}:recovery`) === verified.user.id };
+    }
+    async getProfile(userId: string, signal: AbortSignal) {
+        const { data, error } = await this.client.from('account_profiles').select('*').eq('user_id', userId).abortSignal(signal).maybeSingle(); check(error);
+        return data ? parseProfile(data, userId) : null;
+    }
+    async saveProfile(userId: string, value: ProfileInput, signal: AbortSignal) {
+        // A typed row of preferences, never a shared domain-state blob. RLS checks auth.uid again.
+        const row = { user_id: userId, role: value.role, name: value.name.trim(), area: value.area.trim(), language: value.language,
+            needs: value.role === 'elder' ? value.needs : [], skills: value.role === 'volunteer' ? value.skills : [], tools: value.role === 'volunteer' ? value.tools : [],
+            availability: value.role === 'volunteer' ? value.availability : [], max_miles: value.role === 'volunteer' ? value.maxMiles : 10, school: value.role === 'volunteer' ? value.school.trim() : '' };
+        // No update permission: first setup inserts one immutable-role profile. A concurrent duplicate requires reload.
+        const { data, error } = await this.client.from('account_profiles').insert(row).select('*').abortSignal(signal).single(); check(error);
+        return parseProfile(data, userId);
+    }
+    signIn(email: string, password: string) { return this.mutation(async () => {
+        await this.transactions.cancel(); await this.storage.removeItem(`${this.config.storageKey}:recovery`);
+        const { error } = await this.client.auth.signInWithPassword({ email, password }); check(error);
+    }); }
+    register(email: string, password: string): Promise<'confirmation'> { return this.mutation(async () => {
+        const emailRedirectTo = await this.transactions.begin('confirmation');
+        const { data, error } = await this.client.auth.signUp({ email, password, options: { emailRedirectTo } }); check(error);
+        // Deployment must require email confirmation. Fail closed even if misconfigured.
+        if (data.session) { await this.client.auth.signOut({ scope: 'local' }); throw new Error('Email confirmation required'); }
+        return 'confirmation' as const;
+    }); }
+    resendConfirmation(email: string) { return this.mutation(async () => {
+        const emailRedirectTo = await this.transactions.begin('confirmation');
+        // Pinned SDK creates a fresh persisted verifier. Its optional sb_flow_id is supported by our callback gate.
+        const { error } = await this.client.auth.resend({ type: 'signup', email, options: { emailRedirectTo } }); check(error);
+    }); }
+    requestReset(email: string) { return this.mutation(async () => {
+        const redirectTo = await this.transactions.begin('recovery'); const { error } = await this.client.auth.resetPasswordForEmail(email, { redirectTo }); check(error);
+    }); }
+    updatePassword(password: string) { return this.mutation(async () => {
+        const session = await this.getVerifiedSession(); if (!session?.recovery) throw new Error('Recovery required');
+        const { error } = await this.client.auth.updateUser({ password }); check(error);
+        await this.storage.removeItem(`${this.config.storageKey}:recovery`);
+    }); }
+    oauth(provider: 'google' | 'apple') { return this.mutation(async () => {
+        const generation = this.cancelled;
+        if (provider === 'apple' && this.config.native) {
+            if (!this.config.appleNative || !this.native) throw new Error('Native Apple unavailable');
+            const { token, nonce } = await this.native.appleSignIn();
+            if (generation !== this.cancelled) return;
+            const { error } = await this.client.auth.signInWithIdToken({ provider: 'apple', token, nonce }); check(error);
+            return;
+        }
+        if (!(provider === 'google' ? this.config.google : this.config.appleWeb)) throw new Error('Provider unavailable');
+        const redirectTo = await this.transactions.begin('oauth');
+        const { data, error } = await this.client.auth.signInWithOAuth({ provider, options: { redirectTo, skipBrowserRedirect: true } }); check(error);
+        if (!data.url || generation !== this.cancelled) return;
+        if (this.config.native) {
+            if (!this.native) throw new Error('Native browser unavailable');
+            const result = await this.native.openOAuth({ url: data.url });
+            if (generation !== this.cancelled) return;
+            await this.exchangeOnce(result.url);
+        } else this.navigate(data.url);
+    }); }
+    private async exchangeOnce(url: string): Promise<CallbackResult> {
+        // Remember outcomes by a digest, not the code-bearing URL. Duplicate failed
+        // delivery (including StrictMode startup) must retain its error, not hide it.
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
+        const key = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+        const prior = this.exchanges.get(key);
+        if (prior) { await prior; return 'ignored'; }
+        const exchange = this.exchange(url); this.exchanges.set(key, exchange);
+        if (this.exchanges.size > 4) this.exchanges.delete(this.exchanges.keys().next().value!);
+        return exchange;
+    }
+    private async exchange(url: string): Promise<CallbackResult> {
+        const pending = await this.transactions.consume(url); if (!pending) return 'ignored';
+        try {
+            const { data, error } = await this.client.auth.exchangeCodeForSession(pending.code, pending.flowId ? { flowId: pending.flowId } : undefined); check(error);
+            if (!data.session) throw new Error('No session');
+            if (pending.kind === 'recovery') await this.storage.setItem(`${this.config.storageKey}:recovery`, data.session.user.id);
+            else await this.storage.removeItem(`${this.config.storageKey}:recovery`);
+            return pending.kind === 'recovery' ? 'recovery' : 'signed-in';
+        } finally { await this.transactions.cancel(); }
+    }
+    callback(url: string) { return this.mutation(() => this.exchangeOnce(url)); }
+    async cancel() { ++this.cancelled; if (this.native) await this.native.cancel(); await this.serial(() => this.transactions.cancel()); }
+    signOut() { return this.serial(async () => {
+        await this.transactions.cancel(); await this.storage.removeItem(`${this.config.storageKey}:recovery`);
+        try { const { error } = await this.client.auth.signOut({ scope: 'local' }); check(error); }
+        finally { await this.storage.removeItem(this.config.storageKey); }
+    }); }
+}

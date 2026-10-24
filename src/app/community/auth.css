@@ -1,0 +1,8 @@
+.fl-auth .c-main { padding-block: 1.5rem 3rem; }
+.fl-auth .c-wordmark { margin-block-end: 1rem; }
+.fl-auth .c-stack, .fl-auth hr { margin-block: 1.25rem; }
+.fl-auth .c-button { max-inline-size: 100%; white-space: normal; }
+.fl-auth-setup { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
+.fl-auth-links { display: flex; flex-wrap: wrap; gap: .25rem; margin-block: 1rem; }
+.fl-auth-demo-banner { padding: .75rem 1rem; background: #e7eddf; color: #263b2d; text-align: center; font-size: 1rem; }
+.fl-auth-demo-banner button { text-decoration: underline; background: transparent; border: 0; color: inherit; font: inherit; min-block-size: 44px; cursor: pointer; }
