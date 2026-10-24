@@ -11,6 +11,7 @@ import { analyzeAndSaveFlags, ondeviceFlagCopy } from '../../lib/ondevice-flags'
 import { capturePrompts, GuidedPhotoTour } from '../CaptureScreens';
 import { Button, Heading, Sheet } from './UI';
 import { EvidencePhoto } from './JobCard';
+import { CaptureVideos } from '../CaptureVideos';
 interface ReviewArea {
     checklistItemId: string;
     evidence: ScanEvidence;
@@ -111,12 +112,15 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
     const store = useMemo(() => getCommunityCaptureStore(ownerId, resetEpoch), [ownerId, resetEpoch]);
     const scope = useMemo(() => ({ ownerId, resetEpoch, store }), [ownerId, resetEpoch, store]);
     const latestScope = useRef(scope), pendingNative = useRef<AbortController | null>(null), photoOperation = useRef<(() => boolean) | null>(null);
+    const recordScope = useRef(scope);
     latestScope.current = scope;
     function invalidate() { epoch.current++; pendingNative.current?.abort(); pendingNative.current = null; photoOperation.current = null; }
     const [roomId, setRoomId] = useState<string | null>(null), [record, setRecord] = useState<StoredCapture | null>(null), [areas, setAreas] = useState<ReviewArea[]>([]), [phase, setPhase] = useState<'choose' | 'ready' | 'busy' | 'photos' | 'review'>('choose'), [error, setError] = useState(''), [replace, setReplace] = useState(false), [sample, setSample] = useState(false);
+    const [cleanupNotice, setCleanupNotice] = useState('');
+    function retainRecord(saved: StoredCapture | null) { recordScope.current = scope; setRecord(saved); }
     useEffect(() => {
         alive.current = true;
-        setRoomId(null); setRecord(null); setAreas([]); setPhase('choose'); setError(''); setReplace(false); setSample(false);
+        setRoomId(null); setRecord(null); setAreas([]); setPhase('choose'); setError(''); setCleanupNotice(''); setReplace(false); setSample(false);
         return () => { alive.current = false; invalidate(); };
     }, [scope]);
     function guard() {
@@ -143,7 +147,7 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
         const saved = await store.read(id);
         if (!current())
             return;
-        setRecord(saved);
+        retainRecord(saved);
         if (saved?.flags)
             await readAreas(saved, current);
         else
@@ -160,13 +164,13 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
         // the optional model step fails, so the next consent targets this save.
         const durable = await store.read(id);
         if (!current()) return;
-        setRecord(durable);
+        retainRecord(durable);
         await analyzeAndSaveFlags(id, { store, isCurrent: current });
         if (!current())
             return;
         const saved = await store.read(id);
         if (saved && current()) {
-            setRecord(saved);
+            retainRecord(saved);
             await readAreas(saved, current);
         }
     }
@@ -177,7 +181,7 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
         }
     } }
     async function start() { if (!roomId)
-        return; const current = guard(); if (!current()) return; setError(''); setPhase('busy'); try {
+        return; const current = guard(); if (!current()) return; setError(''); setCleanupNotice(''); setPhase('busy'); try {
         const controller = new AbortController();
         pendingNative.current = controller;
         const a = await captureAvailability();
@@ -191,6 +195,7 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
         const outcome = await runNativeCapture({ roomId, roomName: catalogText(t, 'room', roomId), language, prompts: capturePrompts(demoScenario, roomId, t), replaceConfirmed: !!record, expectedCaptureId: record?.manifest.captureId ?? null, store, isCurrent: current, signal: controller.signal });
         if (!current())
             return;
+        if (outcome.cleanupFailed) setCleanupNotice(t(outcome.status === 'completed' ? 'capture.savedCleanupFailed' : 'capture.cleanupFailed'));
         if (outcome.status === 'completed')
             await analyze(roomId, current);
         else if (outcome.status === 'unavailable' || outcome.status === 'denied') {
@@ -200,7 +205,7 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
         else {
             setPhase('ready');
             if (outcome.status !== 'cancelled')
-                setError(t('c.scan.captureFailed'));
+                setError([t('c.scan.captureFailed'), outcome.reason].filter(Boolean).join(' '));
         }
     }
     catch {
@@ -226,7 +231,7 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
         } catch { setError(t('c.scan.captureFailed')); }
     }
     const photoCurrent = photoOperation.current;
-    return <div className="c-stack"><Heading intro={t('c.scan.body')}>{roomId ? catalogText(t, 'room', roomId) : t('c.scan.title')}</Heading>{!roomId ? <div className="c-room-list">{demoScenario.rooms.map((r) => <Button key={r.id} kind="secondary" icon="room" onClick={() => void selectRoom(r.id)}>{catalogText(t, 'room', r.id)}</Button>)}</div> : <>{phase === 'busy' ? <p role="status">{t('c.scan.checking')}</p> : null}{error ? <p className="c-notice" role="status">{error}</p> : null}{phase === 'photos' ? <GuidedPhotoTour prompts={capturePrompts(demoScenario, roomId, t)} onCancel={() => { if (photoCurrent?.()) { invalidate(); setPhase('ready'); } }} onSave={async (photos, blobs) => { if (!photoCurrent?.()) return; const current = guard(); if (!current()) return; setPhase('busy'); try {
+    return <div className="c-stack"><Heading intro={t('c.scan.body')}>{roomId ? catalogText(t, 'room', roomId) : t('c.scan.title')}</Heading>{cleanupNotice ? <p className="c-notice" role="alert">{cleanupNotice}</p> : null}{scope === recordScope.current && record && record.manifest.roomId === roomId ? <CaptureVideos record={record} ownerKey={JSON.stringify([ownerId, resetEpoch])} /> : null}{!roomId ? <div className="c-room-list">{demoScenario.rooms.map((r) => <Button key={r.id} kind="secondary" icon="room" onClick={() => void selectRoom(r.id)}>{catalogText(t, 'room', r.id)}</Button>)}</div> : <>{phase === 'busy' ? <p role="status">{t('c.scan.checking')}</p> : null}{error ? <p className="c-notice" role="status">{error}</p> : null}{phase === 'photos' ? <GuidedPhotoTour prompts={capturePrompts(demoScenario, roomId, t)} onCancel={() => { if (photoCurrent?.()) { invalidate(); setPhase('ready'); } }} onSave={async (photos, blobs) => { if (!photoCurrent?.()) return; const current = guard(); if (!current()) return; setPhase('busy'); try {
         await store.writeCapture({ format: 'fixlist-room-capture', version: 1, captureId: newCaptureId(), roomId, createdAt: new Date().toISOString(), mode: 'photos', floorY: null, outline: null, doors: [], photos }, blobs, !!record, current, record?.manifest.captureId ?? null);
         if (current())
             await analyze(roomId, current);

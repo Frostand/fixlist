@@ -1,6 +1,7 @@
 import { demoScenario } from '../data/demo-scenario';
 import type { DemoScenario } from '../domain/types';
-import type { CaptureCamera, CaptureManifest, NativeCaptureResult, Vec2 } from './capture-types';
+import type { CaptureCamera, CaptureManifest, CaptureVideos, NativeCaptureResult, Vec2 } from './capture-types';
+import { MAX_CAPTURE_VIDEO_BYTES } from './capture-types';
 
 export type CaptureErrorCode = 'INVALID_CAPTURE' | 'CAPTURE_MISMATCH' | 'CAPACITY' | 'CANCELLED' | 'STORAGE';
 export type CaptureResult<T> = { ok: true; value: T } | { ok: false; error: string; code: CaptureErrorCode };
@@ -60,18 +61,45 @@ export function validateCaptureManifest(value: unknown, catalog: Pick<DemoScenar
   if (value.mode === 'arkit' && value.floorY === null && (outline !== null || value.doors.length > 0)) return captureFail('A room outline or doors require a floor plane.');
   return { ok: true, value: structuredClone(value) as unknown as CaptureManifest };
 }
+export function validateCaptureVideos(value: unknown, manifest: Pick<CaptureManifest, 'captureId' | 'roomId'>): CaptureResult<CaptureVideos> {
+  if (!plainRecord(value) || !exactKeys(value, ['format', 'version', 'captureId', 'roomId', 'clips'])
+    || value.format !== 'fixlist-capture-videos' || value.version !== 1 || value.captureId !== manifest.captureId || value.roomId !== manifest.roomId
+    || !Array.isArray(value.clips) || value.clips.length !== 1 || Reflect.ownKeys(value.clips).length !== 2
+    || !Object.hasOwn(Object.getOwnPropertyDescriptor(value.clips, '0') ?? {}, 'value')) return captureFail('Invalid room video binding or clip count.');
+  const clip: unknown = value.clips[0];
+  if (!plainRecord(clip) || !exactKeys(clip, ['videoId', 'takenAt', 'mimeType', 'codec', 'width', 'height', 'durationMs', 'byteLength', 'sha256'])
+    || clip.videoId !== 'v01' || clip.mimeType !== 'video/mp4' || clip.codec !== 'avc1' || !captureDate(clip.takenAt) || !sha256String(clip.sha256)
+    || ![clip.width, clip.height, clip.durationMs, clip.byteLength].every(Number.isSafeInteger)
+    || (clip.width as number) < 2 || (clip.width as number) > 720 || (clip.width as number) % 2 !== 0
+    || (clip.height as number) <= (clip.width as number) || (clip.height as number) > 1280 || (clip.height as number) % 2 !== 0
+    || (clip.durationMs as number) < 1000 || (clip.durationMs as number) > 30000
+    || (clip.byteLength as number) < 1 || (clip.byteLength as number) > MAX_CAPTURE_VIDEO_BYTES) return captureFail('Invalid room video metadata.');
+  return { ok: true, value: structuredClone(value) as unknown as CaptureVideos };
+}
+
 export function validateNativeCaptureResult(value: unknown): CaptureResult<NativeCaptureResult> {
   if (!plainRecord(value) || !Object.hasOwn(value, 'files')) return captureFail('Native capture files are missing.');
-  const { files, ...manifest } = value;
+  const { files, videos, ...manifest } = value;
   const parsed = validateCaptureManifest({ ...manifest, roomId: manifest.roomId === '' ? demoScenario.rooms[0]!.id : manifest.roomId });
   if (!parsed.ok) return parsed;
-  if (!plainRecord(files) || !exactKeys(files, parsed.value.photos.map((p) => p.photoId))
-    || !parsed.value.photos.every((p) => {
-      const url = files[p.photoId];
-      if (typeof url !== 'string') return false;
-      try { const u = new URL(url); return u.protocol === 'file:' && !u.host && !u.search && !u.hash && decodeURIComponent(u.pathname).includes(`/Library/Caches/fixlist-captures/${parsed.value.captureId}/`) && !decodeURIComponent(u.pathname).split('/').includes('..'); } catch { return false; }
-    }) || new Set(Object.values(files)).size !== parsed.value.photos.length) return captureFail('Native capture requires one local cache file URL per photo.');
-  return { ok: true, value: { ...parsed.value, roomId: manifest.roomId as string, files: { ...files } as Record<string, string> } };
+  const sidecar = Object.hasOwn(value, 'videos') ? validateCaptureVideos(videos, { ...parsed.value, roomId: manifest.roomId as string }) : null;
+  if (sidecar && !sidecar.ok) return sidecar;
+  const names = new Map(parsed.value.photos.map((p) => [p.photoId, `${p.photoId}.jpg`]));
+  if (sidecar?.ok) names.set('v01', 'v01.mp4');
+  let directory: string | undefined;
+  if (!plainRecord(files) || !exactKeys(files, [...names.keys()]) || ![...names].every(([id, filename]) => {
+    const url = files[id];
+    if (typeof url !== 'string' || !url.startsWith('file:///') || /[%?#\\\s\x00-\x1f]/.test(url)) return false;
+    try {
+      const u = new URL(url), parts = u.pathname.split('/');
+      if (u.href !== url || u.protocol !== 'file:' || u.host || u.search || u.hash || parts.slice(1).some(p => !p || p === '.' || p === '..')) return false;
+      const suffix = `/Library/Caches/fixlist-captures/${parsed.value.captureId}/${filename}`;
+      if (!u.pathname.endsWith(suffix)) return false;
+      const parent = u.pathname.slice(0, -filename.length);
+      directory ??= parent; return directory === parent;
+    } catch { return false; }
+  }) || new Set(Object.values(files)).size !== names.size) return captureFail('Native capture requires exact local cache file URLs for its photos and optional video.');
+  return { ok: true, value: { ...parsed.value, roomId: manifest.roomId as string, files: { ...files } as Record<string, string>, ...(sidecar?.ok ? { videos: sidecar.value } : {}) } };
 }
 export function newCaptureId(): string { return `cap-${crypto.randomUUID()}`; }
 export async function sha256Bytes(bytes: Uint8Array<ArrayBuffer> | ArrayBuffer): Promise<string> {

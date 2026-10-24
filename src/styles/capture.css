@@ -49,3 +49,5 @@
 .flag-check-spinner { inline-size: 1.4rem; block-size: 1.4rem; flex: none; border: 3px solid var(--moss-wash); border-block-start-color: var(--moss); border-radius: 50%; animation: flag-check-spin 1s linear infinite; }
 @keyframes flag-check-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .flag-check-spinner { animation: none; } }
+.capture-video video { display: block; width: 100%; max-height: 70dvh; object-fit: contain; background: #111; border-radius: 0.5rem; }
+.capture-video { min-width: 0; }

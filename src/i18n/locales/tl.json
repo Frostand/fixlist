@@ -1400,5 +1400,20 @@
   "c.job.askedIn": "Humingi ng tulong sa {language}",
   "c.job.requester": "{name} · {area}",
   "c.map.destination": "Destinasyon",
-  "c.map.you": "Kayo"
+  "c.map.you": "Kayo",
+  "capture.native.recordVideo": "I-record ang video",
+  "capture.native.stopVideo": "Ihinto ang pag-record",
+  "capture.native.useVideo": "Gamitin ang video",
+  "capture.native.retakeVideo": "Ulitin ang video",
+  "capture.native.videoRecording": "Nagre-record {seconds} / 30 seg",
+  "capture.native.videoReview": "Suriin ang video",
+  "capture.native.videoSaved": "Na-save ang video",
+  "capture.native.videoFailed": "Hindi ma-save ang video. Subukang muli o kumuha ng larawan.",
+  "capture.native.videoStopped": "Naantala ang pag-record. Nananatili ang iyong mga naka-save na larawan at video.",
+  "capture.native.videoNeedsPhoto": "Kumuha ng kahit isang larawan para matapos ang pag-scan ng kuwarto.",
+  "capture.native.videoLimit": "Isang video na walang tunog, hanggang 30 segundo.",
+  "capture.native.videoCancel": "Ihinto ang pag-scan na ito at burahin ang mga larawan at video nito?",
+  "capture.video.title": "Video ng kuwarto",
+  "capture.video.privacy": "Nananatili ang video sa teleponong ito. Mga larawan ang ginagamit ng AI sa pag-check. Mga larawan lang ang kasama sa mga capture export.",
+  "capture.video.playbackFailed": "Hindi ma-play ang video na ito. Subukang buksan muli ang kuwarto."
 }

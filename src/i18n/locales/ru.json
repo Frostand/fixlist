@@ -1400,5 +1400,20 @@
   "c.job.askedIn": "Запрос на языке: {language}",
   "c.job.requester": "{name} · {area}",
   "c.map.destination": "Место назначения",
-  "c.map.you": "Вы"
+  "c.map.you": "Вы",
+  "capture.native.recordVideo": "Записать видео",
+  "capture.native.stopVideo": "Остановить запись",
+  "capture.native.useVideo": "Использовать видео",
+  "capture.native.retakeVideo": "Переснять видео",
+  "capture.native.videoRecording": "Идёт запись: {seconds} / 30 с",
+  "capture.native.videoReview": "Просмотр видео",
+  "capture.native.videoSaved": "Видео сохранено",
+  "capture.native.videoFailed": "Не удалось сохранить видео. Попробуйте ещё раз или сделайте фото.",
+  "capture.native.videoStopped": "Запись прервана. Сохранённые фото и видео остались на месте.",
+  "capture.native.videoNeedsPhoto": "Сделайте хотя бы одно фото, чтобы завершить сканирование комнаты.",
+  "capture.native.videoLimit": "Одно видео без звука, до 30 секунд.",
+  "capture.native.videoCancel": "Остановить это сканирование и удалить его фото и видео?",
+  "capture.video.title": "Видео комнаты",
+  "capture.video.privacy": "Видео остаётся на этом телефоне. ИИ проверяет только фото. В экспорт съёмки входят только фото.",
+  "capture.video.playbackFailed": "Не удалось воспроизвести это видео. Попробуйте снова открыть комнату."
 }
