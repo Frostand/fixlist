@@ -4,6 +4,7 @@ import { translate } from '../i18n';
 import { NATIVE_CAPTURE_STRING_KEYS, type FixListCapturePlugin, type NativeCaptureOutcome, type NativeCaptureStartOptions } from './capture-types';
 import { CaptureError, isJpegBytes, newCaptureId, sha256Blob, validateCaptureManifest, validateNativeCaptureResult } from './capture-model';
 import { getCaptureStore, type CaptureStore } from './capture-storage';
+import { readNativeVideo } from './capture-video-transfer';
 
 export const FixListCapture = registerPlugin<FixListCapturePlugin>('FixListCapture');
 const isIOS = () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios';
@@ -45,7 +46,7 @@ export async function runNativeCapture(options: RunCaptureOptions): Promise<Nati
       const parsed = validateNativeCaptureResult(outcome.capture);
       if (!parsed.ok) throw new CaptureError(parsed.code, parsed.error);
       if (parsed.value.captureId !== captureId || parsed.value.roomId !== options.roomId) throw new CaptureError('CAPTURE_MISMATCH', 'Native capture identity does not match this room.');
-      const { files, ...capture } = parsed.value;
+      const { files, videos, ...capture } = parsed.value;
       const valid = validateCaptureManifest(capture);
       if (!valid.ok) throw new CaptureError(valid.code, valid.error);
       const photos = new Map<string, Blob>();
@@ -61,7 +62,14 @@ export async function runNativeCapture(options: RunCaptureOptions): Promise<Nati
         photos.set(p.photoId, blob);
       }
       requireCurrent();
-      await store.writeCapture(valid.value, photos, options.replaceConfirmed ?? false, isCurrent, options.expectedCaptureId);
+      const videoBlobs = new Map<string, Blob>();
+      if (videos) {
+        const response = await fetch(Capacitor.convertFileSrc(files.v01!), options.signal ? { signal: options.signal } : undefined);
+        requireCurrent();
+        videoBlobs.set('v01', await readNativeVideo(response, videos.clips[0], requireCurrent, options.signal));
+      }
+      requireCurrent();
+      await store.writeCapture(valid.value, photos, options.replaceConfirmed ?? false, isCurrent, options.expectedCaptureId, { videos: videos ?? null, videoBlobs });
       result = { status: 'completed' };
     }
   } catch (error) { result = { status: !isCurrent() || error instanceof CaptureError && error.code === 'CANCELLED' ? 'cancelled' : 'failed', reason: error instanceof Error ? error.message : 'The walk-through could not finish.' }; }

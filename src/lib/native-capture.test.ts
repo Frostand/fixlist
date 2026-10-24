@@ -6,12 +6,41 @@ import { createMemoryCaptureStore } from './capture-storage';
 import { resetFixListData } from './demo-storage';
 import { demoScenario } from '../data/demo-scenario';
 import { translate } from '../i18n';
+import { syntheticVideoAssets, syntheticVideoBytes } from './__fixtures__/capture-video';
+import { parseCaptureBundle } from './capture-bundle';
 const mock = vi.hoisted(() => ({ platform: 'web', native: false, availability: vi.fn(), start: vi.fn(), discard: vi.fn(), discardAll: vi.fn(), shareFile: vi.fn(), convert: vi.fn((url: string) => `converted:${url}`) }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => mock.native, getPlatform: () => mock.platform, convertFileSrc: mock.convert }, registerPlugin: () => mock }));
 const options = { roomId: 'living-room', roomName: 'Living room', language: 'en' as const, prompts: [{ checklistItemId: null, text: 'Overview' }] };
 beforeEach(() => { vi.clearAllMocks(); mock.native = true; mock.platform = 'ios'; mock.discard.mockResolvedValue(undefined); mock.discardAll.mockResolvedValue(undefined); });
 afterEach(() => vi.unstubAllGlobals());
 describe('native capture bridge boundaries (mocked plugin; no device claim)', () => {
+  it.each(['valid', 'hash', 'truncated', 'oversize', 'structure', 'no-photos'] as const)('imports bounded native video atomically: %s', async variant => {
+    const store = createMemoryCaptureStore();
+    // Keep a prior save to prove every candidate failure preserves it.
+    const parsed = await parseCaptureBundle(JSON.stringify(bundle)); if (!parsed.ok) throw new Error(parsed.error);
+    const old = parsed.value.manifest;
+    const photos = new Map(bundle.photos.map(p => [p.photoId, new Blob([Uint8Array.from(atob(p.jpeg), c => c.charCodeAt(0))], { type: 'image/jpeg' })]));
+    await store.writeCapture(old, photos);
+    mock.start.mockImplementation(async args => {
+      const videos = (await syntheticVideoAssets({ ...old, captureId: args.captureId })).videos;
+      return { status: 'completed', capture: { ...old, captureId: args.captureId, photos: variant === 'no-photos' ? [] : old.photos, videos, files: { ...Object.fromEntries((variant === 'no-photos' ? [] : bundle.photos).map(p => [p.photoId, `file:///var/app/Library/Caches/fixlist-captures/${args.captureId}/${p.photoId}.jpg`])), v01: `file:///var/app/Library/Caches/fixlist-captures/${args.captureId}/v01.mp4` } } };
+    });
+    const fetched = vi.fn(async (url: string) => {
+      if (!url.endsWith('v01.mp4')) return new Response(await photos.get(bundle.photos.find(p => url.endsWith(`${p.photoId}.jpg`))!.photoId)!.arrayBuffer());
+      let bytes = syntheticVideoBytes();
+      if (variant === 'hash') bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1;
+      if (variant === 'truncated') bytes = bytes.slice(0, -1);
+      if (variant === 'oversize') bytes = new Uint8Array(bytes.length + 1);
+      if (variant === 'structure') bytes.fill(0, 32, 36);
+      return new Response(bytes, { headers: { 'Content-Length': '0' } });
+    }); vi.stubGlobal('fetch', fetched);
+    const result = await runNativeCapture({ ...options, store, replaceConfirmed: true, expectedCaptureId: old.captureId });
+    expect(result.status).toBe(variant === 'valid' ? 'completed' : 'failed');
+    const saved = (await store.read(old.roomId))!;
+    if (variant === 'valid') { expect(saved.videos?.clips[0].videoId).toBe('v01'); expect(saved.videoBlobs?.size).toBe(1); expect(saved.manifest).not.toHaveProperty('videos'); }
+    else { expect(saved.manifest).toEqual(old); expect(saved.videos).toBeNull(); }
+    expect(mock.discard).toHaveBeenCalledOnce(); if (variant === 'no-photos') expect(fetched).not.toHaveBeenCalled();
+  });
   it.each(['en', 'es', 'zh', 'vi', 'ko', 'tl', 'ru', 'fr', 'ar'] as const)('bridges every native string in %s', async language => {
     mock.start.mockResolvedValue({ status: 'cancelled' });
     await runNativeCapture({ ...options, language, store: createMemoryCaptureStore() });

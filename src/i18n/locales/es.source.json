@@ -1061,5 +1061,20 @@
   "room.flagsNotChecked": "These photos haven’t been checked yet.",
   "home.spotOne": "spot to review",
   "rooms.scannedOne": "Scanned · 1 spot to review",
-  "rooms.scannedNone": "Scanned · nothing flagged"
+  "rooms.scannedNone": "Scanned · nothing flagged",
+  "capture.native.recordVideo": "Record video",
+  "capture.native.stopVideo": "Stop recording",
+  "capture.native.useVideo": "Use video",
+  "capture.native.retakeVideo": "Retake video",
+  "capture.native.videoRecording": "Recording {seconds} / 30 s",
+  "capture.native.videoReview": "Review video",
+  "capture.native.videoSaved": "Video saved",
+  "capture.native.videoFailed": "The video could not be saved. Try again or take a photo.",
+  "capture.native.videoStopped": "Recording was interrupted. Your saved photos and video are kept.",
+  "capture.native.videoNeedsPhoto": "Take at least one photo to finish the room scan.",
+  "capture.native.videoLimit": "One silent video, up to 30 seconds.",
+  "capture.native.videoCancel": "Stop this scan and delete its photos and video?",
+  "capture.video.title": "Room video",
+  "capture.video.privacy": "Video stays on this phone. AI checks use photos. Capture exports include photos only.",
+  "capture.video.playbackFailed": "This video could not play. Try opening the room again."
 }

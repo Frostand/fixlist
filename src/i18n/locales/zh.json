@@ -1400,5 +1400,20 @@
   "c.job.askedIn": "以 {language} 提出请求",
   "c.job.requester": "{name} · {area}",
   "c.map.destination": "目的地",
-  "c.map.you": "您"
+  "c.map.you": "您",
+  "capture.native.recordVideo": "录制视频",
+  "capture.native.stopVideo": "停止录制",
+  "capture.native.useVideo": "使用视频",
+  "capture.native.retakeVideo": "重拍视频",
+  "capture.native.videoRecording": "正在录制 {seconds} / 30 秒",
+  "capture.native.videoReview": "查看视频",
+  "capture.native.videoSaved": "视频已保存",
+  "capture.native.videoFailed": "无法保存视频。请重试或拍一张照片。",
+  "capture.native.videoStopped": "录制被中断。已保存的照片和视频都会保留。",
+  "capture.native.videoNeedsPhoto": "请至少拍一张照片，以完成房间扫描。",
+  "capture.native.videoLimit": "一段无声视频，最长 30 秒。",
+  "capture.native.videoCancel": "要停止本次扫描并删除其照片和视频吗？",
+  "capture.video.title": "房间视频",
+  "capture.video.privacy": "视频只保存在这部手机上。AI 检查只使用照片。导出的采集内容只包含照片。",
+  "capture.video.playbackFailed": "无法播放此视频。请尝试重新打开该房间。"
 }

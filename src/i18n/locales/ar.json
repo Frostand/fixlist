@@ -1400,5 +1400,20 @@
   "c.job.askedIn": "طُلبت المساعدة بـ {language}",
   "c.job.requester": "{name} · {area}",
   "c.map.destination": "الوجهة",
-  "c.map.you": "أنت"
+  "c.map.you": "أنت",
+  "capture.native.recordVideo": "تسجيل فيديو",
+  "capture.native.stopVideo": "إيقاف التسجيل",
+  "capture.native.useVideo": "استخدام الفيديو",
+  "capture.native.retakeVideo": "إعادة تسجيل الفيديو",
+  "capture.native.videoRecording": "جارٍ التسجيل {seconds} / 30 ث",
+  "capture.native.videoReview": "مراجعة الفيديو",
+  "capture.native.videoSaved": "تم حفظ الفيديو",
+  "capture.native.videoFailed": "تعذّر حفظ الفيديو. حاول مرة أخرى أو التقط صورة.",
+  "capture.native.videoStopped": "تمت مقاطعة التسجيل. تم الاحتفاظ بصورك المحفوظة وبالفيديو.",
+  "capture.native.videoNeedsPhoto": "التقط صورة واحدة على الأقل لإنهاء مسح الغرفة.",
+  "capture.native.videoLimit": "فيديو واحد صامت، حتى 30 ثانية.",
+  "capture.native.videoCancel": "هل تريد إيقاف هذا المسح وحذف صوره وفيديوه؟",
+  "capture.video.title": "فيديو الغرفة",
+  "capture.video.privacy": "يبقى الفيديو على هذا الهاتف. يفحص الذكاء الاصطناعي الصور فقط. تتضمن عمليات تصدير الالتقاط الصور فقط.",
+  "capture.video.playbackFailed": "تعذّر تشغيل هذا الفيديو. حاول فتح الغرفة مرة أخرى."
 }

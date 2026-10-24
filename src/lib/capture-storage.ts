@@ -1,14 +1,15 @@
-import type { CaptureManifest, CaptureSuggestionsFile } from './capture-types';
+import type { CaptureManifest, CaptureSuggestionsFile, CaptureVideoAssets, CaptureVideos } from './capture-types';
 import { CaptureError, jpegDimensions, sha256Blob, validateCaptureManifest } from './capture-model';
 import { validateCaptureSuggestions } from './capture-suggestions';
+import { validateCaptureVideoBlob, validateCaptureVideos } from './capture-video';
 
 export const CAPTURE_DATABASE = 'fixlist-captures';
 export const MAX_CAPTURE_STORAGE_BYTES = 120 * 1024 * 1024;
 const STORE = 'rooms', GENERATION = '__reset_generation';
-export interface StoredCapture { manifest: CaptureManifest; photos: ReadonlyMap<string, Blob>; flags: CaptureSuggestionsFile | null }
+export interface StoredCapture { manifest: CaptureManifest; photos: ReadonlyMap<string, Blob>; flags: CaptureSuggestionsFile | null; videos?: CaptureVideos | null; videoBlobs?: ReadonlyMap<string, Blob> }
 export interface CaptureStore {
   read(roomId: string): Promise<StoredCapture | null>;
-  writeCapture(manifest: CaptureManifest, photos: ReadonlyMap<string, Blob>, replaceConfirmed?: boolean, isCurrent?: () => boolean, expectedCaptureId?: string | null): Promise<void>;
+  writeCapture(manifest: CaptureManifest, photos: ReadonlyMap<string, Blob>, replaceConfirmed?: boolean, isCurrent?: () => boolean, expectedCaptureId?: string | null, assets?: CaptureVideoAssets): Promise<void>;
   writeFlags(roomId: string, flags: CaptureSuggestionsFile, isCurrent?: () => boolean): Promise<void>;
   remove(roomId: string, captureId: string, isCurrent?: () => boolean): Promise<void>;
   clear(): Promise<void>;
@@ -16,7 +17,7 @@ export interface CaptureStore {
 }
 const stale = () => new CaptureError('CANCELLED', 'This room view changed. Reload before saving.');
 function assertCurrent(current?: () => boolean): void { if (current && !current()) throw stale(); }
-function size(record: StoredCapture): number { return new Blob([JSON.stringify(record.manifest), JSON.stringify(record.flags)]).size + [...record.photos.values()].reduce((s, b) => s + b.size, 0); }
+function size(record: StoredCapture): number { return new Blob([JSON.stringify(record.manifest), JSON.stringify(record.flags), ...(record.videos ? [JSON.stringify(record.videos)] : [])]).size + [...record.photos.values(), ...record.videoBlobs?.values() ?? []].reduce((s, b) => s + b.size, 0); }
 async function checked(record: StoredCapture): Promise<StoredCapture> {
   const result = validateCaptureManifest(record.manifest);
   if (!result.ok) throw new CaptureError(result.code, result.error);
@@ -29,16 +30,21 @@ async function checked(record: StoredCapture): Promise<StoredCapture> {
   }
   const flags = record.flags === null ? null : validateCaptureSuggestions(record.flags, result.value);
   if (flags && !flags.ok) throw new CaptureError(flags.code, flags.error);
-  return { manifest: result.value, photos: new Map(record.photos), flags: flags?.ok ? flags.value : null };
+  const videos = record.videos === undefined || record.videos === null ? null : validateCaptureVideos(record.videos, result.value);
+  if (videos && !videos.ok) throw new CaptureError(videos.code, videos.error);
+  const videoBlobs = record.videoBlobs === undefined ? new Map<string, Blob>() : record.videoBlobs;
+  if (!(videoBlobs instanceof Map) || videoBlobs.size !== (videos ? 1 : 0) || videos?.ok && !videoBlobs.has('v01')) throw new CaptureError('INVALID_CAPTURE', 'Saved room video files are incomplete.');
+  if (videos?.ok) await validateCaptureVideoBlob(videoBlobs.get('v01')!, videos.value.clips[0]);
+  return { manifest: result.value, photos: new Map(record.photos), flags: flags?.ok ? flags.value : null, videos: videos?.ok ? videos.value : null, videoBlobs: new Map(videoBlobs) };
 }
 type Change = (rooms: Map<string, StoredCapture>) => void;
 interface Backend { observeGeneration(): Promise<void>; read(roomId: string): Promise<StoredCapture | null>; change(update: Change, reset?: boolean): Promise<void> }
 function storeFromBackend(backend: Backend, key: (roomId: string) => string = (id) => id): CaptureStore {
   return serializeCaptureStore({
     read: async (roomId) => { const r = await backend.read(key(roomId)); return r ? checked(r) : null; },
-    writeCapture: async (manifest, photos, replaceConfirmed = false, isCurrent, expectedCaptureId) => {
+    writeCapture: async (manifest, photos, replaceConfirmed = false, isCurrent, expectedCaptureId, assets) => {
       // Clone before awaiting: caller changes cannot alter queued data or bypass validation.
-      const snapshot: StoredCapture = { manifest: structuredClone(manifest), photos: new Map(photos), flags: null };
+      const snapshot: StoredCapture = { manifest: structuredClone(manifest), photos: new Map(photos), flags: null, ...cloneVideoAssets(assets) };
       // Observe the durable reset generation before reading/hashing photo bytes.
       // A client's first write must not adopt a reset that occurs during validation.
       await backend.observeGeneration();
@@ -142,10 +148,15 @@ export function serializeCaptureStore(store: CaptureStore): CaptureStore {
     const result = tail.then(() => { if (write && invalidated) throw stale(); return fn(); });
     tail = result.catch(() => undefined); return result;
   }
-  return { read: (id) => enqueue(() => store.read(id)), writeCapture: (m, p, c, current, expected) => {
-    const manifest = structuredClone(m), photos = new Map(p);
-    return enqueue(() => store.writeCapture(manifest, photos, c, current, expected), true);
+  return { read: (id) => enqueue(() => store.read(id)), writeCapture: (m, p, c, current, expected, a) => {
+    const manifest = structuredClone(m), photos = new Map(p), assets = cloneVideoAssets(a);
+    return enqueue(() => store.writeCapture(manifest, photos, c, current, expected, assets), true);
   }, writeFlags: (id, f, current) => { const flags = structuredClone(f); return enqueue(() => store.writeFlags(id, flags, current), true); }, remove: (id, captureId, current) => enqueue(() => store.remove(id, captureId, current), true), clear: () => enqueue(() => store.clear()), invalidate: () => { invalidated = true; store.invalidate?.(); } };
+}
+function cloneVideoAssets(assets?: CaptureVideoAssets): CaptureVideoAssets {
+  if (assets === undefined) return { videos: null, videoBlobs: new Map() };
+  if (!assets || !(assets.videoBlobs instanceof Map) || assets.videos === undefined) throw new CaptureError('INVALID_CAPTURE', 'Invalid room video assets.');
+  return { videos: structuredClone(assets.videos), videoBlobs: new Map(assets.videoBlobs) };
 }
 let browserStore: CaptureStore | undefined;
 function browserFactory(): IDBFactory | undefined { try { return globalThis.indexedDB; } catch { return undefined; } }

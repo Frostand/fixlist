@@ -36,6 +36,18 @@ export interface CaptureManifest {
   photos: readonly CapturePhoto[];
 }
 
+/** Local playback sidecar; never part of the v1 photo manifest or export. */
+export const MAX_CAPTURE_VIDEO_BYTES = 12_582_912;
+export interface CaptureVideo {
+  videoId: 'v01'; takenAt: string; mimeType: 'video/mp4'; codec: 'avc1';
+  width: number; height: number; durationMs: number; byteLength: number; sha256: string;
+}
+export interface CaptureVideos {
+  format: 'fixlist-capture-videos'; version: 1; captureId: string; roomId: string;
+  clips: readonly [CaptureVideo];
+}
+export interface CaptureVideoAssets { videos: CaptureVideos | null; videoBlobs: ReadonlyMap<string, Blob> }
+
 export interface PixelPoint { u: number; v: number }
 
 export interface CaptureSuggestionRow { photoId: string; rawProbability: number; probability: number; relevanceProbability: number }
@@ -92,7 +104,7 @@ export interface NativeCaptureStartOptions {
   prompts: readonly { checklistItemId: string | null; text: string }[];
   strings: Readonly<Record<string, string>>;
 }
-export type NativeCaptureResult = Omit<CaptureManifest, 'photos'> & { photos: readonly CapturePhoto[]; files: Readonly<Record<string, string>> };
+export type NativeCaptureResult = Omit<CaptureManifest, 'photos'> & { photos: readonly CapturePhoto[]; files: Readonly<Record<string, string>>; videos?: CaptureVideos };
 export interface NativeCaptureOutcome { status: 'completed' | 'cancelled' | 'unavailable' | 'denied' | 'failed'; reason?: string; capture?: NativeCaptureResult; cleanupFailed?: boolean }
 export interface FixListCapturePlugin {
   availability(): Promise<{ arkit: boolean; camera: CameraPermission }>;
@@ -104,7 +116,7 @@ export interface FixListCapturePlugin {
 
 /**
  * Every on-screen string the native capture screen shows; the web app supplies them per language.
- * Placeholders: {current}, {total}, {count}.
+ * Placeholders: {current}, {total}, {count}, {seconds}.
  */
 export const NATIVE_CAPTURE_STRING_KEYS = [
   'stepOutline', 'stepPhotos', 'aimCorner', 'moreCorners', 'closeAtFirst', 'addCorner',
@@ -114,5 +126,7 @@ export const NATIVE_CAPTURE_STRING_KEYS = [
   'tapCorners', 'cornerCount', 'undo', 'closeOutline', 'markDoor', 'doorMode', 'skipOutline', 'approximate',
   'photoProgress', 'shutter', 'retake', 'skip', 'next', 'done',
   'cancel', 'cancelConfirmTitle', 'cancelConfirmMessage', 'cancelConfirmStop', 'cancelConfirmKeep',
+  'recordVideo', 'stopVideo', 'useVideo', 'retakeVideo', 'videoRecording', 'videoReview',
+  'videoSaved', 'videoFailed', 'videoStopped', 'videoNeedsPhoto', 'videoLimit', 'videoCancel',
 ] as const;
 export type NativeCaptureStringKey = typeof NATIVE_CAPTURE_STRING_KEYS[number];

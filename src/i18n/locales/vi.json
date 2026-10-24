@@ -1400,5 +1400,20 @@
   "c.job.askedIn": "Yêu cầu bằng {language}",
   "c.job.requester": "{name} · {area}",
   "c.map.destination": "Điểm đến",
-  "c.map.you": "Quý vị"
+  "c.map.you": "Quý vị",
+  "capture.native.recordVideo": "Quay video",
+  "capture.native.stopVideo": "Dừng quay",
+  "capture.native.useVideo": "Dùng video",
+  "capture.native.retakeVideo": "Quay lại video",
+  "capture.native.videoRecording": "Đang quay {seconds} / 30 giây",
+  "capture.native.videoReview": "Xem lại video",
+  "capture.native.videoSaved": "Đã lưu video",
+  "capture.native.videoFailed": "Không thể lưu video. Hãy thử lại hoặc chụp ảnh.",
+  "capture.native.videoStopped": "Quá trình quay bị gián đoạn. Ảnh và video đã lưu của bạn vẫn được giữ lại.",
+  "capture.native.videoNeedsPhoto": "Hãy chụp ít nhất một ảnh để hoàn tất quét phòng.",
+  "capture.native.videoLimit": "Một video không có âm thanh, tối đa 30 giây.",
+  "capture.native.videoCancel": "Dừng lần quét này và xóa ảnh cùng video của lần quét?",
+  "capture.video.title": "Video phòng",
+  "capture.video.privacy": "Video chỉ lưu trên điện thoại này. AI kiểm tra bằng ảnh. Bản xuất chỉ gồm ảnh.",
+  "capture.video.playbackFailed": "Không thể phát video này. Hãy thử mở lại phòng."
 }

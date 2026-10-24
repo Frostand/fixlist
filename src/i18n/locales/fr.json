@@ -1400,5 +1400,20 @@
   "c.job.askedIn": "Demande formulée en {language}",
   "c.job.requester": "{name} · {area}",
   "c.map.destination": "Destination",
-  "c.map.you": "Vous"
+  "c.map.you": "Vous",
+  "capture.native.recordVideo": "Enregistrer une vidéo",
+  "capture.native.stopVideo": "Arrêter l'enregistrement",
+  "capture.native.useVideo": "Utiliser la vidéo",
+  "capture.native.retakeVideo": "Refaire la vidéo",
+  "capture.native.videoRecording": "Enregistrement {seconds} / 30 s",
+  "capture.native.videoReview": "Vérifier la vidéo",
+  "capture.native.videoSaved": "Vidéo enregistrée",
+  "capture.native.videoFailed": "La vidéo n'a pas pu être enregistrée. Réessayez ou prenez une photo.",
+  "capture.native.videoStopped": "L'enregistrement a été interrompu. Vos photos et votre vidéo enregistrées sont conservées.",
+  "capture.native.videoNeedsPhoto": "Prenez au moins une photo pour terminer le scan de la pièce.",
+  "capture.native.videoLimit": "Une vidéo sans son, de 30 secondes maximum.",
+  "capture.native.videoCancel": "Arrêter ce scan et supprimer ses photos et sa vidéo ?",
+  "capture.video.title": "Vidéo de la pièce",
+  "capture.video.privacy": "La vidéo reste sur ce téléphone. L'IA analyse les photos. Les exports de capture ne contiennent que des photos.",
+  "capture.video.playbackFailed": "Cette vidéo n'a pas pu être lue. Essayez de rouvrir la pièce."
 }

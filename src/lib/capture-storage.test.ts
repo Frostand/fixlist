@@ -7,10 +7,68 @@ import { createIndexedDbCaptureStore, createMemoryCaptureStore, getCaptureStore,
 import { sha256Blob } from './capture-model';
 import { resetFixListData } from './demo-storage';
 import { demoScenario } from '../data/demo-scenario';
+import { syntheticVideoAssets, syntheticVideoBytes } from './__fixtures__/capture-video';
+import type { StoredCapture } from './capture-storage';
 async function data() { const parsed = await parseCaptureBundle(JSON.stringify(fixture)); if (!parsed.ok) throw new Error(parsed.error); return parsed.value; }
 afterEach(() => vi.unstubAllGlobals());
 describe('community capture namespaces in the shared database', () => {
   afterEach(async () => { await resetCaptureStorage(getCaptureStore()); });
+  it('isolates video records by elder/epoch and preserves the exact sidecar and bytes through flags', async () => {
+    const factory = databaseFactory(), a = createIndexedDbCaptureStore(factory, { elderId: 'elder-a', resetEpoch: 'one' }), b = createIndexedDbCaptureStore(factory, { elderId: 'elder-b', resetEpoch: 'one' }), next = createIndexedDbCaptureStore(factory, { elderId: 'elder-a', resetEpoch: 'two' });
+    const { manifest, photos } = await data(), assets = await syntheticVideoAssets(manifest);
+    vi.stubGlobal('indexedDB', factory);
+    await a.writeCapture(manifest, photos, false, undefined, null, assets);
+    expect(await b.read(manifest.roomId)).toBeNull(); expect(await next.read(manifest.roomId)).toBeNull();
+    const valid = validateCaptureSuggestions(flags, manifest); if (!valid.ok) throw new Error(valid.error);
+    await a.writeFlags(manifest.roomId, valid.value);
+    const saved = (await a.read(manifest.roomId))!;
+    expect(saved.videos).toEqual(assets.videos); expect(await saved.videoBlobs!.get('v01')!.arrayBuffer()).toEqual(await assets.videoBlobs.get('v01')!.arrayBuffer());
+    expect((await buildCaptureBundle(saved.manifest, saved.photos)).text).not.toContain('fixlist-capture-videos');
+    await b.writeCapture(manifest, photos); await b.remove(manifest.roomId, manifest.captureId);
+    expect((await a.read(manifest.roomId))?.videos).toEqual(assets.videos);
+    await a.clear(); expect(await a.read(manifest.roomId)).toBeNull();
+  });
+  it('includes video bytes and sidecars in the shared 120 MiB budget across owners', async () => {
+    const factory = databaseFactory(), { manifest, photos } = await data(), assets = await syntheticVideoAssets(manifest), bytes = syntheticVideoBytes();
+    vi.stubGlobal('indexedDB', factory);
+    const padded = new Uint8Array(12_582_912); padded.set(bytes);
+    const mdat = Buffer.from(bytes).indexOf('mdat'); new DataView(padded.buffer).setUint32(mdat - 4, padded.length - mdat + 4);
+    const blob = new Blob([padded], { type: 'video/mp4' });
+    const large = { videos: { ...assets.videos, clips: [{ ...assets.videos.clips[0], byteLength: blob.size, sha256: await sha256Blob(blob) }] as const }, videoBlobs: new Map([['v01', blob]]) };
+    for (let i = 0; i < 9; i++) await createIndexedDbCaptureStore(factory, { elderId: `elder-${i}`, resetEpoch: 'one' }).writeCapture(manifest, photos, false, undefined, null, large);
+    const last = createIndexedDbCaptureStore(factory, { elderId: 'elder-last', resetEpoch: 'one' });
+    await expect(last.writeCapture(manifest, photos, false, undefined, null, large)).rejects.toMatchObject({ code: 'CAPACITY' });
+    expect(await last.read(manifest.roomId)).toBeNull();
+    await createIndexedDbCaptureStore(factory).clear();
+  });
+  it('strictly checks sidecar and media again on reads, including legacy normalization', async () => {
+    const factory = databaseFactory(), store = createIndexedDbCaptureStore(factory), { manifest, photos } = await data(), assets = await syntheticVideoAssets(manifest);
+    vi.stubGlobal('indexedDB', factory);
+    await store.writeCapture(manifest, photos, false, undefined, null, assets);
+    const original = (await store.read(manifest.roomId))!;
+    for (const change of [
+      (r: StoredCapture) => ({ ...r, videos: { ...assets.videos, roomId: 'hallway' } }),
+      (r: StoredCapture) => ({ ...r, videoBlobs: new Map() }),
+      (r: StoredCapture) => ({ ...r, videos: null }),
+      (r: StoredCapture) => ({ ...r, videoBlobs: new Map([['v01', new Blob(['bad'], { type: 'video/mp4' })]]) }),
+      (r: StoredCapture) => ({ ...r, videos: { ...assets.videos, clips: [{ ...assets.videos.clips[0], sha256: '0'.repeat(64) }] } }),
+    ]) {
+      await rawRecord(factory, manifest.roomId, () => change(original));
+      await expect(store.read(manifest.roomId)).rejects.toMatchObject({ code: 'INVALID_CAPTURE' });
+    }
+    await rawRecord(factory, manifest.roomId, () => ({ manifest, photos, flags: null }));
+    expect(await store.read(manifest.roomId)).toMatchObject({ videos: null, videoBlobs: new Map() });
+  });
+  it('rejects a late validated video write after another client resets the database', async () => {
+    const factory = databaseFactory(), old = createIndexedDbCaptureStore(factory), resetter = createIndexedDbCaptureStore(factory), { manifest, photos } = await data(), assets = await syntheticVideoAssets(manifest);
+    vi.stubGlobal('indexedDB', factory);
+    let began!: () => void, release!: () => void;
+    const started = new Promise<void>(r => { began = r; }), blocked = new Promise<void>(r => { release = r; });
+    const blob = assets.videoBlobs.get('v01')!, bytes = await blob.arrayBuffer(); blob.arrayBuffer = async () => { began(); await blocked; return bytes; };
+    const pending = old.writeCapture(manifest, photos, false, undefined, null, assets).catch((e: unknown) => e);
+    await started; await resetter.clear(); release();
+    expect(await pending).toMatchObject({ code: 'CANCELLED' }); expect(await old.read(manifest.roomId)).toBeNull();
+  });
   it('isolates A/B reads, writes, flags, replacement and removal; legacy stays classic-only', async () => {
     vi.stubGlobal('indexedDB', databaseFactory());
     const classic = getCaptureStore(), a = getCommunityCaptureStore('elder-a', 'reset-1'), b = getCommunityCaptureStore('elder-b', 'reset-1');
@@ -73,6 +131,20 @@ describe('community capture namespaces in the shared database', () => {
   });
 });
 describe('capture storage atomicity and reset', () => {
+  it('snapshots sidecars and maps while queued, then rejects queued/late video writes on reset', async () => {
+    const { manifest, photos } = await data(), assets = await syntheticVideoAssets(manifest), underlying = createMemoryCaptureStore();
+    let began!: () => void, release!: () => void;
+    const started = new Promise<void>(r => { began = r; }), blocked = new Promise<void>(r => { release = r; });
+    const store = serializeCaptureStore({ ...underlying, writeCapture: async (...args) => { began(); await blocked; await underlying.writeCapture(...args); } });
+    const active = store.writeCapture(manifest, photos); await started;
+    const snapshot = structuredClone(assets.videos), queued = store.writeCapture(manifest, photos, true, undefined, manifest.captureId, assets);
+    assets.videos.roomId = 'hallway'; (assets.videoBlobs as Map<string, Blob>).clear(); release(); await active; await queued;
+    expect((await store.read(manifest.roomId))?.videos).toEqual(snapshot);
+    const resetAssets = await syntheticVideoAssets(manifest), resetting = resetCaptureStorage(store);
+    const late = store.writeCapture(manifest, photos, true, undefined, manifest.captureId, resetAssets).catch((e: unknown) => e);
+    expect((await resetting).ok).toBe(true); expect(await late).toMatchObject({ code: 'CANCELLED' });
+    expect(await underlying.read(manifest.roomId)).toBeNull();
+  });
   it('stores per-photo blobs and latest validated flags, requiring consent to replace', async () => {
     const store = createMemoryCaptureStore(), { manifest, photos } = await data();
     await store.writeCapture(manifest, photos);
@@ -179,6 +251,14 @@ describe('capture storage atomicity and reset', () => {
   });
 });
 
+async function rawRecord(factory: IDBFactory, roomId: string, change: (record: StoredCapture) => unknown): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = factory.open('fixlist-captures', 1); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+  try { await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('rooms', 'readwrite'), store = tx.objectStore('rooms'), request = store.get(roomId);
+    request.onsuccess = () => { store.put(change(request.result as StoredCapture), roomId); };
+    tx.oncomplete = () => resolve(); tx.onabort = tx.onerror = () => reject(tx.error);
+  }); } finally { db.close(); }
+}
 /** Minimal transactional IDB harness: independent store clients share durable records. */
 function databaseFactory(onRead?: (method: 'get' | 'getAllKeys' | 'getAll', key?: string) => void): IDBFactory {
   const records = new Map<string, Map<string, unknown>>();

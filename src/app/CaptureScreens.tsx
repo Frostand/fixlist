@@ -13,6 +13,7 @@ import { reencodePhoto } from '../lib/photo-storage';
 import { trustedPhotoQuestions } from '../lib/scan-suggestions';
 import { PhotoInputActions } from './Photos';
 import { RoomSketch } from './RoomSketch';
+import { CaptureVideos } from './CaptureVideos';
 import { roomFlags } from './capture-summary';
 import { Icon, ScreenLink, type Navigate } from './PhoneShell';
 import { SegmentedControl, Sheet, StatusPill, SecondaryButton, IconTile } from './UI';
@@ -149,7 +150,7 @@ export function RoomCaptureContent({ scenario, record, photoUrls, selectedId, on
     finally { decisionPending.current = false; if (alive.current) setDecisionBusy(false); }
   }
   const sketchFlags = flags.map((f) => ({ id: f.checklistItemId, checklistItemId: f.checklistItemId, photoId: f.bestPhotoId!, point: f.point, label: f.question }));
-  return <><section className="card sketch-hero">{capture.outline?.closed ? <SegmentedControl label={t('room.view')} value={mode} options={[{ value: 'plan', label: t('room.plan') }, { value: '3d', label: t('room.threeD') }]} onChange={onMode} /> : null}<RoomSketch capture={capture} photoUrls={photoUrls} flags={sketchFlags} selectedId={selectedId} onSelect={onSelect} mode={mode} /></section>
+  return <><CaptureVideos record={record} ownerKey={person.id} /><section className="card sketch-hero">{capture.outline?.closed ? <SegmentedControl label={t('room.view')} value={mode} options={[{ value: 'plan', label: t('room.plan') }, { value: '3d', label: t('room.threeD') }]} onChange={onMode} /> : null}<RoomSketch capture={capture} photoUrls={photoUrls} flags={sketchFlags} selectedId={selectedId} onSelect={onSelect} mode={mode} /></section>
     <section className="stack spots-section"><h2>{t('room.flags')}</h2>{!flags.length && !decisionsDisabled ? <p className="muted">{t(record.flags ? 'room.flagsEmpty' : 'room.flagsNotChecked')}</p> : null}{flags.map((flag) => <article className="card capture-flag" key={flag.checklistItemId} data-selected={selectedId === flag.checklistItemId}>
       <button className="capture-flag-select" aria-pressed={selectedId === flag.checklistItemId} onClick={() => onSelect(flag.checklistItemId)}>{photoUrls.get(flag.bestPhotoId ?? '') ? <div className="flag-photo"><img src={photoUrls.get(flag.bestPhotoId ?? '')} alt={t('room.photo', { number: capture.photos.findIndex((photo) => photo.photoId === flag.bestPhotoId) + 1 })} /><span className="flag-photo-marker"><Icon name="flag" /></span></div> : <span className="flag-placeholder"><Icon name="flag" /></span>}<h3>{spotTitle(t, flag.checklistItemId)}</h3></button>
       <StatusPill tone="amber">{t('room.aiLabel')}</StatusPill><p className="muted" lang="en">{flag.limitation}</p>
@@ -169,15 +170,20 @@ function captureScoreText(flag: CaptureSuggestionItem, file: NonNullable<StoredC
   return t(file.calibration ? 'room.scoreCalibrated' : 'room.scoreRaw', { score: typeof flag.score === 'number' && Number.isFinite(flag.score) ? flag.score.toFixed(2) : '—', count: file.calibration?.trainExamples as number | undefined });
 }
 export function CaptureFlow(props: CaptureScreenProps) { return canUseCaptures(props.state, props.person) ? <AuthorizedCaptureFlow {...props} /> : <CaptureDenied />; }
-function AuthorizedCaptureFlow({ scenario, roomId, navigate, dispatch, canContinue }: CaptureScreenProps) {
+function AuthorizedCaptureFlow({ scenario, roomId, person, navigate, dispatch, canContinue }: CaptureScreenProps) {
   const t = useT(), language = useLanguage(), [store] = useState(getCaptureStore), [phase, setPhase] = useState<'loading' | 'replace' | 'native' | 'photos' | 'denied' | 'failed' | 'cleanup'>('loading'), [reason, setReason] = useState('');
   const [replaceConfirmed, setReplaceConfirmed] = useState(false), [captureId] = useState(newCaptureId);
   const { alive, start } = useCaptureOperation(dispatch, canContinue);
   const tourCurrent = useRef<(() => boolean) | null>(null), previousCaptureId = useRef<string | null>(null);
+  const pendingNative = useRef<AbortController | null>(null), operationEpoch = useRef(0);
   const prompts = capturePrompts(scenario, roomId, t);
   const returnToRoom = () => navigate({ role: 'r', screen: 'room', id: roomId });
   async function begin(replace: boolean) {
-    const current = start(); tourCurrent.current = current;
+    pendingNative.current?.abort();
+    const controller = new AbortController(), epoch = ++operationEpoch.current, authorized = start();
+    pendingNative.current = controller;
+    const current = () => !controller.signal.aborted && epoch === operationEpoch.current && authorized();
+    tourCurrent.current = current;
     setPhase('loading'); setReason('');
     try {
       requireCurrent(current, t);
@@ -185,18 +191,18 @@ function AuthorizedCaptureFlow({ scenario, roomId, navigate, dispatch, canContin
       requireCurrent(current, t);
       if (!availability.arkit) { setPhase('photos'); return; }
       setPhase('native');
-      const outcome = await runNativeCapture({ roomId, roomName: catalogText(t, 'room', roomId), language, prompts, replaceConfirmed: replace, expectedCaptureId: previousCaptureId.current, store, isCurrent: current });
+      const outcome = await runNativeCapture({ roomId, roomName: catalogText(t, 'room', roomId), language, prompts, replaceConfirmed: replace, expectedCaptureId: previousCaptureId.current, store, isCurrent: current, signal: controller.signal });
       if (!current()) return;
-      if (outcome.cleanupFailed) { setPhase('cleanup'); setReason(outcome.status === 'completed' ? t('capture.savedCleanupFailed') : t('capture.cleanupFailed')); }
+      if (outcome.cleanupFailed) { setPhase('cleanup'); setReason([t(outcome.status === 'completed' ? 'capture.savedCleanupFailed' : 'capture.cleanupFailed'), outcome.reason].filter(Boolean).join(' ')); }
       else if (outcome.status === 'completed' || outcome.status === 'cancelled') returnToRoom();
       else { setPhase(outcome.status === 'denied' ? 'denied' : outcome.status === 'unavailable' ? 'photos' : 'failed'); setReason(outcome.reason ?? ''); }
-    } catch (error) { if (alive.current) { setPhase('failed'); setReason(errorText(error, t)); } }
+    } catch (error) { if (current()) { setPhase('failed'); setReason(errorText(error, t)); } }
   }
   useEffect(() => {
     alive.current = true; let active = true;
     void store.read(roomId).then((r) => { if (active) { previousCaptureId.current = r?.manifest.captureId ?? null; if (r) setPhase('replace'); else void begin(false); } }).catch((e) => { if (active) { setPhase('failed'); setReason(errorText(e, t)); } });
-    return () => { active = false; alive.current = false; };
-  }, [roomId, store]);
+    return () => { active = false; alive.current = false; operationEpoch.current++; pendingNative.current?.abort(); pendingNative.current = null; tourCurrent.current = null; };
+  }, [roomId, store, person.id]);
   if (phase === 'replace') return <Confirmation text={t('room.replaceConfirm')} confirm={t('room.replaceYes')} onConfirm={() => { setReplaceConfirmed(true); void begin(true); }} onCancel={returnToRoom} />;
   return <div className="stack capture-screen"><h2>{catalogText(t, 'room', roomId)}</h2><p className="footnote">{t('capture.privacy')}</p>
     {phase === 'loading' || phase === 'native' ? <p role="status">{t('capture.preparing')}</p> : null}
