@@ -1,7 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CallbackTransactions } from './callbacks';
 function storage() { const map = new Map<string, string>(); return { map, getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => { map.set(k, v); }, removeItem: (k: string) => { map.delete(k); } }; }
 describe('persisted PKCE callback transaction gate', () => {
+    it('tries every verifier slot despite transaction deletion failure, invalidates in memory, and allows a fresh flow', async () => {
+        const s = storage(), remove = vi.spyOn(s, 'removeItem'), t = new CallbackTransactions(s, 'project', 'https://fixlist.example/');
+        const redirect = await t.begin('oauth'), id = 'a'.repeat(32);
+        s.setItem('project-code-verifier', 'synthetic'); s.setItem('project-flows-code-verifier', JSON.stringify([id])); s.setItem(`project-flow-${id}-code-verifier`, 'synthetic');
+        remove.mockImplementation(k => { if (k === 'project:transaction') throw new Error('synthetic failure'); s.map.delete(k); });
+        await expect(t.cancel()).rejects.toThrow();
+        expect(s.map.has('project:transaction')).toBe(true); expect([...s.map.keys()]).toEqual(['project:transaction']);
+        remove.mockImplementation(k => { s.map.delete(k); });
+        expect(await t.consume(`${redirect}&code=cancelled`)).toBeNull();
+        const next = await t.begin('oauth'); expect(await t.consume(`${next}&code=fresh`)).toMatchObject({ code: 'fresh' });
+    });
     it.each(['https://fixlist.example/', 'app.fixlist.demo://auth/callback'])('handles cold/warm duplicate delivery once for %s', async base => {
         const s = storage(), t = new CallbackTransactions(s, 'project', base), redirect = await t.begin('oauth');
         const cold = new CallbackTransactions(s, 'project', base), url = `${redirect}&code=one-use-code`;

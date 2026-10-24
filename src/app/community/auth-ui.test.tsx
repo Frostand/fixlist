@@ -14,7 +14,7 @@ vi.mock('react', async original => {
     return { ...actual, useState(initial: unknown) { const d = runtime.active; if (!d) return actual.useState(initial); const i = d.cursor++; if (!(i in d.values)) d.values[i] = typeof initial === 'function' ? initial() : initial; return [d.values[i], (v: unknown) => { d.values[i] = typeof v === 'function' ? v(d.values[i]) : v; }]; }, useEffect() {} };
 });
 afterEach(() => { vi.unstubAllGlobals(); });
-function driver(render: () => ReactNode) { const d: Driver = { cursor: 0, values: [] }; return () => { d.cursor = 0; runtime.active = d; try { return render(); } finally { runtime.active = null; } }; }
+function driver(render: () => ReactNode, values: unknown[] = []) { const d: Driver = { cursor: 0, values }; return () => { d.cursor = 0; runtime.active = d; try { return render(); } finally { runtime.active = null; } }; }
 function nodes(n: ReactNode, type: unknown): ReactElement<Record<string, unknown>>[] { if (Array.isArray(n)) return n.flatMap(v => nodes(v, type)); if (!isValidElement<{ children?: ReactNode }>(n)) return []; return [...(n.type === type ? [n as ReactElement<Record<string, unknown>>] : []), ...nodes(n.props.children, type)]; }
 function text(n: ReactNode): string { if (Array.isArray(n)) return n.map(text).join(''); if (isValidElement<{ children?: ReactNode }>(n)) return text(n.props.children); return typeof n === 'string' ? n : ''; }
 function call(n: ReactElement<Record<string, unknown>>, prop: string, ...args: unknown[]) { return (n.props[prop] as (...a: unknown[]) => unknown)(...args); }
@@ -25,6 +25,22 @@ function controller() { return { signIn: vi.fn(), register: vi.fn(), resendConfi
 function fill(tree: ReactNode, index: number, value: string) { call(nodes(tree, 'input')[index]!, 'onChange', { target: { value } }); }
 function submit(tree: ReactNode) { call(nodes(tree, 'form')[0]!, 'onSubmit', { preventDefault() {} }); }
 describe('actual real account UI handlers (no demo provider selectors)', () => {
+    it('the actual demo handler awaits explicit logout success and cannot bury a failure', async () => {
+        vi.stubGlobal('window', { location: { origin: 'https://fixlist.example', hash: '' } });
+        const c = controller(); vi.mocked(c.signOut).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+        const view = driver(() => AuthApp({ demo: <div>fictional-data-only</div> }), [{ configuration: cfg, controller: c }, 'live', blank]);
+        call(nodes(view(), AuthScreen)[0]!, 'onDemo'); await Promise.resolve();
+        expect(c.signOut).toHaveBeenCalledOnce(); expect(text(view())).not.toContain('fictional-data-only'); expect(window.location.hash).toBe('');
+        call(nodes(view(), AuthScreen)[0]!, 'onDemo'); await Promise.resolve();
+        expect(text(view())).toContain('fictional-data-only'); expect(window.location.hash).toBe('/c/intro');
+    });
+    it('failed logout shows incomplete cleanup and a working retry without offering authenticated setup', () => {
+        const c = controller(), state = { ...blank, phase: 'sign-out-error', message: 'auth-error' } as AuthState;
+        const tree = driver(() => AuthScreen({ state, controller: c, configuration: cfg, onDemo() {} }))();
+        expect(text(tree)).toContain('The request could not be completed'); press(tree, 'Sign out'); expect(c.signOut).toHaveBeenCalledOnce();
+        expect(nodes(tree, 'form')).toHaveLength(0); expect(nodes(tree, Setup)).toHaveLength(0);
+        expect(nodes(tree, Button).find(n => text(n.props.children as ReactNode) === 'Explore local demos')?.props.disabled).toBe(true);
+    });
     it('starts outside demo; choosing demos is explicit and reversible', async () => {
         vi.stubGlobal('window', { location: { origin: 'https://fixlist.example', hash: '' } });
         const view = driver(() => AuthApp({ demo: <div>fictional-data-only</div> }));

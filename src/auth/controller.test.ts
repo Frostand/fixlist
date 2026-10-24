@@ -25,6 +25,27 @@ function gateway() {
 function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { resolve, promise }; }
 
 describe('real account lifecycle and isolation', () => {
+    it('returns unsuccessful logout, blocks passive and explicit auth until retry, and survives native cancellation failure', async () => {
+        const { g, setSession, emit } = gateway(); setSession(identity);
+        const c = new AuthController(g); await c.start();
+        vi.mocked(g.cancel).mockRejectedValueOnce(new Error('synthetic native failure'));
+        vi.mocked(g.signOut).mockRejectedValueOnce(new Error('synthetic storage failure'));
+        expect(await c.signOut()).toBe(false); expect(g.signOut).toHaveBeenCalledOnce();
+        expect(c.state).toMatchObject({ phase: 'sign-out-error', session: null, workspace: null, profile: null, busy: false, message: 'auth-error' });
+        const reads = vi.mocked(g.getVerifiedSession).mock.calls.length;
+        emit(); await c.refresh(); await c.start(); await c.callback('late'); await c.oauth('google'); await c.signIn('person@example.test', 'password');
+        expect(g.getVerifiedSession).toHaveBeenCalledTimes(reads); expect(g.callback).not.toHaveBeenCalled(); expect(g.signIn).not.toHaveBeenCalled(); expect(g.oauth).not.toHaveBeenCalled();
+        expect(c.state.phase).toBe('sign-out-error'); expect(await c.signOut()).toBe(true);
+        await c.signIn('person@example.test', 'password'); expect(c.state.session?.userId).toBe(uid);
+    });
+    it('preserves failed cleanup across dispose/start and clears the shared leave promise for retry', async () => {
+        const { g, setSession } = gateway(); setSession(identity); const c = new AuthController(g); await c.start();
+        vi.mocked(g.signOut).mockRejectedValueOnce(new Error('synthetic cleanup failure'));
+        const first = c.signOut(), duplicate = c.signOut(); expect(first).toBe(duplicate);
+        expect(await first).toBe(false); c.dispose(); await c.start();
+        expect(c.state.phase).toBe('sign-out-error'); expect(c.state.session).toBeNull();
+        expect(await c.signOut()).toBe(true); expect(g.signOut).toHaveBeenCalledTimes(2);
+    });
     it('registration waits for confirmation; login gets backend-verified identity then saves setup under that UID', async () => {
         const { g } = gateway(), c = new AuthController(g); await c.start();
         await c.register('person@example.test', 'example-password');

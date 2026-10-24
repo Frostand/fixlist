@@ -13,7 +13,13 @@ const clients: SupabaseClient[] = [];
 afterEach(async () => { for (const c of clients.splice(0)) { c.auth.stopAutoRefresh(); await c.auth.dispose(); } });
 function harness(native: NativeAuthPlugin | null = null) {
     const cfg = readAuthConfig(env, 'https://fixlist.example', !!native, true).config!;
-    const map = new Map<string, string>(), storage = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => { map.set(k, v); }, removeItem: (k: string) => { map.delete(k); } };
+    let storageFault = '';
+    const removals: string[] = [], map = new Map<string, string>();
+    const storage = {
+        getItem: (k: string) => { if (storageFault === 'all') throw new Error('synthetic storage failure'); return map.get(k) ?? null; },
+        setItem: (k: string, v: string) => { if (storageFault === 'all') throw new Error('synthetic storage failure'); map.set(k, v); },
+        removeItem: (k: string) => { removals.push(k); if (storageFault === 'all' || storageFault && k.endsWith(storageFault)) throw new Error('synthetic storage failure'); map.delete(k); },
+    };
     let fail = '', verified = user, profile: Record<string, unknown> | null = null;
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
     const fetcher = vi.fn(async (url: RequestInfo | URL, options?: RequestInit) => {
@@ -30,11 +36,69 @@ function harness(native: NativeAuthPlugin | null = null) {
     });
     const client = createClient(cfg.url, cfg.publishableKey, { auth: { flowType: 'pkce', persistSession: true, detectSessionInUrl: false, autoRefreshToken: false, storageKey: cfg.storageKey, storage }, global: { fetch: fetcher } }); clients.push(client);
     const navigate = vi.fn(), g = new SupabaseAuthGateway(cfg, storage, client, native, navigate);
-    return { cfg, g, client, map, calls, navigate, fail(path: string) { fail = path; }, verified(u: typeof user) { verified = u; } };
+    return { cfg, g, client, map, calls, navigate, removals, fetcher, storageFault(fault: string) { storageFault = fault; }, fail(path: string) { fail = path; }, verified(u: typeof user) { verified = u; } };
 }
 function redirect(h: ReturnType<typeof harness>, endpoint: string) { return new URL(h.calls.find(c => c.url.includes(endpoint))!.url).searchParams.get('redirect_to')!; }
 function callback(url: string, code = 'synthetic-once') { const u = new URL(url); u.searchParams.set('code', code); return u.href; }
 describe('official Supabase SDK lifecycle with mocked transport', () => {
+    it.each([':transaction', ':recovery', 'all'])('attempts session deletion despite %s cleanup failure, blocks restoration, and requires a successful retry', async fault => {
+        const h = harness(); await h.g.signIn('person@example.test', 'synthetic-password');
+        const c = new AuthController(h.g); await c.start(); expect(c.state.phase).toBe('onboarding');
+        h.storageFault(fault); h.removals.length = 0;
+        const result = await c.signOut();
+        expect(h.removals).toContain(h.cfg.storageKey);
+        expect(h.removals).toContain(`${h.cfg.storageKey}:recovery`);
+        expect(h.removals).toContain(`${h.cfg.storageKey}-code-verifier`);
+        expect(result).toBe(false); expect(c.state.phase).toBe('sign-out-error');
+        expect(c.state.session).toBeNull(); expect(c.state.workspace).toBeNull();
+        expect(h.map.has(h.cfg.storageKey)).toBe(fault === 'all');
+        expect(h.calls.some(v => v.url.includes('/logout?scope=local'))).toBe(true);
+        const requests = h.calls.length;
+        expect(await h.g.getVerifiedSession()).toBeNull();
+        await expect(h.g.signIn('person@example.test', 'synthetic-password')).rejects.toThrow();
+        h.storageFault('');
+        await c.refresh(); await c.start(); await c.callback('https://fixlist.example/?code=late');
+        await c.signIn('person@example.test', 'synthetic-password');
+        expect(c.state.phase).toBe('sign-out-error'); expect(c.state.message).toBe('auth-error');
+        expect(await h.g.getVerifiedSession()).toBeNull();
+        const remount = new AuthController(h.g); await remount.start(); expect(remount.state.session).toBeNull(); remount.dispose();
+        h.g.setForeground(true); await Promise.resolve();
+        expect(h.calls).toHaveLength(requests);
+        expect(await c.signOut()).toBe(true); expect(h.map.has(h.cfg.storageKey)).toBe(false);
+        await c.signIn('person@example.test', 'synthetic-password'); expect(c.state.session?.userId).toBe(uid); c.dispose();
+    });
+    it.each([
+        { reason: 'cancelled', fault: '' }, { reason: 'start failed', fault: '' },
+        { reason: 'cancelled', fault: ':transaction' }, { reason: 'start failed', fault: 'all' },
+    ])('invalidates native OAuth $reason with storage fault "$fault"; delayed callbacks cannot exchange and a fresh flow works', async ({ reason, fault }) => {
+        let authorize = '', reject = true;
+        const native = { cancel: vi.fn(async () => {}), openOAuth: vi.fn(async ({ url }: { url: string }) => {
+            authorize = url;
+            if (reject) { h.storageFault(fault); throw new Error(`synthetic plugin ${reason}`); }
+            return { url: callback(new URL(url).searchParams.get('redirect_to')!, 'fresh-attempt') };
+        }) } as unknown as NativeAuthPlugin;
+        const h = harness(native); await expect(h.g.oauth('google')).rejects.toThrow();
+        const late = callback(new URL(authorize).searchParams.get('redirect_to')!, 'cancelled-attempt');
+        expect(await h.g.callback(late)).toBe('ignored');
+        h.storageFault(''); expect(await h.g.callback(late)).toBe('ignored');
+        expect(h.calls.filter(v => v.url.includes('grant_type=pkce'))).toHaveLength(0);
+        expect(await h.g.getVerifiedSession()).toBeNull();
+        reject = false; await h.g.oauth('google');
+        expect((await h.g.getVerifiedSession())?.userId).toBe(uid);
+        expect(h.calls.filter(v => v.url.includes('grant_type=pkce'))).toHaveLength(1);
+        expect(await h.g.callback(late)).toBe('ignored');
+    });
+    it('rejects a verification started before logout even after a fresh explicit sign-in succeeds', async () => {
+        const h = harness(); await h.g.signIn('person@example.test', 'synthetic-password');
+        let arrived!: () => void, finish!: (r: Response) => void;
+        const requested = new Promise<void>(resolve => { arrived = resolve; });
+        const response = new Promise<Response>(resolve => { finish = resolve; });
+        h.fetcher.mockImplementationOnce(async () => { arrived(); return response; });
+        const verifying = h.g.getVerifiedSession(); await requested;
+        await h.g.signOut(); await h.g.signIn('person@example.test', 'synthetic-password');
+        finish(new Response(JSON.stringify(user), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+        expect(await verifying).toBeNull(); expect((await h.g.getVerifiedSession())?.userId).toBe(uid);
+    });
     it('email registration persists PKCE across reconstruction, confirms once, verifies identity with backend, and clears verifier slots', async () => {
         const h = harness(); expect(await h.g.register('person@example.test', 'synthetic-password')).toBe('confirmation');
         expect(h.calls[0]?.body.code_challenge_method).toBe('s256');

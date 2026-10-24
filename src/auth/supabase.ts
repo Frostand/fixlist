@@ -16,6 +16,9 @@ export class SupabaseAuthGateway implements AuthGateway {
     private transactions: CallbackTransactions;
     private tail: Promise<unknown> = Promise.resolve();
     private cancelled = 0;
+    private sessionBlocked = false;
+    private logoutIncomplete = false;
+    private verifiedAccessToken: string | null = null;
     private exchanges = new Map<string, Promise<CallbackResult>>();
     constructor(readonly config: AuthConfig, private storage: SupportedStorage, private client: SupabaseClient, private native: NativeAuthPlugin | null, private navigate: (url: string) => void) {
         this.backendId = config.backendId;
@@ -25,11 +28,19 @@ export class SupabaseAuthGateway implements AuthGateway {
     private mutation<T>(work: () => Promise<T>): Promise<T> {
         const generation = this.cancelled;
         return this.serial(async () => {
-            if (generation !== this.cancelled) throw new Error('Request cancelled');
+            if (generation !== this.cancelled || this.logoutIncomplete) throw new Error('Request cancelled');
             return work();
         });
     }
-    setForeground(active: boolean) { if (active) this.client.auth.startAutoRefresh(); else this.client.auth.stopAutoRefresh(); }
+    setForeground(active: boolean) {
+        const work = active && !this.sessionBlocked ? this.client.auth.startAutoRefresh() : this.client.auth.stopAutoRefresh();
+        void work.catch(() => {});
+    }
+    private authenticated(generation: number) {
+        if (generation !== this.cancelled || this.logoutIncomplete) return;
+        const wasBlocked = this.sessionBlocked; this.sessionBlocked = false;
+        if (wasBlocked) this.setForeground(true);
+    }
     subscribe(changed: () => void) {
         const { data } = this.client.auth.onAuthStateChange(event => {
             if (event !== 'INITIAL_SESSION') queueMicrotask(changed);
@@ -37,12 +48,16 @@ export class SupabaseAuthGateway implements AuthGateway {
         return () => { data.subscription.unsubscribe(); };
     }
     async getVerifiedSession(): Promise<AuthSession | null> {
+        const generation = this.cancelled;
+        if (this.sessionBlocked) return null;
         const { data, error } = await this.client.auth.getSession(); check(error);
         if (!data.session) return null;
         const { data: verified, error: verifyError } = await this.client.auth.getUser(data.session.access_token); check(verifyError);
         if (!verified.user || verified.user.id !== data.session.user.id || !verified.user.confirmed_at || verified.user.is_anonymous) throw new Error('Unverified identity');
-        return { userId: verified.user.id, backendId: this.backendId, email: verified.user.email ?? null, expiresAt: data.session.expires_at ?? 0,
-            recovery: await this.storage.getItem(`${this.config.storageKey}:recovery`) === verified.user.id };
+        const recovery = await this.storage.getItem(`${this.config.storageKey}:recovery`) === verified.user.id;
+        if (this.sessionBlocked || generation !== this.cancelled) return null;
+        this.verifiedAccessToken = data.session.access_token;
+        return { userId: verified.user.id, backendId: this.backendId, email: verified.user.email ?? null, expiresAt: data.session.expires_at ?? 0, recovery };
     }
     async getProfile(userId: string, signal: AbortSignal) {
         const { data, error } = await this.client.from('account_profiles').select('*').eq('user_id', userId).abortSignal(signal).maybeSingle(); check(error);
@@ -58,8 +73,10 @@ export class SupabaseAuthGateway implements AuthGateway {
         return parseProfile(data, userId);
     }
     signIn(email: string, password: string) { return this.mutation(async () => {
+        const generation = this.cancelled;
         await this.transactions.cancel(); await this.storage.removeItem(`${this.config.storageKey}:recovery`);
         const { error } = await this.client.auth.signInWithPassword({ email, password }); check(error);
+        this.authenticated(generation);
     }); }
     register(email: string, password: string): Promise<'confirmation'> { return this.mutation(async () => {
         const emailRedirectTo = await this.transactions.begin('confirmation');
@@ -88,18 +105,27 @@ export class SupabaseAuthGateway implements AuthGateway {
             const { token, nonce } = await this.native.appleSignIn();
             if (generation !== this.cancelled) return;
             const { error } = await this.client.auth.signInWithIdToken({ provider: 'apple', token, nonce }); check(error);
+            this.authenticated(generation);
             return;
         }
         if (!(provider === 'google' ? this.config.google : this.config.appleWeb)) throw new Error('Provider unavailable');
-        const redirectTo = await this.transactions.begin('oauth');
-        const { data, error } = await this.client.auth.signInWithOAuth({ provider, options: { redirectTo, skipBrowserRedirect: true } }); check(error);
-        if (!data.url || generation !== this.cancelled) return;
-        if (this.config.native) {
-            if (!this.native) throw new Error('Native browser unavailable');
-            const result = await this.native.openOAuth({ url: data.url });
+        try {
+            const redirectTo = await this.transactions.begin('oauth');
+            const { data, error } = await this.client.auth.signInWithOAuth({ provider, options: { redirectTo, skipBrowserRedirect: true } }); check(error);
+            if (!data.url) throw new Error('Authorization URL unavailable');
             if (generation !== this.cancelled) return;
-            await this.exchangeOnce(result.url);
-        } else this.navigate(data.url);
+            if (this.config.native) {
+                if (!this.native) throw new Error('Native browser unavailable');
+                const result = await this.native.openOAuth({ url: data.url });
+                if (generation !== this.cancelled) return;
+                await this.exchangeOnce(result.url);
+            } else this.navigate(data.url);
+        } catch {
+            // Native cancellation/start failure can arrive after the authorization URL escaped.
+            // cancel invalidates before any fallible storage operation.
+            await this.transactions.cancel().catch(() => {});
+            throw new Error('Authentication request failed');
+        }
     }); }
     private async exchangeOnce(url: string): Promise<CallbackResult> {
         // Remember outcomes by a digest, not the code-bearing URL. Duplicate failed
@@ -113,20 +139,46 @@ export class SupabaseAuthGateway implements AuthGateway {
         return exchange;
     }
     private async exchange(url: string): Promise<CallbackResult> {
+        const generation = this.cancelled;
         const pending = await this.transactions.consume(url); if (!pending) return 'ignored';
         try {
             const { data, error } = await this.client.auth.exchangeCodeForSession(pending.code, pending.flowId ? { flowId: pending.flowId } : undefined); check(error);
             if (!data.session) throw new Error('No session');
             if (pending.kind === 'recovery') await this.storage.setItem(`${this.config.storageKey}:recovery`, data.session.user.id);
             else await this.storage.removeItem(`${this.config.storageKey}:recovery`);
+            this.authenticated(generation);
             return pending.kind === 'recovery' ? 'recovery' : 'signed-in';
         } finally { await this.transactions.cancel(); }
     }
     callback(url: string) { return this.mutation(() => this.exchangeOnce(url)); }
-    async cancel() { ++this.cancelled; if (this.native) await this.native.cancel(); await this.serial(() => this.transactions.cancel()); }
-    signOut() { return this.serial(async () => {
-        await this.transactions.cancel(); await this.storage.removeItem(`${this.config.storageKey}:recovery`);
-        try { const { error } = await this.client.auth.signOut({ scope: 'local' }); check(error); }
-        finally { await this.storage.removeItem(this.config.storageKey); }
-    }); }
+    async cancel() {
+        ++this.cancelled; this.transactions.invalidate();
+        try { if (this.native) await this.native.cancel(); }
+        finally { await this.serial(() => this.transactions.cancel()); }
+    }
+    signOut() {
+        ++this.cancelled; this.transactions.invalidate();
+        this.sessionBlocked = true; this.logoutIncomplete = true;
+        return this.serial(async () => {
+            let failed = false;
+            const attempt = async (work: () => unknown) => { try { await work(); } catch { failed = true; } };
+            await attempt(() => this.client.auth.stopAutoRefresh());
+            try { const { error } = await this.client.auth.signOut({ scope: 'local' }); check(error); }
+            catch {
+                failed = true;
+                // The SDK reads storage before revoking. If storage is inaccessible, use only
+                // the previously backend-verified token for best-effort current-session revocation.
+                if (this.verifiedAccessToken) await attempt(async () => {
+                    const { error } = await this.client.auth.admin.signOut(this.verifiedAccessToken!, 'local'); check(error);
+                });
+            }
+            await attempt(() => this.transactions.cancel());
+            await attempt(() => this.storage.removeItem(`${this.config.storageKey}:recovery`));
+            await attempt(() => this.storage.removeItem(this.config.storageKey));
+            await attempt(() => this.storage.removeItem(`${this.config.storageKey}-user`));
+            if (failed) { this.logoutIncomplete = true; throw new Error('Sign-out cleanup failed'); }
+            this.logoutIncomplete = false; this.verifiedAccessToken = null;
+            // Verification remains blocked until a fresh explicit authentication succeeds.
+        });
+    }
 }
