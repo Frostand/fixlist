@@ -51,7 +51,7 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     const [settings, setSettings] = useState(false), [size, setSize] = useState<TextSize>('normal'), [provider, setProvider] = useState<SignInProvider>('email'), [draft, setDraft] = useState<Draft | null>(null), [notice, setNotice] = useState(''), [switching, setSwitching] = useState(false);
     const { state, account } = c;
     useEffect(() => { const root = document.documentElement, oldSize = root.style.fontSize; root.dataset.community = 'true'; root.style.fontSize = size === 'normal' ? '100%' : size === 'large' ? '112.5%' : '125%'; return () => { delete root.dataset.community; root.style.fontSize = oldSize; }; }, [size]);
-    useEffect(() => { setDraft(null); setSettings(false); }, [account?.id]);
+    useEffect(() => { setDraft(null); setSettings(false); }, [account?.id, c.resetEpoch]);
     function draftJob(d: Draft) { setDraft(d); goCommunity('draft'); }
     function signIn(id: string, _provider: SignInProvider) { setNotice(''); setSwitching(false); const r = c.run((s) => domain.signIn(s, id)); if (r.ok) {
         const a = domain.currentAccount(r.state)!;
@@ -137,7 +137,7 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     catch {
         setNotice(t('c.storageError'));
     } }} onReset={async () => { const cleared = await resetCaptureStorage(); const native = await discardAllNativeCaptures(); if (!cleared.ok || !native.ok)
-        return false; c.reset(); setNotice(''); setSize('normal'); setSettings(false); goCommunity('intro'); return true; }}/> : null}</div>;
+        return false; const reset = c.reset(); if (reset?.ok === false) return false; setNotice(''); setSize('normal'); setSettings(false); goCommunity('intro'); return true; }}/> : null}</div>;
 }
 export function Missing({ onHome }: {
     onHome(): void;

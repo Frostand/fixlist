@@ -31,12 +31,13 @@ export function OriginalToggle({ language, original, onChange }: {
     original: boolean;
     onChange(value: boolean): void;
 }) { const t = useT(); return <Button kind="quiet" onClick={() => onChange(!original)}>{original ? t('c.job.translated') : t('c.job.original', { language: LANGUAGES.find((x) => x.code === language)?.nativeName })}</Button>; }
-export function DraftEditor({ analysis, slots, onChange, onSlots }: {
+export function DraftEditor({ analysis, slots, onChange, onSlots, disabled = false }: {
     analysis: JobAnalysis;
     slots: readonly AvailabilitySlot[];
     onChange(a: JobAnalysis): void;
     onSlots(s: AvailabilitySlot[]): void;
-}) { const t = useT(); return <div className="c-stack"><label className="c-field">{t('c.job.title')}<input value={analysis.title} maxLength={140} onChange={(e) => onChange({ ...analysis, title: e.target.value, ...(analysis.language === 'en' ? { titleEnglish: e.target.value } : {}) })}/></label><label className="c-field">{t('c.job.summary')}<textarea value={analysis.summary} maxLength={1200} onChange={(e) => onChange({ ...analysis, summary: e.target.value, ...(analysis.language === 'en' ? { summaryEnglish: e.target.value } : {}) })}/></label><label className="c-field">{t('c.job.minutes')}<input type="number" min={5} max={480} step={5} value={analysis.estimatedMinutes} onChange={(e) => onChange({ ...analysis, estimatedMinutes: Number(e.target.value) })}/></label><Chips title={t('c.job.tools')} values={TOOLS} selected={analysis.tools} label={(x) => toolLabel(t, x)} onChange={(tools) => onChange({ ...analysis, tools })}/><Availability value={slots} onChange={onSlots}/></div>; }
+    disabled?: boolean;
+}) { const t = useT(); return <fieldset className="c-stack" disabled={disabled}><label className="c-field">{t('c.job.title')}<input value={analysis.title} maxLength={140} onChange={(e) => onChange({ ...analysis, title: e.target.value, ...(analysis.language === 'en' ? { titleEnglish: e.target.value } : {}) })}/></label><label className="c-field">{t('c.job.summary')}<textarea value={analysis.summary} maxLength={1200} onChange={(e) => onChange({ ...analysis, summary: e.target.value, ...(analysis.language === 'en' ? { summaryEnglish: e.target.value } : {}) })}/></label><label className="c-field">{t('c.job.minutes')}<input type="number" min={5} max={480} step={5} value={analysis.estimatedMinutes} onChange={(e) => onChange({ ...analysis, estimatedMinutes: Number(e.target.value) })}/></label><Chips title={t('c.job.tools')} values={TOOLS} selected={analysis.tools} label={(x) => toolLabel(t, x)} onChange={(tools) => onChange({ ...analysis, tools })}/><Availability value={slots} onChange={onSlots}/></fieldset>; }
 
 /** Public requester context only; address stays behind the domain visibility query. */
 export function Requester({ elder, needs = [], language }: { elder: Account; needs?: readonly string[]; language: Language }) {

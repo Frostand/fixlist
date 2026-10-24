@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createSeedState } from './seed';
-import { COMMUNITY_STORAGE_KEY, loadCommunity, resetCommunity, saveCommunity, validateCommunityState } from './storage';
+import { COMMUNITY_STORAGE_KEY, loadCommunity, loadCommunitySnapshot, resetCommunity, saveCommunity, validateCommunityState } from './storage';
 import type { CommunityState } from './types';
 
 const NOW = '2026-10-23T12:00:00.000Z';
@@ -35,12 +35,40 @@ describe('fictional seed data', () => {
   });
 });
 describe('community storage validation and recovery', () => {
+  it('reads legacy version-1 state without migrating or dropping its bytes', () => {
+    const storage = new MemoryStorage(), state = createSeedState(NOW), raw = JSON.stringify(state, null, 2);
+    storage.setItem(COMMUNITY_STORAGE_KEY, raw);
+    expect(loadCommunity(storage, NOW)).toEqual({ state, status: 'loaded' });
+    expect(storage.getItem(COMMUNITY_STORAGE_KEY)).toBe(raw);
+  });
+  it('loads a validated revision/epoch envelope without rewriting it', () => {
+    const storage = new MemoryStorage(), state = createSeedState(NOW), raw = JSON.stringify({ revision: 7, resetEpoch: 'reset-one', state });
+    storage.setItem(COMMUNITY_STORAGE_KEY, raw);
+    expect(loadCommunity(storage, NOW)).toEqual({ state, status: 'loaded' });
+    expect(storage.getItem(COMMUNITY_STORAGE_KEY)).toBe(raw);
+  });
+  it('pairs the loaded state and exact raw precondition in one read', () => {
+    const storage = new MemoryStorage(), state = createSeedState(NOW), raw = JSON.stringify({ revision: 3, resetEpoch: 'epoch-three', state }, null, 2);
+    const read = vi.spyOn(storage, 'getItem').mockReturnValueOnce(raw).mockReturnValue('different later bytes');
+    expect(loadCommunitySnapshot(storage, NOW)).toEqual({ state, raw, status: 'loaded', revision: 3, resetEpoch: 'epoch-three', readable: true });
+    expect(read).toHaveBeenCalledExactlyOnceWith(COMMUNITY_STORAGE_KEY);
+  });
+  it.each([
+    { revision: -1, resetEpoch: 'epoch' }, { revision: 1.5, resetEpoch: 'epoch' },
+    { revision: Number.MAX_SAFE_INTEGER + 1, resetEpoch: 'epoch' }, { revision: 1, resetEpoch: '' },
+    { revision: 1, resetEpoch: 7 }, { revision: 1, resetEpoch: 'epoch', extra: true },
+  ])('rejects malformed envelope metadata while preserving its bytes: %j', metadata => {
+    const storage = new MemoryStorage(), raw = JSON.stringify({ ...metadata, state: createSeedState(NOW) });
+    storage.setItem(COMMUNITY_STORAGE_KEY, raw);
+    expect(loadCommunity(storage, NOW).status).toBe('recovered');
+    expect(storage.getItem(COMMUNITY_STORAGE_KEY)).toBe(raw);
+  });
   it('round-trips only this key and resets without clearing unrelated browser data', () => {
     const storage = new MemoryStorage(), state = createSeedState(NOW); storage.setItem('unrelated', 'keep');
     expect(loadCommunity(storage, NOW)).toEqual({ state, status: 'seeded' }); expect(saveCommunity(storage, state)).toBe(true);
     expect(loadCommunity(storage, NOW)).toEqual({ state, status: 'loaded' });
-    expect(resetCommunity(storage, NOW)).toEqual(state); expect(storage.getItem(COMMUNITY_STORAGE_KEY)).toBeNull(); expect(storage.getItem('unrelated')).toBe('keep');
-    expect(loadCommunity(storage, NOW).status).toBe('seeded');
+    expect(resetCommunity(storage, NOW)).toEqual(state); expect(JSON.parse(storage.getItem(COMMUNITY_STORAGE_KEY)!)).toMatchObject({ state, resetEpoch: expect.any(String) }); expect(storage.getItem('unrelated')).toBe('keep');
+    expect(loadCommunity(storage, NOW).status).toBe('loaded');
   });
   it.each(['{broken json', '{}', 'null', '{"version":9}'])('recovers corrupt data while preserving its saved bytes: %s', (raw) => {
     const storage = new MemoryStorage(); storage.setItem(COMMUNITY_STORAGE_KEY, raw);
