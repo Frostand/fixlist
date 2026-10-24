@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { acceptJob, arrive, cancelJob, completeOnboarding, confirmDone, createAccount, postJob, rateJob, reportDone, sendMessage, signIn, signOut, startTrip, updateLanguage, updateVolunteerProfile } from './commands';
 import { createSeedState } from './seed';
 import { quickPickAnalysis } from './task-rules';
+import { completeAccountSetup, type SetupValues } from './setup';
 import { validateCommunityState } from './storage';
 import type { CommunityResult, CommunityState, Job, JobAnalysis, Language, VolunteerProfile } from './types';
 
@@ -33,6 +34,71 @@ function withStatus(status: Job['status'], minutes = 20): { state: CommunityStat
   state = resultState(confirmDone(as(state, ELDER), { jobId, actorId: ELDER }, NOW));
   return { state, jobId };
 }
+describe('atomic account setup', () => {
+  const input = (role: SetupValues['role']): SetupValues => ({ role, name: ' New Person ', area: ' Suwanee, GA ', language: 'ko', needs: [' Using ladders '], skills: ['yard'], tools: ['gloves'], availability: [{ day: 2, part: 'evening' }], maxMiles: 23, school: ' Demo School ', elderId: 'elder-rosa' });
+  it.each(['elder', 'volunteer'] as const)('creates a complete %s candidate without mutating source or retaining input arrays', role => {
+    const state = createSeedState(NOW), before = JSON.stringify(state), values = input(role);
+    const result = completeAccountSetup(state, null, values, 'email', NOW);
+    expect(result.ok).toBe(true); if (!result.ok) return;
+    expect(validateCommunityState(result.state)).toBe(true);
+    expect(result.state.accounts.at(-1)).toMatchObject({ name: 'New Person', firstName: 'New', language: 'ko', area: 'Suwanee, GA', provider: 'email', location: { lat: 34.0515, lng: -84.0713 } });
+    expect(result.state.session.onboarded).toContain(result.accountId);
+    values.needs.push('Changed'); values.skills.push('errands'); values.tools.push('car'); values.availability[0]!.day = 5;
+    if (role === 'elder') expect(result.state.elders.at(-1)).toMatchObject({ needs: ['Using ladders'], familyIds: [], addressHint: '' });
+    else expect(result.state.volunteers.at(-1)).toMatchObject({ skills: ['yard'], tools: ['gloves'], availability: [{ day: 2, part: 'evening' }], school: 'Demo School', maxMiles: 23, badges: { idChecked: false, backgroundCheck: false } });
+    expect(JSON.stringify(state)).toBe(before);
+    expect(completeAccountSetup(result.state, null, input(role), 'email', NOW)).toMatchObject({ ok: false, code: 'permission_denied' });
+  });
+  it.each(['elder', 'volunteer'] as const)('updates the selected %s in place, idempotently, without touching other records', role => {
+    const seed = createSeedState(NOW), id = `${role}-new-demo`, state = as(seed, id), values = input(role);
+    const result = completeAccountSetup(state, id, values, 'google', NOW);
+    expect(result.ok).toBe(true); if (!result.ok) return;
+    const again = completeAccountSetup(result.state, id, values, 'google', NOW);
+    expect(again.ok).toBe(true); if (!again.ok) return;
+    expect(again.state).toEqual(result.state); expect(validateCommunityState(again.state)).toBe(true);
+    expect(again.state.accounts).toHaveLength(seed.accounts.length);
+    expect(again.state.elders).toHaveLength(seed.elders.length); expect(again.state.volunteers).toHaveLength(seed.volunteers.length);
+    expect(again.state.accounts.find(a => a.id === id)).toMatchObject({ provider: 'email', createdAt: seed.accounts.find(a => a.id === id)!.createdAt });
+    expect(again.state.accounts.filter(a => a.id !== id)).toEqual(seed.accounts.filter(a => a.id !== id));
+    expect(again.state.families).toBe(seed.families); expect(again.state.jobs).toBe(seed.jobs); expect(again.state.messages).toBe(seed.messages);
+    expect(seed.session.onboarded).not.toContain(id);
+  });
+  it.each([
+    { name: '' }, { area: ' ' }, { language: 'zz' }, { role: 'admin' }, { needs: ['x'.repeat(201)] }, { needs: Array(31).fill('Need') },
+  ])('rejects invalid elder setup without a candidate state (%j)', patch => {
+    const state = createSeedState(NOW), before = JSON.stringify(state);
+    expect(completeAccountSetup(state, null, { ...input('elder'), ...patch } as SetupValues, 'email', NOW)).toMatchObject({ ok: false, code: 'invalid_input' });
+    expect(JSON.stringify(state)).toBe(before);
+  });
+  it.each([
+    { skills: ['bogus'] }, { tools: ['bogus'] }, { tools: ['car', 'car'] }, { availability: [{ day: 2, part: 'noon' }] },
+    { availability: [{ day: 2, part: 'morning' }, { day: 2, part: 'morning' }] }, { maxMiles: Infinity }, { school: 'x'.repeat(201) },
+    { badges: { idChecked: true, backgroundCheck: true } },
+  ])('rejects invalid volunteer setup and self-granted fields (%j)', patch => {
+    const state = as(createSeedState(NOW), 'volunteer-new-demo');
+    expect(completeAccountSetup(state, 'volunteer-new-demo', { ...input('volunteer'), ...patch } as SetupValues, 'email', NOW)).toMatchObject({ ok: false, code: 'invalid_input' });
+    expect(state.session.onboarded).not.toContain('volunteer-new-demo');
+  });
+  it('rejects absent or stale actors, role changes, bad timestamps and unsupported providers', () => {
+    const state = as(createSeedState(NOW), ELDER);
+    expect(completeAccountSetup(state, VOL, input('volunteer'), 'email', NOW)).toMatchObject({ ok: false, code: 'permission_denied' });
+    expect(completeAccountSetup(state, null, input('elder'), 'email', NOW)).toMatchObject({ ok: false, code: 'permission_denied' });
+    expect(completeAccountSetup(state, ELDER, input('volunteer'), 'email', NOW)).toMatchObject({ ok: false, code: 'permission_denied' });
+    expect(completeAccountSetup({ ...state, session: { ...state.session, accountId: 'missing' } }, 'missing', input('elder'), 'email', NOW)).toMatchObject({ ok: false, code: 'not_found' });
+    expect(completeAccountSetup(state, ELDER, input('elder'), 'email', 'bad')).toMatchObject({ ok: false, code: 'invalid_input' });
+    expect(completeAccountSetup(state, ELDER, input('elder'), 'bad' as 'email', NOW)).toMatchObject({ ok: false, code: 'invalid_input' });
+  });
+  it('never creates or changes family authorization from the setup picker', () => {
+    const state = as(createSeedState(NOW), FAMILY);
+    const result = completeAccountSetup(state, FAMILY, input('family'), 'email', NOW);
+    expect(result.ok).toBe(true); if (!result.ok) return;
+    expect(result.state.families).toBe(state.families); expect(result.state.elders).toBe(state.elders);
+    const created = completeAccountSetup(resultState(signOut(state)), null, input('family'), 'email', NOW);
+    expect(created.ok).toBe(true); if (!created.ok) return;
+    expect(created.state.families.at(-1)).toEqual({ accountId: created.accountId, elderIds: [] });
+    expect(created.state.elders).toBe(state.elders); expect(validateCommunityState(created.state)).toBe(true);
+  });
+});
 describe('demo profiles and permissions', () => {
   it('signs in/out without mutating state; rejects nonexistent profiles', () => {
     const state = createSeedState(NOW), before = JSON.stringify(state);

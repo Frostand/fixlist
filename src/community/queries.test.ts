@@ -73,7 +73,7 @@ describe('community queries and privacy', () => {
   it('gets current profiles, role lists and jobs without reordering the state', () => {
     const state = createSeedState(NOW), before = JSON.stringify(state);
     expect(currentAccount(state)).toBeNull(); expect(currentAccount({ ...state, session: { ...state.session, accountId: VOL } })?.id).toBe(VOL);
-    expect(accountsByRole(state, 'elder')).toHaveLength(6); expect(accountsByRole(state, 'family')).toHaveLength(1);
+    expect(accountsByRole(state, 'elder')).toHaveLength(7); expect(accountsByRole(state, 'family')).toHaveLength(1);
     const jobs = jobsForElder(state, 'elder-soonja'); expect(jobs).toHaveLength(8);
     expect(jobs.map((j) => Date.parse(j.createdAt))).toEqual(jobs.map((j) => Date.parse(j.createdAt)).sort((a, b) => b - a));
     expect(jobsForVolunteer(state, VOL)).toHaveLength(6); expect(jobsForVolunteer(state, 'volunteer-ethan')).toHaveLength(2);

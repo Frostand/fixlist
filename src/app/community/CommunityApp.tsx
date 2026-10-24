@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import * as domain from '../../community';
 import { canManageElder } from '../../community/commands';
+import { completeAccountSetup } from '../../community/setup';
 import type { Account, AccountRole, Language, SignInProvider } from '../../community/types';
-import { I18nProvider, useT } from '../../i18n';
+import { applyDocumentLanguage, I18nProvider, useT } from '../../i18n';
 import { discardAllNativeCaptures } from '../../lib/native-capture';
 import { resetCaptureStorage } from '../../lib/capture-storage';
 import { Intro, RoleChoice, Setup, SignIn, DemoAccountChoices, type SetupValues } from './Onboarding';
@@ -50,28 +51,20 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
 }) {
     const t = useT(), route = useRoute();
     const [settings, setSettings] = useState(false), [size, setSize] = useState<TextSize>('normal'), [provider, setProvider] = useState<SignInProvider>('email'), [draft, setDraft] = useState<Draft | null>(null), [notice, setNotice] = useState(''), [switching, setSwitching] = useState(false);
+    const [setupLanguage, setSetupLanguage] = useState<Language | null>(null);
     const { state, account } = c;
     const latestState = useRef(state), mounted = useRef(true);
     latestState.current = state;
     useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
     useEffect(() => { const root = document.documentElement, oldSize = root.style.fontSize; root.dataset.community = 'true'; root.style.fontSize = size === 'normal' ? '100%' : size === 'large' ? '112.5%' : '125%'; return () => { delete root.dataset.community; root.style.fontSize = oldSize; }; }, [size]);
-    useEffect(() => { setDraft(null); setSettings(false); }, [account?.id, c.resetEpoch]);
+    useEffect(() => { setDraft(null); setSettings(false); setSetupLanguage(null); }, [account?.id, c.resetEpoch]);
     function draftJob(d: Draft) { setDraft(d); goCommunity('draft'); }
     function signIn(id: string, _provider: SignInProvider) { setNotice(''); setSwitching(false); const r = c.run((s) => domain.signIn(s, id)); if (r.ok) {
         const a = domain.currentAccount(r.state)!;
         goCommunity(r.state.session.onboarded.includes(id) ? roleHome(a.role) : `setup/${a.role}`);
     } }
-    function setup(v: SetupValues) { let target = account?.id; if (!target) {
-        const r = c.run((s) => domain.createAccount(s, { role: v.role, name: v.name, area: v.area, language: v.language, provider }, new Date().toISOString()));
-        if (!r.ok)
-            return;
-        target = r.accountId;
-    } const accountId = target; if (v.role === 'volunteer') {
-        const r = c.run((s) => domain.updateVolunteerProfile(s, accountId, { skills: v.skills, tools: v.tools, availability: v.availability, maxMiles: v.maxMiles, school: v.school }));
-        if (!r.ok)
-            return;
-    } const r = c.run((s) => domain.completeOnboarding(s, accountId)); if (r.ok) {
-        if (v.role === 'family' || v.needs.length)
+    function setup(v: SetupValues) { const r = c.run((s) => completeAccountSetup(s, account?.id ?? null, v, provider, new Date().toISOString())); if (r.ok) {
+        if (v.role === 'family')
             setNotice(t('c.setup.unsavedPreferences'));
         goCommunity(roleHome(v.role));
     } }
@@ -83,6 +76,10 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
         screen = 'intro';
     if (account && (['intro', 'signin', 'role', 'accounts'].includes(screen) || account.role === 'volunteer' && screen === 'home'))
         screen = roleHome(account.role);
+    if (account && (account.role === 'elder' || account.role === 'volunteer') && !state.session.onboarded.includes(account.id))
+        screen = 'setup';
+    // The setup provider may preview an unsaved language; restore the app locale when leaving it.
+    useEffect(() => { if (screen !== 'setup') applyDocumentLanguage(language, document.documentElement); }, [screen, language]);
     const landing = screen === 'intro', firstRun = ['intro', 'signin', 'role', 'setup', 'accounts'].includes(screen);
     const mainRoute = account ? roleHome(account.role) : 'intro';
     let content: ReactNode;
@@ -96,7 +93,11 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
         content = <RoleChoice onSelect={(r) => goCommunity(`setup/${r}`)} onBack={() => goCommunity('signin')}/>;
     else if (screen === 'setup') {
         const role: AccountRole = account?.role ?? (['elder', 'volunteer', 'family'].includes(route.id) ? route.id as AccountRole : 'elder');
-        content = <Setup key={role} role={role} language={language} elders={domain.accountsByRole(state, 'elder')} onLanguage={(l) => account ? void c.run((s) => domain.updateLanguage(s, account.id, l)) : onGuestLanguage(l)} onComplete={setup} onBack={() => goCommunity(account ? mainRoute : 'role')}/>;
+        const selectedLanguage = setupLanguage ?? language;
+        content = <I18nProvider language={selectedLanguage}><Setup key={`${account?.id ?? 'new'}-${c.resetEpoch}-${role}`} role={role} language={selectedLanguage} elders={domain.accountsByRole(state, 'elder')} onLanguage={setSetupLanguage} onComplete={setup} onBack={() => {
+            if (account) { const result = c.run(domain.signOut); if (result.ok) goCommunity('signin'); }
+            else goCommunity('role');
+        }}/></I18nProvider>;
     }
     else if (!account)
         content = null;
