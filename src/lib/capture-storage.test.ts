@@ -1,12 +1,77 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../../scan/tests/capture-parity/valid-bundle.json';
 import flags from '../../scan/tests/capture-parity/valid-flags.json';
-import { parseCaptureBundle } from './capture-bundle';
+import { buildCaptureBundle, parseCaptureBundle } from './capture-bundle';
 import { validateCaptureSuggestions } from './capture-suggestions';
-import { createIndexedDbCaptureStore, createMemoryCaptureStore, resetCaptureStorage, serializeCaptureStore, type CaptureStore } from './capture-storage';
+import { createIndexedDbCaptureStore, createMemoryCaptureStore, getCaptureStore, getCommunityCaptureStore, resetCaptureStorage, serializeCaptureStore, type CaptureStore } from './capture-storage';
+import { sha256Blob } from './capture-model';
 import { resetFixListData } from './demo-storage';
 import { demoScenario } from '../data/demo-scenario';
 async function data() { const parsed = await parseCaptureBundle(JSON.stringify(fixture)); if (!parsed.ok) throw new Error(parsed.error); return parsed.value; }
+afterEach(() => vi.unstubAllGlobals());
+describe('community capture namespaces in the shared database', () => {
+  afterEach(async () => { await resetCaptureStorage(getCaptureStore()); });
+  it('isolates A/B reads, writes, flags, replacement and removal; legacy stays classic-only', async () => {
+    vi.stubGlobal('indexedDB', databaseFactory());
+    const classic = getCaptureStore(), a = getCommunityCaptureStore('elder-a', 'reset-1'), b = getCommunityCaptureStore('elder-b', 'reset-1');
+    const { manifest, photos } = await data();
+    await classic.writeCapture(manifest, photos);
+    expect(await a.read(manifest.roomId)).toBeNull(); expect(await b.read(manifest.roomId)).toBeNull();
+    const ma = { ...manifest, captureId: 'cap-community-a01' }, mb = { ...manifest, captureId: 'cap-community-b01' };
+    await a.writeCapture(ma, photos, false, undefined, null);
+    await b.writeCapture(mb, photos, false, undefined, null);
+    expect((await getCommunityCaptureStore('elder-a', 'reset-1').read(manifest.roomId))?.manifest).toEqual(ma);
+    await expect(b.writeCapture(ma, photos, true, undefined, ma.captureId)).rejects.toMatchObject({ code: 'CAPTURE_MISMATCH' });
+    await a.writeCapture({ ...ma, captureId: 'cap-community-a02' }, photos, true, undefined, ma.captureId);
+    const fa = { ...flags, capture: { ...flags.capture, captureId: 'cap-community-a02' } };
+    const parsed = validateCaptureSuggestions(fa, { ...ma, captureId: 'cap-community-a02' }); if (!parsed.ok) throw new Error(parsed.error);
+    await a.writeFlags(manifest.roomId, parsed.value);
+    expect((await b.read(manifest.roomId))?.flags).toBeNull();
+    await a.remove(manifest.roomId, 'cap-community-a02');
+    expect((await b.read(manifest.roomId))?.manifest).toEqual(mb);
+    const legacy = await classic.read(manifest.roomId); expect(legacy?.manifest).toEqual(manifest);
+    const owned = (await b.read(manifest.roomId))!;
+    expect(Object.keys(owned.manifest)).toEqual(Object.keys(manifest));
+    const exported = JSON.parse((await buildCaptureBundle(owned.manifest, owned.photos)).text);
+    expect(exported.roomId).toBe(manifest.roomId);
+    expect(Object.keys(exported)).toEqual(Object.keys(fixture));
+    expect(JSON.stringify(exported)).not.toContain('elder-b');
+    expect(JSON.stringify(exported)).not.toContain('reset-1');
+    expect((await resetCaptureStorage(classic)).ok).toBe(true);
+  });
+  it('separates epochs and prevents pending/old clients from resurrecting data after durable reset', async () => {
+    vi.stubGlobal('indexedDB', databaseFactory());
+    const old = getCommunityCaptureStore('elder-a', 'reset-1'), next = getCommunityCaptureStore('elder-a', 'reset-2'), { manifest, photos } = await data();
+    await old.writeCapture(manifest, photos);
+    expect(await next.read(manifest.roomId)).toBeNull();
+    const blob = photos.get('p01')!, bytes = await blob.arrayBuffer();
+    let began!: () => void, release!: () => void;
+    const started = new Promise<void>(r => { began = r; }), blocked = new Promise<void>(r => { release = r; });
+    blob.arrayBuffer = async () => { began(); await blocked; return bytes; };
+    const pending = old.writeCapture(manifest, photos, true).catch((e: unknown) => e);
+    await started; await resetCaptureStorage(getCaptureStore()); release();
+    expect(await pending).toMatchObject({ code: 'CANCELLED' });
+    expect(await old.read(manifest.roomId)).toBeNull();
+    await expect(old.writeCapture(manifest, photos)).rejects.toMatchObject({ code: 'CANCELLED' });
+    await getCommunityCaptureStore('elder-a', 'reset-2').writeCapture(manifest, photos);
+    expect((await next.read(manifest.roomId))?.manifest.roomId).toBe(manifest.roomId);
+    await resetCaptureStorage(getCaptureStore());
+  });
+  it('enforces one 120 MiB budget across classic, elders and epochs', async () => {
+    vi.stubGlobal('indexedDB', databaseFactory());
+    const { manifest, photos } = await data(), first = manifest.photos[0]!, original = photos.get(first.photoId)!;
+    const bytes = new Uint8Array(await original.arrayBuffer());
+    const large = new Blob([bytes.slice(0, -2), new Uint8Array(8 * 1024 * 1024 - original.size), bytes.slice(-2)], { type: 'image/jpeg' });
+    const capture = { ...manifest, photos: [{ ...first, sha256: await sha256Blob(large) }] }, blobs = new Map([[first.photoId, large]]);
+    await getCaptureStore().writeCapture(capture, blobs);
+    for (let i = 0; i < 13; i++) await getCommunityCaptureStore(`elder-${i}`, `epoch-${i}`).writeCapture(capture, blobs);
+    const last = getCommunityCaptureStore('elder-last', 'epoch-last');
+    await expect(last.writeCapture(capture, blobs)).rejects.toMatchObject({ code: 'CAPACITY' });
+    expect(await last.read(manifest.roomId)).toBeNull();
+    expect((await getCaptureStore().read(manifest.roomId))?.manifest).toEqual(capture);
+    await resetCaptureStorage(getCaptureStore());
+  });
+});
 describe('capture storage atomicity and reset', () => {
   it('stores per-photo blobs and latest validated flags, requiring consent to replace', async () => {
     const store = createMemoryCaptureStore(), { manifest, photos } = await data();

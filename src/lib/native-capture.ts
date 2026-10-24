@@ -18,16 +18,24 @@ export async function discardAllNativeCaptures(): Promise<{ ok: boolean }> {
 }
 interface RunCaptureOptions {
   roomId: string; roomName: string; language: Language; prompts: readonly CapturePrompt[];
-  replaceConfirmed?: boolean; expectedCaptureId?: string | null; store?: CaptureStore; isCurrent?(): boolean;
+  replaceConfirmed?: boolean; expectedCaptureId?: string | null; store?: CaptureStore; isCurrent?(): boolean; signal?: AbortSignal;
 }
 /** Always attempt temporary-file cleanup; preserve the saved outcome if cleanup fails. */
 export async function runNativeCapture(options: RunCaptureOptions): Promise<NativeCaptureOutcome> {
   if (!isIOS()) return { status: 'unavailable' };
-  if (options.isCurrent && !options.isCurrent()) return { status: 'cancelled' };
+  if (options.signal?.aborted || options.isCurrent && !options.isCurrent()) return { status: 'cancelled' };
   let result: NativeCaptureOutcome = { status: 'failed' };
+  let cleanupFailed = false, abortCleanup: Promise<void> | undefined;
   const captureId = newCaptureId(), store = options.store ?? getCaptureStore();
-  const requireCurrent = () => { if (options.isCurrent && !options.isCurrent()) throw new CaptureError('CANCELLED', 'Capture cancelled before saving.'); };
+  const isCurrent = () => !options.signal?.aborted && (!options.isCurrent || options.isCurrent());
+  const requireCurrent = () => { if (!isCurrent()) throw new CaptureError('CANCELLED', 'Capture cancelled before saving.'); };
+  // Install before start: an abort must reach native even while camera permission
+  // or file preparation holds the start promise. Every discard targets this ID.
+  const cleanup = async () => { try { await FixListCapture.discard({ captureId }); } catch { cleanupFailed = true; } };
+  const abort = () => { abortCleanup = cleanup(); };
+  options.signal?.addEventListener('abort', abort, { once: true });
   try {
+    requireCurrent();
     const strings = Object.fromEntries(NATIVE_CAPTURE_STRING_KEYS.map((key) => [key, translate(options.language, `capture.native.${key}`)]));
     const start: NativeCaptureStartOptions = { captureId, roomId: options.roomId, roomName: options.roomName, language: options.language, prompts: options.prompts, strings };
     const outcome = await FixListCapture.start(start);
@@ -43,7 +51,7 @@ export async function runNativeCapture(options: RunCaptureOptions): Promise<Nati
       const photos = new Map<string, Blob>();
       for (const p of valid.value.photos) {
         requireCurrent();
-        const response = await fetch(Capacitor.convertFileSrc(files[p.photoId]!));
+        const response = await fetch(Capacitor.convertFileSrc(files[p.photoId]!), options.signal ? { signal: options.signal } : undefined);
         requireCurrent();
         if (!response.ok) throw new CaptureError('INVALID_CAPTURE', 'A captured photo could not be read.');
         const bytes = await response.arrayBuffer(), blob = new Blob([bytes], { type: 'image/jpeg' });
@@ -53,11 +61,16 @@ export async function runNativeCapture(options: RunCaptureOptions): Promise<Nati
         photos.set(p.photoId, blob);
       }
       requireCurrent();
-      await store.writeCapture(valid.value, photos, options.replaceConfirmed ?? false, options.isCurrent, options.expectedCaptureId);
+      await store.writeCapture(valid.value, photos, options.replaceConfirmed ?? false, isCurrent, options.expectedCaptureId);
       result = { status: 'completed' };
     }
-  } catch (error) { result = { status: error instanceof CaptureError && error.code === 'CANCELLED' ? 'cancelled' : 'failed', reason: error instanceof Error ? error.message : 'The walk-through could not finish.' }; }
-  finally { try { await FixListCapture.discard({ captureId }); } catch { result.cleanupFailed = true; } }
+  } catch (error) { result = { status: !isCurrent() || error instanceof CaptureError && error.code === 'CANCELLED' ? 'cancelled' : 'failed', reason: error instanceof Error ? error.message : 'The walk-through could not finish.' }; }
+  finally {
+    options.signal?.removeEventListener('abort', abort);
+    await cleanup();
+    await abortCleanup;
+    if (cleanupFailed) result.cleanupFailed = true;
+  }
   return result;
 }
 export async function shareText(fileName: string, text: string): Promise<{ completed: boolean }> {

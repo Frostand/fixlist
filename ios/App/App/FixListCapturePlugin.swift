@@ -93,7 +93,7 @@ struct CaptureOptions {
         guard let id = call.getString("captureId"), CaptureFiles.validId(id),
               let room = call.getString("roomId"), !room.isEmpty, room.count <= 200,
               let name = call.getString("roomName"), name.count <= 500,
-              let language = call.getString("language"), ["en", "es"].contains(language),
+              let language = call.getString("language"), ["en", "es", "zh", "vi", "ko", "tl", "ru", "fr", "ar"].contains(language),
               let rows = call.getArray("prompts"), rows.count <= 40 else { return nil }
         var parsed: [CapturePrompt] = []
         for row in rows {
@@ -512,6 +512,7 @@ public class FixListCapturePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func presentCapture(_ options: CaptureOptions, call: CAPPluginCall) {
+        guard pendingCall === call else { return }
         guard let presenter = bridge?.viewController, presenter.presentedViewController == nil,
               presenter.viewIfLoaded?.window != nil else {
             resolveStart(call, outcome: ["status": "failed", "reason": "capture-view-unavailable"]); return
@@ -527,7 +528,10 @@ public class FixListCapturePlugin: CAPPlugin, CAPBridgedPlugin {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
                                                         attributes: [.protectionKey: FileProtectionType.complete])
                 DispatchQueue.main.async {
-                    guard self.pendingCall === call else { return }
+                    guard self.pendingCall === call else {
+                        CaptureFiles.queue.async { try? CaptureFiles.remove(folder) }
+                        return
+                    }
                     guard presenter.presentedViewController == nil, presenter.viewIfLoaded?.window != nil else {
                         CaptureFiles.queue.async { try? CaptureFiles.remove(folder) }
                         self.resolveStart(call, outcome: ["status": "failed", "reason": "capture-view-unavailable"])
@@ -555,8 +559,12 @@ public class FixListCapturePlugin: CAPPlugin, CAPBridgedPlugin {
     private func discard(_ call: CAPPluginCall, id: String?) {
         DispatchQueue.main.async {
             if id == nil || id == self.pendingId {
-                if let controller = self.activeCapture { controller.abort() }
-                else if let pending = self.pendingCall { self.resolveStart(pending, outcome: ["status": "cancelled"]) }
+                // Invalidate permission/presentation callbacks and settle start
+                // before waiting for UIKit dismissal or the file queue. Retain
+                // the old controller locally; its late completion is ignored.
+                let controller = self.activeCapture
+                if let pending = self.pendingCall { self.resolveStart(pending, outcome: ["status": "cancelled"]) }
+                controller?.abort()
             }
             CaptureFiles.queue.async {
                 do {
