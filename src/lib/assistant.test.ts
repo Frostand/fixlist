@@ -31,6 +31,39 @@ function audioBridge() {
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 describe('session-scoped native speech lifecycle', () => {
+  it('preserves an empty native terminal error before startup rejection without opening browser speech', async () => {
+    const bridge = audioBridge(), browserStart = vi.fn();
+    class Recognition {
+      lang = ''; continuous = false; interimResults = false;
+      onstart: (() => void) | null = null; onend: (() => void) | null = null;
+      onerror: BrowserRecognition['onerror'] = null; onresult: BrowserRecognition['onresult'] = null;
+      start() { browserStart(); this.onstart?.(); } stop() {} abort() {}
+    }
+    mock.startListening.mockImplementation(({ sessionId }) => {
+      bridge.emit('listeningEnded', { sessionId, reason: 'error', text: '' });
+      return Promise.reject(new Error('Speech permission denied'));
+    });
+    const api = createAssistant({ browser: () => ({ SpeechRecognition: Recognition }) });
+    const session = await api.startListening('en', vi.fn());
+    expect(browserStart).not.toHaveBeenCalled();
+    expect(await session.done).toEqual({ sessionId: session.sessionId, reason: 'error', text: '' });
+    expect(await session.stop()).toBe(''); expect(bridge.count()).toBe(0);
+    expect(mock.cancelListening).not.toHaveBeenCalled();
+  });
+  it('still falls back to browser speech for a bridge failure without a native terminal', async () => {
+    const bridge = audioBridge(), browserStart = vi.fn();
+    class Recognition {
+      lang = ''; continuous = false; interimResults = false;
+      onstart: (() => void) | null = null; onend: (() => void) | null = null;
+      onerror: BrowserRecognition['onerror'] = null; onresult: BrowserRecognition['onresult'] = null;
+      start() { browserStart(); this.onstart?.(); } stop() {} abort() {}
+    }
+    mock.startListening.mockRejectedValue(new Error('Bridge unavailable'));
+    const api = createAssistant({ browser: () => ({ SpeechRecognition: Recognition }) });
+    const session = await api.startListening('en', vi.fn());
+    expect(browserStart).toHaveBeenCalledOnce(); expect(bridge.count()).toBe(0);
+    expect(mock.cancelListening).toHaveBeenCalledOnce(); session.cancel();
+  });
   it.each(['final', 'error', 'background', 'interrupted'] as const)('settles %s before startup ACK, retaining partial text', async reason => {
     const bridge = audioBridge(); let ack!: () => void;
     mock.startListening.mockImplementation(({ sessionId }) => {

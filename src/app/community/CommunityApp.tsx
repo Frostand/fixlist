@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import * as domain from '../../community';
 import { canManageElder } from '../../community/commands';
 import type { Account, AccountRole, Language, SignInProvider } from '../../community/types';
@@ -51,6 +51,9 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     const t = useT(), route = useRoute();
     const [settings, setSettings] = useState(false), [size, setSize] = useState<TextSize>('normal'), [provider, setProvider] = useState<SignInProvider>('email'), [draft, setDraft] = useState<Draft | null>(null), [notice, setNotice] = useState(''), [switching, setSwitching] = useState(false);
     const { state, account } = c;
+    const latestState = useRef(state), mounted = useRef(true);
+    latestState.current = state;
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
     useEffect(() => { const root = document.documentElement, oldSize = root.style.fontSize; root.dataset.community = 'true'; root.style.fontSize = size === 'normal' ? '100%' : size === 'large' ? '112.5%' : '125%'; return () => { delete root.dataset.community; root.style.fontSize = oldSize; }; }, [size]);
     useEffect(() => { setDraft(null); setSettings(false); }, [account?.id, c.resetEpoch]);
     function draftJob(d: Draft) { setDraft(d); goCommunity('draft'); }
@@ -103,7 +106,7 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
             goCommunity('help');
         } return result.ok; }}/> : <Missing onHome={() => goCommunity(mainRoute)}/>;
     else if (screen === 'type' || screen === 'talk')
-        content = elder ? <AskScreen key={`${account.id}-${screen}`} talk={screen === 'talk'} account={account} onDraft={draftJob} onPost={(nextDraft, preferredSlots, analysis) => {
+        content = elder ? <AskScreen key={`${account.id}-${c.resetEpoch}-${screen}`} talk={screen === 'talk'} account={account} onDraft={draftJob} onPost={(nextDraft, preferredSlots, analysis) => {
             const result = c.run(s => domain.postJob(s, { actorId: account.id, elderId: elder.id, source: nextDraft.source, originalText: nextDraft.text, analysis, evidence: nextDraft.evidence, preferredSlots }, new Date().toISOString()));
             if (result.ok) goCommunity('help');
             return result.ok;
@@ -141,8 +144,24 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     }
     catch {
         setNotice(t('c.storageError'));
-    } }} onReset={async () => { const cleared = await resetCaptureStorage(); const native = await discardAllNativeCaptures(); if (!cleared.ok || !native.ok)
-        return false; const reset = c.reset(); if (reset?.ok === false) return false; setNotice(''); setSize('normal'); setSettings(false); goCommunity('intro'); return true; }}/> : null}</div>;
+    } }} onReset={async () => {
+        if (!mounted.current || latestState.current !== state) return false;
+        const reset = c.reset();
+        if (reset?.ok === false) return false;
+        const resetState = reset?.ok ? reset.state : state;
+        latestState.current = resetState;
+        const isCurrent = () => mounted.current && latestState.current === resetState;
+        setNotice(''); setSize('normal'); setSettings(false); goCommunity('intro');
+        try {
+            const cleared = await resetCaptureStorage();
+            if (!isCurrent()) return false;
+            const native = await discardAllNativeCaptures();
+            if (!isCurrent()) return false;
+            if (cleared.ok && native.ok) return true;
+        } catch { /* Cleanup cannot roll back the committed community reset. */ }
+        if (isCurrent()) setNotice(t('c.storageError'));
+        return false;
+    }}/> : null}</div>;
 }
 export function Missing({ onHome }: {
     onHome(): void;

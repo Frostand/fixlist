@@ -261,11 +261,12 @@ export function createAssistant(deps: AssistantDependencies = {}): Assistant {
           return session;
         } catch (error) {
           const superseded = epoch !== listeningEpoch || terminal?.reason === 'cancelled';
+          const receivedTerminal = !!terminal;
           if (!terminal) { quietly(() => native.cancelListening({ sessionId })); finish('error'); }
           if (superseded) throw new Error('Speech input was cancelled.');
-          if (terminal && terminal.reason !== 'error') return session;
-          // Preserve an interrupted transcript instead of starting another microphone.
-          if (terminal?.text) return session;
+          // Any native terminal is authoritative, even an error with no transcript.
+          // A bridge failure without a terminal can still recover partial words.
+          if (receivedTerminal || terminal?.text) return session;
           if (!(error instanceof Error)) throw error;
         }
       }

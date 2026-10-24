@@ -9,7 +9,7 @@ import * as nativeCapture from '../../lib/native-capture';
 import { CommunityBody, AccountHeader } from './CommunityApp';
 import { DraftScreen } from './DraftScreen';
 import type { Draft } from './Elder';
-import { ElderHome } from './Elder';
+import { AskScreen, ElderHome } from './Elder';
 import { DraftEditor } from './JobCard';
 import { Settings } from './Settings';
 import { Availability, Button, Chips } from './UI';
@@ -298,6 +298,82 @@ describe('community transient scope', () => {
         expect(await (settings.props.onReset as () => Promise<boolean>)()).toBe(false);
         expect(window.location.hash).toBe('#/c/home'); expect(nodes(body.render(), Settings)).toHaveLength(1);
         expect(model.render().state).toBe(controller.state);
+        expect(captureStorage.resetCaptureStorage).not.toHaveBeenCalled();
+        expect(nativeCapture.discardAllNativeCaptures).not.toHaveBeenCalled();
+    });
+    function resetView() {
+        const storage = new MemoryStorage(); domain.saveCommunity(storage, stateOf(domain.signIn(domain.createSeedState(NOW), ELDER)));
+        const model = client(storage); let controller = model.render();
+        vi.stubGlobal('document', { documentElement: { style: { fontSize: '' }, dataset: {} }, querySelector: () => null });
+        const body = driver(() => CommunityBody({ controller, language: 'en', onGuestLanguage() {} }));
+        (nodes(body.render(), AccountHeader)[0]!.props.onSettings as () => void)();
+        const settings = nodes(body.render(), Settings)[0]!;
+        return { storage, model, body, reset: settings.props.onReset as () => Promise<boolean>, render() { controller = model.render(); return body.render(); } };
+    }
+    it('rejects an actual stale reset handler before either capture clear', async () => {
+        const clear = vi.spyOn(captureStorage, 'resetCaptureStorage').mockResolvedValue({ ok: true, message: '' });
+        const native = vi.spyOn(nativeCapture, 'discardAllNativeCaptures').mockResolvedValue({ ok: true });
+        const view = resetView(), other = client(new MemoryStorage(view.storage.values));
+        expect(other.render().run(s => domain.updateLanguage(s, ELDER, 'es')).ok).toBe(true);
+        const durable = view.storage.getItem(domain.COMMUNITY_STORAGE_KEY);
+        expect(await view.reset()).toBe(false);
+        expect(view.model.render().issue).toBeTruthy();
+        expect(clear).not.toHaveBeenCalled(); expect(native).not.toHaveBeenCalled();
+        expect(view.storage.getItem(domain.COMMUNITY_STORAGE_KEY)).toBe(durable);
+    });
+    it('finishes successful capture cleanup across the render caused by its own reset', async () => {
+        let finish!: () => void;
+        vi.spyOn(captureStorage, 'resetCaptureStorage').mockImplementation(() => new Promise(resolve => { finish = () => resolve({ ok: true, message: '' }); }));
+        const native = vi.spyOn(nativeCapture, 'discardAllNativeCaptures').mockResolvedValue({ ok: true });
+        const view = resetView(), resetting = view.reset();
+        expect(view.model.render().account).toBeNull();
+        expect(nodes(view.render(), Settings)).toHaveLength(0);
+        finish(); expect(await resetting).toBe(true); expect(native).toHaveBeenCalledOnce();
+        expect(window.location.hash).toBe('/c/intro');
+        expect(nodes(view.render(), 'p').filter(node => node.props.role === 'status')).toHaveLength(0);
+    });
+    it.each(['indexeddb', 'native'] as const)('shows the %s cleanup failure after the community reset has committed', async failure => {
+        vi.spyOn(captureStorage, 'resetCaptureStorage').mockImplementation(async () => {
+            expect(view.model.render().account).toBeNull();
+            return { ok: failure !== 'indexeddb', message: '' };
+        });
+        vi.spyOn(nativeCapture, 'discardAllNativeCaptures').mockResolvedValue({ ok: failure !== 'native' });
+        const view = resetView(), epoch = view.model.render().resetEpoch;
+        expect(await view.reset()).toBe(false);
+        expect(view.model.render().resetEpoch).not.toBe(epoch); expect(view.model.render().account).toBeNull();
+        const tree = view.render();
+        expect(nodes(tree, 'p').some(node => node.props.role === 'status' && node.props.children === 'Changes are on this screen, but could not be saved on this phone.')).toBe(true);
+        expect(nodes(tree, Settings)).toHaveLength(0);
+    });
+    it.each(['indexeddb', 'native'] as const)('does not continue a reset into a new account while %s cleanup is pending', async pending => {
+        let finish!: () => void;
+        const clear = vi.spyOn(captureStorage, 'resetCaptureStorage').mockImplementation(() => pending === 'indexeddb' ? new Promise(resolve => { finish = () => resolve({ ok: true, message: '' }); }) : Promise.resolve({ ok: true, message: '' }));
+        const native = vi.spyOn(nativeCapture, 'discardAllNativeCaptures').mockImplementation(() => new Promise(resolve => { finish = () => resolve({ ok: false }); }));
+        const view = resetView(), resetting = view.reset();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(view.model.render().account).toBeNull();
+        expect(view.model.render().run(s => domain.signIn(s, VOLUNTEER)).ok).toBe(true);
+        view.model.navigate('#/c/nearby'); view.render();
+        (nodes(view.render(), AccountHeader)[0]!.props.onSettings as () => void)();
+        const settings = nodes(view.render(), Settings)[0]!;
+        (settings.props.onSize as (size: string) => void)('larger');
+        finish(); expect(await resetting).toBe(false);
+        expect(view.model.render().account?.id).toBe(VOLUNTEER);
+        expect(window.location.hash).toBe('#/c/nearby');
+        const tree = view.render();
+        expect(nodes(tree, Settings)[0]!.props.textSize).toBe('larger');
+        expect(nodes(tree, 'p').filter(node => node.props.role === 'status')).toHaveLength(0);
+        expect(clear).toHaveBeenCalledOnce(); expect(native).toHaveBeenCalledTimes(pending === 'native' ? 1 : 0);
+    });
+    it.each(['type', 'talk'])('remounts the %s Ask screen after a same-account reset and sign-in', screen => {
+        const view = resetView(); view.model.navigate(`#/c/${screen}`);
+        const before = nodes(view.render(), AskScreen)[0]!;
+        expect(view.model.render().reset().ok).toBe(true);
+        expect(view.model.render().run(s => domain.signIn(s, ELDER)).ok).toBe(true);
+        // Render only the final snapshot, as with a batched reset and sign-in.
+        const after = nodes(view.render(), AskScreen)[0]!;
+        expect(after.props.account).toMatchObject({ id: ELDER });
+        expect(after.key).not.toBe(before.key);
     });
     it('invalidates the draft and settings on reset epoch changes even for the same account', () => {
         const storage = new MemoryStorage(); domain.saveCommunity(storage, stateOf(domain.signIn(domain.createSeedState(NOW), ELDER)));
