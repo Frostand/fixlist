@@ -1,0 +1,13 @@
+.fl-live { min-inline-size: 0; max-inline-size: 100%; overflow-wrap: anywhere; }
+.fl-live *, .fl-live *::before, .fl-live *::after { box-sizing: border-box; }
+.fl-live .fl-live-card { min-inline-size: 0; padding: 1rem; background: var(--card); border: 1px solid var(--line); border-radius: 18px; }
+.fl-live .fl-live-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.fl-live .fl-live-actions > * { flex: 1 1 10rem; }
+.fl-live .fl-live-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
+.fl-live .fl-live-messages { padding-inline-start: 1.25rem; margin: 0; }
+.fl-live .fl-live-messages li { margin-block-end: .75rem; }
+.fl-live .fl-live-check { display: flex; align-items: flex-start; gap: .75rem; }
+.fl-live .fl-live-check input { flex: none; inline-size: 1.5rem; min-block-size: 1.5rem; block-size: 1.5rem; margin-block-start: .2rem; accent-color: var(--green); }
+.fl-live .c-button { max-inline-size: 100%; white-space: normal; overflow-wrap: anywhere; }
+.fl-live :is(p,li,bdi,time) { overflow-wrap: anywhere; }
+@media (max-width: 360px) { .fl-live .fl-live-card { padding: .75rem; } }

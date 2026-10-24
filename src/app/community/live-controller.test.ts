@@ -1,0 +1,126 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { LiveResult, LiveJobDetails, LiveMutation, PostLiveRequest } from '../../community/ports';
+import { analyzeTaskWithRules } from '../../community/task-rules';
+import { LiveCommunityController } from './live-controller';
+import { ELDER, VOLUNTEER, TEST_JOB, liveFixture } from './live-fixture.test-support';
+const draft = (): PostLiveRequest => ({ requestId: TEST_JOB, source: 'typed', originalText: 'Please water my plants', analysis: analyzeTaskWithRules('Please water my plants', 'en'), address: 'PRIVATE test address' });
+function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
+
+describe('mounted live workspace async controller', () => {
+    it('completes resident → helper → resident confirmation/rating and policy-credit cycle', async () => {
+        const f = liveFixture(), elder = new LiveCommunityController(f.port(ELDER, 'elder')), volunteer = new LiveCommunityController(f.port(VOLUNTEER, 'volunteer'));
+        await elder.start(); await volunteer.start(); expect(elder.state.jobs.value?.items).toEqual([]);
+        expect(await elder.execute({ kind: 'post', input: draft() })).toBe(true);
+        expect(elder.state.details.value?.job.status).toBe('open'); await volunteer.refresh();
+        expect(volunteer.state.discovery.value?.items[0]).not.toHaveProperty('address');
+        expect(volunteer.state.discovery.value?.items[0]).not.toHaveProperty('originalText');
+        expect(await volunteer.execute({ kind: 'accept', jobId: TEST_JOB })).toBe(true);
+        expect(volunteer.state.details.value?.address).toBe('PRIVATE test address');
+        expect(await volunteer.execute({ kind: 'message', jobId: TEST_JOB, text: 'Ready to help', language: 'en' })).toBe(true);
+        await elder.refresh(); expect(elder.state.messages.value?.items[0]?.text).toBe('Ready to help');
+        await elder.execute({ kind: 'message', jobId: TEST_JOB, text: 'Thank you', language: 'en' });
+        for (const step of ['on-the-way', 'arrived', 'reported-done'] as const) {
+            expect(await volunteer.execute({ kind: 'advance', jobId: TEST_JOB, step })).toBe(true);
+            expect(volunteer.state.details.value?.job.status).toBe(step);
+        }
+        expect(volunteer.state.credits.value?.items).toEqual([]);
+        await elder.refresh(); expect(elder.state.details.value?.job.status).toBe('reported-done');
+        expect(await elder.execute({ kind: 'confirm', jobId: TEST_JOB })).toBe(true);
+        expect(await elder.execute({ kind: 'rate', jobId: TEST_JOB, stars: 4, note: 'Careful help' })).toBe(true);
+        expect(elder.state.details.value?.rating?.stars).toBe(4);
+        await volunteer.refresh(); expect(volunteer.state.credits.value?.items[0]?.approvedServiceCreditMinutes).toBe(20);
+        elder.dispose(); volunteer.dispose();
+    });
+    it('cancels only through an awaited explicit command and refreshes the committed state', async () => {
+        const f = liveFixture(), c = new LiveCommunityController(f.port(ELDER, 'elder')); await c.start();
+        await c.execute({ kind: 'post', input: draft() }); await c.execute({ kind: 'cancel', jobId: TEST_JOB });
+        expect(f.calls.map(call => call.op)).toEqual(['post', 'cancel']); expect(c.state.details.value?.job.status).toBe('cancelled');
+    });
+    it.each(['pending', 'revoked'] as const)('does not query private or discovery resources while %s', async state => {
+        const f = liveFixture(); f.setAccess(state); const p = f.port(ELDER, 'elder');
+        const jobs = vi.spyOn(p, 'ownJobs'), discover = vi.spyOn(p, 'discover'), details = vi.spyOn(p, 'details');
+        const c = new LiveCommunityController(p); await c.start();
+        expect(c.state.access.value?.state).toBe(state); expect(jobs).not.toHaveBeenCalled(); expect(discover).not.toHaveBeenCalled(); expect(details).not.toHaveBeenCalled();
+        expect(await c.execute({ kind: 'post', input: draft() })).toBe(false);
+        f.setAccess('approved'); await c.refresh(); expect(jobs).toHaveBeenCalledOnce();
+    });
+    it.each(['permission_denied', 'pending_access', 'session_changed'] as const)('clears every private view on %s and access retry is read only', async code => {
+        const f = liveFixture(), p = f.port(ELDER, 'elder'), c = new LiveCommunityController(p); await c.start(); await c.execute({ kind: 'post', input: draft() });
+        vi.spyOn(p, 'messages').mockResolvedValueOnce({ ok: false, code }); await c.loadMessages();
+        expect(c.state.details.value).toBeNull(); expect(c.state.jobs.value).toBeNull(); expect(c.state.messages.value).toBeNull(); expect(c.state.access.error).toBe(code);
+        const count = f.calls.length; await c.refresh(); expect(f.calls).toHaveLength(count); expect(c.state.access.value?.state).toBe('approved');
+    });
+    it('keeps the immutable payload and UUID after a committed lost response, then replays without a duplicate', async () => {
+        const f = liveFixture(), c = new LiveCommunityController(f.port(ELDER, 'elder')); await c.start(); f.loseResponse();
+        const input = draft(); expect(await c.execute({ kind: 'post', input })).toBe(false);
+        input.address = 'EDITED'; input.analysis.title = 'EDITED';
+        const pending = c.state.pending; expect(pending?.error).toBe('retry');
+        expect(await c.execute({ kind: 'post', input })).toBe(false); expect(f.calls).toHaveLength(1);
+        await c.refresh(); expect(c.state.pending?.key).toBe(pending?.key); expect(f.calls).toHaveLength(1);
+        expect(await c.retry()).toBe(true);
+        expect(f.calls[1]?.key).toBe(f.calls[0]?.key); expect(f.calls[1]?.payload).toEqual(f.calls[0]?.payload);
+        expect(c.state.details.value?.address).toBe('PRIVATE test address'); expect(c.state.jobs.value?.items).toHaveLength(1);
+        expect(c.state.pending).toBeNull();
+    });
+    it('prevents duplicate message clicks in flight and reuses the same receipt after a lost response', async () => {
+        const f = liveFixture(), p = f.port(ELDER, 'elder'), c = new LiveCommunityController(p); await c.start(); await c.execute({ kind: 'post', input: draft() });
+        const gate = deferred<void>(), send = p.sendMessage;
+        vi.spyOn(p, 'sendMessage').mockImplementation(async (...args) => { await gate.promise; return send(...args); }); f.loseResponse();
+        const command = { kind: 'message' as const, jobId: TEST_JOB, text: 'One message only', language: 'en' as const };
+        const first = c.execute(command); expect(c.state.pending?.running).toBe(true);
+        expect(await c.execute(command)).toBe(false); expect(await c.retry()).toBe(false); gate.resolve(); expect(await first).toBe(false);
+        const key = c.state.pending?.key; expect(await c.retry()).toBe(true);
+        expect(f.messages).toHaveLength(1); expect(f.calls.filter(v => v.op === 'message').map(v => v.key)).toEqual([key, key]);
+    });
+    it('requires explicit discard before edited input can receive a new UUID', async () => {
+        const f = liveFixture(), c = new LiveCommunityController(f.port(ELDER, 'elder')); await c.start(); f.loseResponse(); await c.execute({ kind: 'post', input: draft() });
+        const key = c.state.pending?.key; c.discardRetry(); expect(c.state.notice).toContain('may already have saved');
+        const input = { ...draft(), requestId: crypto.randomUUID(), originalText: 'A different request' };
+        await c.execute({ kind: 'post', input }); expect(f.calls[1]?.key).not.toBe(key); expect(f.calls[1]?.payload).toEqual(input);
+    });
+    it.each(['retry', 'aborted'] as const)('keeps receipt after %s and does not claim success', async code => {
+        const f = liveFixture(), p = f.port(ELDER, 'elder'), c = new LiveCommunityController(p); await c.start();
+        vi.spyOn(p, 'postRequest').mockResolvedValueOnce({ ok: false, code });
+        expect(await c.execute({ kind: 'post', input: draft() })).toBe(false); expect(c.state.pending?.error).toBe(code); expect(c.state.notice).toBeNull();
+        expect(await c.retry()).toBe(true); expect(p.postRequest).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(p.postRequest).mock.calls[0]?.slice(0, 2)).toEqual(vi.mocked(p.postRequest).mock.calls[1]?.slice(0, 2));
+    });
+    it('does not render a rejected or thrown query as an empty successful result', async () => {
+        const p = liveFixture().port(VOLUNTEER, 'volunteer'); vi.spyOn(p, 'discover').mockRejectedValueOnce(new Error('synthetic network error'));
+        const c = new LiveCommunityController(p); await c.start(); expect(c.state.discovery.value).toBeNull(); expect(c.state.discovery.error).toBe('retry');
+        await c.loadList('discovery'); expect(c.state.discovery.value?.items).toEqual([]); expect(c.state.discovery.error).toBeNull();
+    });
+    it('discards an older selected-job response and aborts its signal', async () => {
+        const f = liveFixture(), p = f.port(ELDER, 'elder'), c = new LiveCommunityController(p); await c.start(); await c.execute({ kind: 'post', input: draft() });
+        const old = deferred<LiveResult<LiveJobDetails>>(), details = structuredClone(f.details!);
+        vi.spyOn(p, 'details').mockImplementationOnce(async (_id, signal) => { const response = await old.promise; expect(signal.aborted).toBe(true); return response; });
+        const first = c.select(TEST_JOB); c.closeDetails(); old.resolve({ ok: true, value: details }); await first;
+        expect(c.state.details.value).toBeNull(); expect(c.state.selectedId).toBeNull();
+    });
+    it('aborts private reads/mutations on unmount, drops late results, and never shares state with another account', async () => {
+        const f = liveFixture(), p = f.port(ELDER, 'elder'), c = new LiveCommunityController(p); await c.start(); await c.execute({ kind: 'post', input: draft() });
+        const late = deferred<LiveResult<LiveMutation>>(); let signal!: AbortSignal;
+        vi.spyOn(p, 'cancelJob').mockImplementation(async (_job, _key, s) => { signal = s; return late.promise; });
+        const command = c.execute({ kind: 'cancel', jobId: TEST_JOB }); c.dispose(); expect(signal.aborted).toBe(true);
+        const other = new LiveCommunityController(f.port(VOLUNTEER, 'volunteer')); await other.start();
+        late.resolve({ ok: true, value: { jobId: TEST_JOB, status: 'cancelled', messageId: null } }); expect(await command).toBe(false);
+        expect(c.state.details.value).toBeNull(); expect(other.state.details.value).toBeNull(); expect(other.state.jobs.value?.items).toEqual([]);
+    });
+    it('pages lists/messages with server cursors, deduplicates overlaps and retains newest-first backing order', async () => {
+        const f = liveFixture(), p = f.port(ELDER, 'elder'), c = new LiveCommunityController(p); await c.start(); await c.execute({ kind: 'post', input: draft() });
+        const job = f.details!.job;
+        vi.spyOn(p, 'ownJobs').mockResolvedValueOnce({ ok: true, value: { items: [job], nextCursor: '30' } }).mockResolvedValueOnce({ ok: true, value: { items: [job, { ...job, id: crypto.randomUUID() }], nextCursor: null } });
+        await c.loadList('jobs'); await c.loadList('jobs', true); expect(p.ownJobs).toHaveBeenLastCalledWith({ cursor: '30', limit: 25 }, expect.any(AbortSignal)); expect(c.state.jobs.value?.items).toHaveLength(2);
+        const row = { id: '100000000000000001', jobId: TEST_JOB, fromId: ELDER, text: 'Newest', language: 'en' as const, at: '2026-10-24T12:00:00Z' };
+        vi.spyOn(p, 'messages').mockResolvedValueOnce({ ok: true, value: { items: [row], nextCursor: '60' } }).mockResolvedValueOnce({ ok: true, value: { items: [{ ...row, id: '59', text: 'Older' }], nextCursor: null } });
+        await c.loadMessages(); await c.loadMessages(true); expect(c.state.messages.value?.items.map(m => m.text)).toEqual(['Newest', 'Older']);
+        expect(p.messages).toHaveBeenLastCalledWith(TEST_JOB, { cursor: '60', limit: 25 }, expect.any(AbortSignal));
+    });
+    it('can restart after the React StrictMode effect cleanup without accepting pre-cleanup results', async () => {
+        const f = liveFixture(), p = f.port(ELDER, 'elder'), old = deferred<Awaited<ReturnType<typeof p.access>>>();
+        vi.spyOn(p, 'access').mockImplementationOnce(() => old.promise);
+        const c = new LiveCommunityController(p), first = c.start(); c.dispose(); await c.start();
+        old.resolve({ ok: true, value: { state: 'revoked', role: null, community: null } }); await first;
+        expect(c.state.access.value?.state).toBe('approved');
+    });
+});

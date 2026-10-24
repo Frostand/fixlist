@@ -1,4 +1,5 @@
 import type { AvailabilitySlot, Language, Skill, Tool } from '../community/types';
+import type { AsyncLiveCommunityPort } from '../community/ports';
 
 /** A backend-verified identity. Tokens stay private to the provider implementation. */
 export interface AuthSession { userId: string; backendId: string; email: string | null; expiresAt: number; recovery?: boolean }
@@ -15,6 +16,8 @@ export interface AccountProfile extends ProfileInput { userId: string; updatedAt
 export type CallbackResult = 'ignored' | 'signed-in' | 'recovery';
 export interface AuthGateway {
     readonly backendId: string;
+    /** Binds only the current verified non-recovery session to this gateway's SDK. */
+    createLiveCommunity?(session: AuthSession): AsyncLiveCommunityPort | null;
     setForeground?(active: boolean): void;
     getVerifiedSession(): Promise<AuthSession | null>;
     subscribe(changed: () => void): () => void;

@@ -4,6 +4,7 @@ import type { AuthConfig } from './config';
 import type { NativeAuthPlugin } from './native';
 import { parseProfile } from './validation';
 import type { AuthGateway, AuthSession, CallbackResult, ProfileInput } from './types';
+import { SupabaseLiveCommunity } from '../community/supabase';
 
 function check(error: unknown) { if (error) throw new Error('Authentication request failed'); }
 export function createSupabaseGateway(config: AuthConfig, storage: SupportedStorage, native: NativeAuthPlugin | null, navigate = (url: string) => window.location.assign(url)) {
@@ -19,10 +20,37 @@ export class SupabaseAuthGateway implements AuthGateway {
     private sessionBlocked = false;
     private logoutIncomplete = false;
     private verifiedAccessToken: string | null = null;
+    private liveGeneration = 0;
+    private liveSession: AuthSession | null = null;
+    private recoveryUserId: string | null = null;
+    private listeners = new Set<() => void>();
     private exchanges = new Map<string, Promise<CallbackResult>>();
     constructor(readonly config: AuthConfig, private storage: SupportedStorage, private client: SupabaseClient, private native: NativeAuthPlugin | null, private navigate: (url: string) => void) {
         this.backendId = config.backendId;
         this.transactions = new CallbackTransactions(storage, config.storageKey, config.redirectUrl);
+        // One gateway subscription, shared with the controller and port factory.
+        this.client.auth.onAuthStateChange((event, session) => {
+            if (event === 'INITIAL_SESSION') return;
+            if (event === 'PASSWORD_RECOVERY') this.recoveryUserId = session?.user.id ?? null;
+            if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') this.recoveryUserId = null;
+            this.invalidateLive();
+            queueMicrotask(() => this.listeners.forEach(changed => changed()));
+        });
+    }
+    private invalidateLive() { ++this.liveGeneration; this.liveSession = null; }
+    createLiveCommunity(session: AuthSession) {
+        const binding = this.liveSession, generation = this.liveGeneration;
+        if (!binding || this.sessionBlocked || this.logoutIncomplete || binding.recovery || session.recovery
+            || session.userId !== binding.userId || session.backendId !== this.backendId) return null;
+        const active = () => this.liveSession === binding && this.liveGeneration === generation && !this.sessionBlocked && !this.logoutIncomplete;
+        return new SupabaseLiveCommunity({ backendId: this.backendId, client: this.client, currentIdentity: async () => {
+            if (!active()) return null;
+            const { data, error } = await this.client.auth.getSession();
+            if (error || !data.session || data.session.user.id !== binding.userId
+                || data.session.access_token !== this.verifiedAccessToken) return null;
+            const recovery = await this.storage.getItem(`${this.config.storageKey}:recovery`);
+            return active() && recovery !== binding.userId ? { backendId: this.backendId, userId: binding.userId } : null;
+        } }, { backendId: this.backendId, userId: binding.userId });
     }
     private serial<T>(fn: () => Promise<T>): Promise<T> { const result = this.tail.then(fn); this.tail = result.catch(() => {}); return result; }
     private mutation<T>(work: () => Promise<T>): Promise<T> {
@@ -42,22 +70,26 @@ export class SupabaseAuthGateway implements AuthGateway {
         if (wasBlocked) this.setForeground(true);
     }
     subscribe(changed: () => void) {
-        const { data } = this.client.auth.onAuthStateChange(event => {
-            if (event !== 'INITIAL_SESSION') queueMicrotask(changed);
-        });
-        return () => { data.subscription.unsubscribe(); };
+        this.listeners.add(changed);
+        return () => { this.listeners.delete(changed); };
     }
     async getVerifiedSession(): Promise<AuthSession | null> {
+        this.invalidateLive();
+        const liveGeneration = this.liveGeneration;
         const generation = this.cancelled;
-        if (this.sessionBlocked) return null;
+        if (this.sessionBlocked || this.logoutIncomplete) return null;
         const { data, error } = await this.client.auth.getSession(); check(error);
         if (!data.session) return null;
         const { data: verified, error: verifyError } = await this.client.auth.getUser(data.session.access_token); check(verifyError);
         if (!verified.user || verified.user.id !== data.session.user.id || !verified.user.confirmed_at || verified.user.is_anonymous) throw new Error('Unverified identity');
-        const recovery = await this.storage.getItem(`${this.config.storageKey}:recovery`) === verified.user.id;
-        if (this.sessionBlocked || generation !== this.cancelled) return null;
+        const recovery = this.recoveryUserId === verified.user.id || await this.storage.getItem(`${this.config.storageKey}:recovery`) === verified.user.id;
+        const current = await this.client.auth.getSession(); check(current.error);
+        if (this.sessionBlocked || this.logoutIncomplete || generation !== this.cancelled || liveGeneration !== this.liveGeneration
+            || current.data.session?.access_token !== data.session.access_token || current.data.session.user.id !== verified.user.id) return null;
         this.verifiedAccessToken = data.session.access_token;
-        return { userId: verified.user.id, backendId: this.backendId, email: verified.user.email ?? null, expiresAt: data.session.expires_at ?? 0, recovery };
+        const session = { userId: verified.user.id, backendId: this.backendId, email: verified.user.email ?? null, expiresAt: data.session.expires_at ?? 0, recovery };
+        if (!recovery) this.liveSession = session;
+        return session;
     }
     async getProfile(userId: string, signal: AbortSignal) {
         const { data, error } = await this.client.from('account_profiles').select('*').eq('user_id', userId).abortSignal(signal).maybeSingle(); check(error);
@@ -72,7 +104,7 @@ export class SupabaseAuthGateway implements AuthGateway {
         const { data, error } = await this.client.from('account_profiles').insert(row).select('*').abortSignal(signal).single(); check(error);
         return parseProfile(data, userId);
     }
-    signIn(email: string, password: string) { return this.mutation(async () => {
+    signIn(email: string, password: string) { this.invalidateLive(); return this.mutation(async () => {
         const generation = this.cancelled;
         await this.transactions.cancel(); await this.storage.removeItem(`${this.config.storageKey}:recovery`);
         const { error } = await this.client.auth.signInWithPassword({ email, password }); check(error);
@@ -97,8 +129,9 @@ export class SupabaseAuthGateway implements AuthGateway {
         const session = await this.getVerifiedSession(); if (!session?.recovery) throw new Error('Recovery required');
         const { error } = await this.client.auth.updateUser({ password }); check(error);
         await this.storage.removeItem(`${this.config.storageKey}:recovery`);
+        this.recoveryUserId = null;
     }); }
-    oauth(provider: 'google' | 'apple') { return this.mutation(async () => {
+    oauth(provider: 'google' | 'apple') { this.invalidateLive(); return this.mutation(async () => {
         const generation = this.cancelled;
         if (provider === 'apple' && this.config.native) {
             if (!this.config.appleNative || !this.native) throw new Error('Native Apple unavailable');
@@ -150,13 +183,15 @@ export class SupabaseAuthGateway implements AuthGateway {
             return pending.kind === 'recovery' ? 'recovery' : 'signed-in';
         } finally { await this.transactions.cancel(); }
     }
-    callback(url: string) { return this.mutation(() => this.exchangeOnce(url)); }
+    callback(url: string) { this.invalidateLive(); return this.mutation(() => this.exchangeOnce(url)); }
     async cancel() {
+        this.invalidateLive();
         ++this.cancelled; this.transactions.invalidate();
         try { if (this.native) await this.native.cancel(); }
         finally { await this.serial(() => this.transactions.cancel()); }
     }
     signOut() {
+        this.invalidateLive();
         ++this.cancelled; this.transactions.invalidate();
         this.sessionBlocked = true; this.logoutIncomplete = true;
         return this.serial(async () => {
