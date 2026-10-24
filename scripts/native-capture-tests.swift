@@ -67,6 +67,189 @@ for (width, height) in [(1920, 1080), (1921, 1081), (1280, 720)] {
 }
 expect(CapturePortraitMath.make(width: 0, height: 1080, intrinsics: k, cameraToWorld: sensor) == nil,
        "Empty sensor dimensions rejected")
+CapturePortraitMath.selfTest()
+
+// Full camera framing, not a separately stretched image: cover 3:4, 9:16,
+// nonstandard/odd sensors, nonzero parent origins and changed layout shapes.
+for resolution in [CGSize(width: 1920, height: 1440), CGSize(width: 1920, height: 1080),
+                   CGSize(width: 1921, height: 1081), CGSize(width: 1920, height: 1200)] {
+    for available in [CGRect(x: 0, y: 0, width: 390, height: 844),
+                      CGRect(x: 17, y: 29, width: 430, height: 932),
+                      CGRect(x: 11, y: 7, width: 844, height: 390)] {
+        guard let frame = CaptureViewportMath.portraitFrame(in: available, imageResolution: resolution) else {
+            failures.append("Valid camera/viewport rejected"); continue
+        }
+        expect(abs(frame.width / frame.height - resolution.height / resolution.width) < 0.000001,
+               "ARView matches this sensor's full portrait aspect ratio")
+        expect(abs(frame.midX - available.midX) < 0.000001 && abs(frame.midY - available.midY) < 0.000001,
+               "ARView is centered even when the available bounds have a nonzero origin")
+        expect(frame.width <= available.width + 0.000001 && frame.height <= available.height + 0.000001
+               && (abs(frame.width - available.width) < 0.000001 || abs(frame.height - available.height) < 0.000001),
+               "The whole camera fits and fills one available dimension")
+        let width = Int(resolution.width), height = Int(resolution.height)
+        let fullK = simd_float3x3(columns: (SIMD3(1200, 0, 0), SIMD3(0, 1180, 0),
+                                           SIMD3(Float(width) / 2 - 0.5, Float(height) / 2 - 0.5, 1)))
+        let geometry = CapturePortraitMath.make(width: width, height: height, intrinsics: fullK, cameraToWorld: sensor)!
+        for p in [SIMD3<Float>(0, 0, -1), SIMD3(0.2, -0.15, -1), SIMD3(-0.3, 0.1, -2)] {
+            let world = (sensor * SIMD4(p.x, p.y, p.z, 1)).xyz
+            let saved = geometry.project(world)!
+            let local = CGPoint(x: saved.x / Double(geometry.width) * frame.width,
+                                y: saved.y / Double(geometry.height) * frame.height)
+            // Independent clockwise sensor projection: no aspect-fill crop.
+            let u = Double(width) / 2 + 1200 * Double(p.x / -p.z)
+            let v = Double(height) / 2 - 1180 * Double(p.y / -p.z)
+            let expected = CGPoint(x: (Double(height) - v) / Double(height) * frame.width,
+                                   y: u / Double(width) * frame.height)
+            expect(hypot(local.x - expected.x, local.y - expected.y) < 0.001,
+                   "Center/off-center saved-photo projection agrees with full ARView local coordinates")
+            let parent = CGPoint(x: frame.minX + local.x, y: frame.minY + local.y)
+            expect(hypot(parent.x - frame.minX - expected.x, parent.y - frame.minY - expected.y) < 0.001,
+                   "Parent viewport origin is added exactly once")
+        }
+    }
+}
+for bad in [CGSize.zero, CGSize(width: -1, height: 1440), CGSize(width: CGFloat.nan, height: 1440),
+            CGSize(width: 1920, height: CGFloat.infinity)] {
+    expect(CaptureViewportMath.portraitFrame(in: CGRect(x: 0, y: 0, width: 390, height: 844), imageResolution: bad) == nil,
+           "Invalid camera dimensions cannot replace a valid viewport")
+}
+expect(CaptureViewportMath.portraitFrame(in: .zero, imageResolution: CGSize(width: 1920, height: 1440)) == nil,
+       "Empty layout waits for valid bounds")
+let viewport = CaptureOutlineHarness()
+expect(!viewport.updateViewport() && viewport.arView.frameWrites == 0,
+       "Before the first camera frame there is no hardcoded camera ratio")
+expect(viewport.updateViewport(imageResolution: CGSize(width: 1920, height: 1440))
+       && viewport.arView.frame == CGRect(x: 0, y: 162, width: 390, height: 520),
+       "Production viewport applies the camera-derived 3:4 frame")
+for _ in 0..<60 { _ = viewport.updateViewport(imageResolution: CGSize(width: 1920, height: 1440)) }
+expect(viewport.arView.frameWrites == 1, "Unchanged camera frames do not mutate layout")
+_ = viewport.updateViewport(imageResolution: CGSize(width: CGFloat.nan, height: 0))
+expect(viewport.arView.frameWrites == 1 && viewport.cameraImageResolution == CGSize(width: 1920, height: 1440),
+       "Invalid transient dimensions retain the last valid resolution")
+viewport.view.bounds = CGRect(x: 17, y: 29, width: 430, height: 932)
+expect(viewport.updateViewport() && viewport.arView.frameWrites == 2
+       && abs(viewport.arView.frame.midX - viewport.view.bounds.midX) < 0.000001,
+       "A layout change refits the last valid camera dimensions without a new AR frame")
+expect(viewport.updateViewport(imageResolution: CGSize(width: 1920, height: 1080)) && viewport.arView.frameWrites == 3,
+       "A camera format change refits the actual viewport")
+viewport.view.bounds = CGRect(x: 11, y: 7, width: 844, height: 390)
+expect(viewport.updateViewport() && viewport.arView.frameWrites == 4 && viewport.arView.frame.height == 390,
+       "Rotation-sized layout changes refit the portrait camera without changing image orientation")
+viewport.view.bounds = CGRect(x: 17, y: 29, width: 430, height: 932)
+_ = viewport.updateViewport()
+viewport.arView.hit = SIMD2(0.3, 0.6)
+_ = viewport.placeAtCenter()
+expect(viewport.arView.rayPoints.allSatisfy { $0 == CGPoint(x: viewport.arView.bounds.midX, y: viewport.arView.bounds.midY) },
+       "Aim and + use the same fitted ARView local center")
+viewport.arView.rayPoints = []
+let offCenter = CGPoint(x: 51, y: 99)
+viewport.arView.hit = SIMD2(0.4, 0.7)
+viewport.tapped(UITapGestureRecognizer(parentPoint: CGPoint(x: viewport.arView.frame.minX + offCenter.x,
+                                                          y: viewport.arView.frame.minY + offCenter.y)))
+expect(viewport.arView.rayPoints.first == offCenter, "An off-center tap stays in ARView local coordinates")
+let placedBeforeLetterbox = viewport.corners.count
+viewport.arView.rayPoints = []
+viewport.tapped(UITapGestureRecognizer(parentPoint: CGPoint(x: viewport.arView.frame.midX,
+                                                          y: viewport.arView.frame.minY - 10)))
+expect(viewport.corners.count == placedBeforeLetterbox && viewport.arView.rayPoints.isEmpty,
+       "A parent-space letterbox tap is ignored after conversion into ARView local space")
+
+// Regression: a narrow return/notch near the first corner must remain a new
+// measured point. Exercise actual +, aim and tap-placement method bodies.
+for centimeters in [4, 8, 12, 16, 20, 24] {
+    for centerAction in [true, false] {
+        let outline = CaptureOutlineHarness()
+        let hit = SIMD2<Float>(0, Float(centimeters) / 100)
+        outline.arView.hit = hit
+        outline.updateAim()
+        expect(outline.aimPosition.map { simd_distance($0, hit) < 0.00001 } ?? false,
+               "Aim stays at the real intersection \(centimeters) cm from first")
+        if centerAction { _ = outline.placeAtCenter() }
+        else { outline.place(at: CGPoint(x: 80, y: 160)) }
+        expect(outline.corners.count == 4 && outline.corners.last.map { simd_distance($0, hit) < 0.00001 } == true
+               && !outline.closed && outline.step == .outline && outline.photoTransitions == 0,
+               "\(centerAction ? "+" : "Tap") adds a distinct point \(centimeters) cm from first without closing")
+    }
+}
+for hit in [SIMD2<Float>(0, 0), SIMD2(0, 0.02), SIMD2(0, 0.03), SIMD2(2, 2.02)] {
+    let outline = CaptureOutlineHarness()
+    outline.arView.hit = hit
+    _ = outline.placeAtCenter()
+    expect(outline.corners.count == 3 && !outline.closed && outline.photoTransitions == 0,
+           "Existing 3 cm duplicate guard ignores first/last repeats without closing")
+}
+let notch = CaptureOutlineHarness()
+notch.corners = []; notch.history = []
+let notchPoints: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(2, 0), SIMD2(2, 2), SIMD2(0.2, 2), SIMD2(0.2, 0.12), SIMD2(0, 0.12)]
+func samePoints(_ actual: [SIMD2<Float>], _ expected: [SIMD2<Float>]) -> Bool {
+    actual.count == expected.count && zip(actual, expected).allSatisfy { simd_distance($0, $1) < 0.00001 }
+}
+for point in notchPoints { notch.arView.hit = point; _ = notch.placeAtCenter() }
+expect(samePoints(notch.corners, notchPoints) && !notch.closed && notch.step == .outline,
+       "A six-corner concave outline retains the narrow return and final near-first point")
+notch.undoTapped()
+expect(samePoints(notch.corners, Array(notchPoints.dropLast())) && notch.history.count == 5 && !notch.closed,
+       "Undo removes only the most recent notch corner")
+notch.arView.hit = notchPoints.last!; _ = notch.placeAtCenter()
+notch.doorTapped()
+let doorPoint = SIMD2<Float>(0.01, 0.01)
+notch.arView.hit = doorPoint; _ = notch.placeAtCenter()
+expect(samePoints(notch.doors, [doorPoint]) && samePoints(notch.corners, notchPoints) && !notch.doorMode && !notch.closed,
+       "Door placement near the first corner records a door without closing or adding a corner")
+notch.undoTapped()
+expect(notch.doors.isEmpty && samePoints(notch.corners, notchPoints), "Undo removes a door independently of corners")
+notch.closeTapped()
+expect(notch.closed && notch.step == .photos && notch.photoTransitions == 1 && samePoints(notch.corners, notchPoints),
+       "Only explicit Done closes a complete concave outline")
+notch.closeTapped()
+expect(notch.photoTransitions == 1, "A stale Done event cannot reenter photos")
+let twoCorners = CaptureOutlineHarness()
+twoCorners.corners.removeLast(); twoCorners.history.removeLast()
+twoCorners.closeTapped()
+expect(!twoCorners.closed && twoCorners.step == .outline, "Two corners cannot close")
+for blockedState in ["floor", "photos", "finished", "saving", "limited", "interrupted"] {
+    let outline = CaptureOutlineHarness()
+    switch blockedState {
+    case "floor": outline.step = .floor
+    case "photos": outline.step = .photos
+    case "finished": outline.finished = true
+    case "saving": outline.saving = true
+    case "limited": outline.trackingNormal = false
+    default: outline.interrupted = true
+    }
+    outline.arView.hit = SIMD2(0, 0.12)
+    outline.closeTapped(); _ = outline.placeAtCenter()
+    expect(!outline.closed && outline.photoTransitions == 0 && outline.corners.count == 3,
+           "Placement and Done are inert while \(blockedState)")
+}
+for blockedState in ["floor", "photos", "finished", "saving"] {
+    let outline = CaptureOutlineHarness()
+    switch blockedState {
+    case "floor": outline.step = .floor
+    case "photos": outline.step = .photos
+    case "finished": outline.finished = true
+    default: outline.saving = true
+    }
+    outline.undoTapped(); outline.doorTapped()
+    expect(outline.corners.count == 3 && outline.history.count == 3 && !outline.doorMode,
+           "Stale undo/door events preserve outline history while \(blockedState)")
+}
+let interruptedOutline = CaptureOutlineHarness()
+interruptedOutline.interrupted = true; interruptedOutline.trackingNormal = false
+interruptedOutline.arView.hit = SIMD2(0, 0.12)
+_ = interruptedOutline.placeAtCenter(); interruptedOutline.closeTapped()
+expect(interruptedOutline.aimPosition == nil && interruptedOutline.corners.count == 3 && !interruptedOutline.closed,
+       "Interruption suppresses aiming, adding and closing without losing corners")
+interruptedOutline.interrupted = false; interruptedOutline.trackingNormal = true
+_ = interruptedOutline.placeAtCenter()
+expect(interruptedOutline.corners.count == 4 && !interruptedOutline.closed,
+       "Recovered tracking can add the same near-first point to the preserved outline")
+let letterbox = CaptureOutlineHarness()
+for point in [CGPoint(x: -1, y: 100), CGPoint(x: 100, y: -1), CGPoint(x: 391, y: 100), CGPoint(x: 100, y: 845)] {
+    letterbox.place(at: point)
+}
+expect(letterbox.arView.rayPoints.isEmpty && letterbox.corners.count == 3,
+       "Letterbox input outside actual ARView bounds cannot raycast or place")
 
 let capture = CaptureStateHarness()
 capture.resetTapped()

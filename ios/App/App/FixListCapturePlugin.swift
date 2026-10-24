@@ -194,6 +194,22 @@ enum CaptureFloorMath {
     }
 }
 
+/// Fit the actual ARView, so its camera background AND projected geometry share
+/// the full portrait image. ARKit's native sensor resolution is landscape.
+enum CaptureViewportMath {
+    static func portraitFrame(in bounds: CGRect, imageResolution: CGSize) -> CGRect? {
+        guard bounds.origin.x.isFinite, bounds.origin.y.isFinite,
+              bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0,
+              imageResolution.width.isFinite, imageResolution.height.isFinite,
+              imageResolution.width > 0, imageResolution.height > 0 else { return nil }
+        let scale = min(bounds.width / imageResolution.height, bounds.height / imageResolution.width)
+        let size = CGSize(width: imageResolution.height * scale, height: imageResolution.width * scale)
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return nil }
+        return CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
+}
+
 /// Pure portrait geometry, independent of ARSession and rendering. The sensor
 /// has +X image-right, +Y image-up, -Z forward. A clockwise pixel rotation is
 /// (u',v') = (H-v,u) in edge coordinates (pixel centres are n+0.5).

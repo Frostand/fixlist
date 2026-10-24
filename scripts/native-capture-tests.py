@@ -10,6 +10,7 @@ import re
 import os
 import subprocess
 import tempfile
+import argparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,8 +34,11 @@ def declaration(marker: str, source: str = SOURCE) -> str:
 
 
 helpers = "\n\n".join(declaration(marker) for marker in (
-    "struct CapturePrompt", "struct CaptureOptions", "enum CaptureFloorMath", "enum CapturePortraitMath", "extension SIMD4 where Scalar == Float",
+    "struct CapturePrompt", "struct CaptureOptions", "enum CaptureFloorMath", "enum CaptureViewportMath", "enum CapturePortraitMath", "extension SIMD4 where Scalar == Float",
 ))
+# Run the existing DEBUG self-test body on the host, without pretending to have
+# an ARCamera. The real SDK projection check is compiled by --frameworks below.
+helpers += "\nextension CapturePortraitMath {\n" + declaration("static func selfTest()") + "\n}"
 # Execute the real production restart/confirmation method bodies. Only the
 # UIKit/session boundary is stubbed; clearing, invalidation and guards are real.
 restart_methods = "\n".join(declaration(marker, CONTROLLER).replace("@objc private func", "func").replace("private func", "func")
@@ -54,7 +58,21 @@ stubs = stubs.replace("/* PRODUCTION_PLUGIN_METHODS */", lifecycle_methods)
 stubs = stubs.replace("/* PRODUCTION_VALID_ID */", declaration("static func validId("))
 stubs = stubs.replace("/* PRODUCTION_RESTART_METHODS */", restart_methods)
 stubs = stubs.replace("/* PRODUCTION_LATE_PHOTO_GUARD */", late_photo)
+outline_markers = ["@objc private func tapped(", "@objc private func placeAtCenter()", "private func place(at point:",
+                   "private func updateAim()", "@objc private func undoTapped()",
+                   "@objc private func doorTapped()", "@objc private func closeTapped()",
+                   "private func updateViewport("]
+# Include the old snap policy while running the new regressions against the
+# pre-fix controller; no behavior is reimplemented in the test harness.
+if "private func shouldSnapToFirst(" in CONTROLLER:
+    outline_markers.append("private func shouldSnapToFirst(")
+outline_methods = "\n".join(declaration(marker, CONTROLLER).replace("@objc private func", "func").replace("private func", "func")
+                            for marker in outline_markers)
+stubs = stubs.replace("/* PRODUCTION_OUTLINE_METHODS */", outline_methods)
 tests = (ROOT / "scripts/native-capture-tests.swift").read_text()
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--frameworks", type=Path, help="Built Simulator Capacitor/Cordova frameworks for full SDK typecheck")
+args = parser.parse_args()
 with tempfile.TemporaryDirectory(prefix="fixlist-native-tests-") as directory:
     # Compile the actual production SDK boundary for the app's iOS 15 minimum.
     # Host Bool fixtures cannot catch refined ARKit enum/availability mistakes.
@@ -68,8 +86,15 @@ with tempfile.TemporaryDirectory(prefix="fixlist-native-tests-") as directory:
                           + candidate_call.group(1) + "\n}\n")
     subprocess.run(["xcrun", "swiftc", "-typecheck", "-warnings-as-errors", "-sdk", sdk,
                     "-target", "arm64-apple-ios15.0-simulator", str(sdk_source)], check=True)
+    if args.frameworks:
+        subprocess.run(["xcrun", "swiftc", "-typecheck", "-D", "DEBUG", "-sdk", sdk,
+                        "-target", "arm64-apple-ios15.0-simulator", "-F", str(args.frameworks),
+                        str(ROOT / "ios/App/App/FixListCapturePlugin.swift"),
+                        str(ROOT / "ios/App/App/FixListCaptureViewController.swift"),
+                        str(ROOT / "ios/App/App/CaptureVideoWriter.swift")], check=True)
+        print("PASS: complete production capture controller/plugin iOS SDK typecheck (including DEBUG projection check)", flush=True)
     source = Path(directory) / "main.swift"
     binary = Path(directory) / "native-capture-tests"
-    source.write_text('import Foundation\nimport simd\nimport os.log\nlet captureLog = OSLog(subsystem: "fixlist.test", category: "capture")\n' + helpers + "\n" + stubs + "\n" + tests)
+    source.write_text('import Foundation\nimport CoreGraphics\nimport simd\nimport os.log\nlet captureLog = OSLog(subsystem: "fixlist.test", category: "capture")\n' + helpers + "\n" + stubs + "\n" + tests)
     subprocess.run(["xcrun", "swiftc", str(source), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

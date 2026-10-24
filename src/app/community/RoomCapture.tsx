@@ -115,12 +115,12 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
     const recordScope = useRef(scope);
     latestScope.current = scope;
     function invalidate() { epoch.current++; pendingNative.current?.abort(); pendingNative.current = null; photoOperation.current = null; }
-    const [roomId, setRoomId] = useState<string | null>(null), [record, setRecord] = useState<StoredCapture | null>(null), [areas, setAreas] = useState<ReviewArea[]>([]), [phase, setPhase] = useState<'choose' | 'ready' | 'busy' | 'photos' | 'review'>('choose'), [error, setError] = useState(''), [replace, setReplace] = useState(false), [sample, setSample] = useState(false);
+    const [roomId, setRoomId] = useState<string | null>(null), [record, setRecord] = useState<StoredCapture | null>(null), [areas, setAreas] = useState<ReviewArea[]>([]), [phase, setPhase] = useState<'choose' | 'ready' | 'busy' | 'photos' | 'review'>('choose'), [error, setError] = useState(''), [replace, setReplace] = useState<'native' | 'photos' | null>(null), [sample, setSample] = useState(false);
     const [cleanupNotice, setCleanupNotice] = useState('');
     function retainRecord(saved: StoredCapture | null) { recordScope.current = scope; setRecord(saved); }
     useEffect(() => {
         alive.current = true;
-        setRoomId(null); setRecord(null); setAreas([]); setPhase('choose'); setError(''); setCleanupNotice(''); setReplace(false); setSample(false);
+        setRoomId(null); setRecord(null); setAreas([]); setPhase('choose'); setError(''); setCleanupNotice(''); setReplace(null); setSample(false);
         return () => { alive.current = false; invalidate(); };
     }, [scope]);
     function guard() {
@@ -180,8 +180,13 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
             setPhase('ready');
         }
     } }
-    async function start() { if (!roomId)
+    async function start(route: 'native' | 'photos' = 'native') { if (!roomId)
         return; const current = guard(); if (!current()) return; setError(''); setCleanupNotice(''); setPhase('busy'); try {
+        if (route === 'photos') {
+            photoOperation.current = current;
+            setPhase('photos');
+            return;
+        }
         const controller = new AbortController();
         pendingNative.current = controller;
         const a = await captureAvailability();
@@ -203,7 +208,7 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
             setPhase('photos');
         }
         else {
-            setPhase('ready');
+            setPhase(outcome.status === 'cancelled' && record?.flags ? 'review' : 'ready');
             if (outcome.status !== 'cancelled')
                 setError([t('c.scan.captureFailed'), outcome.reason].filter(Boolean).join(' '));
         }
@@ -230,8 +235,10 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
             setPhase('review');
         } catch { setError(t('c.scan.captureFailed')); }
     }
+    // A retained tour must check its own guard before guard() invalidates newer work.
     const photoCurrent = photoOperation.current;
-    return <div className="c-stack"><Heading intro={t('c.scan.body')}>{roomId ? catalogText(t, 'room', roomId) : t('c.scan.title')}</Heading>{cleanupNotice ? <p className="c-notice" role="alert">{cleanupNotice}</p> : null}{scope === recordScope.current && record && record.manifest.roomId === roomId ? <CaptureVideos record={record} ownerKey={JSON.stringify([ownerId, resetEpoch])} /> : null}{!roomId ? <div className="c-room-list">{demoScenario.rooms.map((r) => <Button key={r.id} kind="secondary" icon="room" onClick={() => void selectRoom(r.id)}>{catalogText(t, 'room', r.id)}</Button>)}</div> : <>{phase === 'busy' ? <p role="status">{t('c.scan.checking')}</p> : null}{error ? <p className="c-notice" role="status">{error}</p> : null}{phase === 'photos' ? <GuidedPhotoTour prompts={capturePrompts(demoScenario, roomId, t)} onCancel={() => { if (photoCurrent?.()) { invalidate(); setPhase('ready'); } }} onSave={async (photos, blobs) => { if (!photoCurrent?.()) return; const current = guard(); if (!current()) return; setPhase('busy'); try {
+    const canStart = phase === 'ready' || (phase === 'review' && !sample && scope === recordScope.current && record?.manifest.roomId === roomId);
+    return <div className="c-stack"><Heading intro={t('c.scan.body')}>{roomId ? catalogText(t, 'room', roomId) : t('c.scan.title')}</Heading>{cleanupNotice ? <p className="c-notice" role="alert">{cleanupNotice}</p> : null}{scope === recordScope.current && record && record.manifest.roomId === roomId ? <CaptureVideos record={record} ownerKey={JSON.stringify([ownerId, resetEpoch])} /> : null}{!roomId ? <div className="c-room-list">{demoScenario.rooms.map((r) => <Button key={r.id} kind="secondary" icon="room" onClick={() => void selectRoom(r.id)}>{catalogText(t, 'room', r.id)}</Button>)}</div> : <>{phase === 'busy' ? <p role="status">{t('c.scan.checking')}</p> : null}{error ? <p className="c-notice" role="status">{error}</p> : null}{phase === 'photos' ? <GuidedPhotoTour prompts={capturePrompts(demoScenario, roomId, t)} onCancel={() => { if (photoCurrent?.()) { invalidate(); setPhase(record?.flags ? 'review' : 'ready'); } }} onSave={async (photos, blobs) => { if (!photoCurrent?.()) return; const current = guard(); if (!current()) return; setPhase('busy'); try {
         await store.writeCapture({ format: 'fixlist-room-capture', version: 1, captureId: newCaptureId(), roomId, createdAt: new Date().toISOString(), mode: 'photos', floorY: null, outline: null, doors: [], photos }, blobs, !!record, current, record?.manifest.captureId ?? null);
         if (current())
             await analyze(roomId, current);
@@ -241,5 +248,5 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
             setError(t('c.scan.captureFailed'));
             setPhase('ready');
         }
-    } }}/> : null}{phase === 'review' ? <><h2>{t('c.scan.review')}</h2><p className="c-small">{t(sample ? 'c.scan.sampleNote' : 'c.scan.unverified')}</p>{areas.length ? areas.map((area) => <article className="c-review-area" key={area.evidence.flagId}><EvidencePhoto evidence={area.evidence} caption={false}/><p>{t('c.scan.question', { question: area.question })}</p><Button kind={areas.length === 1 ? 'primary' : 'secondary'} onClick={() => { if (alive.current && scope === latestScope.current) onDraft(scanFlagAnalysis(area.checklistItemId, area.evidence.label, language), area.evidence); }}>{t('c.scan.ask')}</Button></article>) : <><p>{t('c.scan.empty')}</p><Button onClick={onType}>{t('c.home.type')}</Button></>}</> : null}{phase === 'ready' ? <Button icon="room" onClick={() => record ? setReplace(true) : void start()}>{t('c.scan.start')}</Button> : null}{phase !== 'busy' ? <Button kind="secondary" onClick={useSample}>{t('c.scan.sample')}</Button> : null}<Button kind="quiet" onClick={() => { invalidate(); setRoomId(null); setPhase('choose'); setError(''); }}>{t('c.scan.restart')}</Button></>}<p className="c-small">{t('c.scan.privacy')}</p>{replace ? <Sheet title={t('c.scan.start')} onClose={() => setReplace(false)}><p>{t('c.scan.replace')}</p><Button onClick={() => { setReplace(false); void start(); }}>{t('c.scan.replaceYes')}</Button></Sheet> : null}</div>;
+    } }}/> : null}{phase === 'review' ? <><h2>{t('c.scan.review')}</h2><p className="c-small">{t(sample ? 'c.scan.sampleNote' : 'c.scan.unverified')}</p>{areas.length ? areas.map((area) => <article className="c-review-area" key={area.evidence.flagId}><EvidencePhoto evidence={area.evidence} caption={false}/><p>{t('c.scan.question', { question: area.question })}</p><Button kind={areas.length === 1 ? 'primary' : 'secondary'} onClick={() => { if (alive.current && scope === latestScope.current) onDraft(scanFlagAnalysis(area.checklistItemId, area.evidence.label, language), area.evidence); }}>{t('c.scan.ask')}</Button></article>) : <><p>{t('c.scan.empty')}</p><Button onClick={onType}>{t('c.home.type')}</Button></>}</> : null}{canStart ? <><Button icon="room" onClick={() => record ? setReplace('native') : void start()}>{t('c.scan.start')}</Button><Button kind="secondary" onClick={() => record ? setReplace('photos') : void start('photos')}>{t('room.startPhotos')}</Button></> : null}{phase !== 'busy' ? <Button kind="secondary" onClick={useSample}>{t('c.scan.sample')}</Button> : null}<Button kind="quiet" onClick={() => { invalidate(); setRoomId(null); setPhase('choose'); setError(''); setReplace(null); }}>{t('c.scan.restart')}</Button></>}<p className="c-small">{t('c.scan.privacy')}</p>{replace ? <Sheet title={t(replace === 'photos' ? 'room.startPhotos' : 'c.scan.start')} onClose={() => setReplace(null)}><p>{t('c.scan.replace')}</p><Button onClick={() => { setReplace(null); void start(replace); }}>{t('c.scan.replaceYes')}</Button></Sheet> : null}</div>;
 }

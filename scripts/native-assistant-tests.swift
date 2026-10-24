@@ -1,6 +1,7 @@
 // Host boundary stubs; the runner injects real production plugin method bodies.
 // This checks capability and bridge/state behavior, not generation, capture or audible playback.
 import Foundation
+private enum AssistantError: Error { case unavailable }
 /* PRODUCTION_LOCALES */
 enum ModelReason { case appleIntelligenceNotEnabled, deviceNotEligible, modelNotReady }
 enum ModelAvailability: Equatable { case available, unavailable(ModelReason) }
@@ -21,13 +22,23 @@ final class SFSpeechRecognizer {
     static func authorizationStatus() -> AuthorizationStatus { status }
 }
 final class AVSpeechSynthesisVoice {
-    struct Quality { let rawValue: Int }
+    struct Quality: Equatable { let rawValue: Int }
+    struct Traits: OptionSet {
+        let rawValue: Int
+        static let isNoveltyVoice = Traits(rawValue: 1)
+        static let isPersonalVoice = Traits(rawValue: 2)
+    }
     let language: String
-    let quality = Quality(rawValue: 1)
-    init(_ language: String) { self.language = language }
+    let identifier: String
+    let quality: Quality
+    let voiceTraits: Traits
+    init(_ language: String, id: String = "default", quality: Int = 1, traits: Traits = []) {
+        self.language = language; identifier = id; self.quality = Quality(rawValue: quality); voiceTraits = traits
+    }
     static var voices = [AVSpeechSynthesisVoice("en-US")]
     static func speechVoices() -> [AVSpeechSynthesisVoice] { voices }
 }
+/* PRODUCTION_SPEECH_POLICY */
 
 final class FixtureQueue {
     var callbacks: [() -> Void] = []
@@ -40,10 +51,11 @@ enum DispatchQueue { static let main = FixtureQueue() }
 final class CAPPluginCall {
     let id: String
     let language: String?
+    let text: String?
     var results: [[String: Any]] = []
     var rejections: [String] = []
-    init(_ id: String, language: String? = nil) { self.id = id; self.language = language }
-    func getString(_ key: String) -> String? { key == "sessionId" ? id : key == "language" ? language : nil }
+    init(_ id: String, language: String? = nil, text: String? = nil) { self.id = id; self.language = language; self.text = text }
+    func getString(_ key: String) -> String? { key == "sessionId" ? id : key == "language" ? language : key == "text" ? text : nil }
     func resolve(_ data: [String: Any] = [:]) { results.append(data) }
     func reject(_ message: String, _ code: String) { rejections.append(code) }
 }
@@ -59,10 +71,18 @@ final class FakeRecognizer {
         callback = resultHandler; return FakeTask()
     }
 }
-final class AVSpeechUtterance {}
+let AVSpeechUtteranceDefaultSpeechRate: Float = 0.5
+final class AVSpeechUtterance {
+    let speechString: String
+    var voice: AVSpeechSynthesisVoice?
+    var rate: Float = AVSpeechUtteranceDefaultSpeechRate
+    init(string: String = "") { speechString = string }
+}
 final class AVSpeechSynthesizer {
     enum Boundary { case immediate }
     var stops = 0
+    var spoken: [AVSpeechUtterance] = []
+    func speak(_ utterance: AVSpeechUtterance) { spoken.append(utterance) }
     func stopSpeaking(at: Boundary) { stops += 1 }
 }
 enum UIApplication { static let didEnterBackgroundNotification = Notification.Name("background") }
@@ -83,6 +103,7 @@ final class Harness {
     var transcript = "", listenID: String?, pendingStart: CAPPluginCall?, pendingStops: [CAPPluginCall] = []
     var stopTimer: DispatchWorkItem?, tapInstalled = false
     var restores = 0, events: [(String, [String: Any])] = []
+    func configureAudio(recording: Bool) throws {}
     func restoreAudio() { restores += 1 }
     func notifyListeners(_ name: String, data: [String: Any]) { events.append((name, data)) }
     func begin(_ id: String) -> FakeRecognizer {
@@ -143,6 +164,48 @@ for (language, locale) in assistantLocales {
     expect(denied.results.last?["speechInput"] as? Bool == false && denied.results.last?["speechInputReason"] as? String == "permission-denied", "Speech permission blocks only input for \(language)")
     expect(denied.results.last?["onDeviceModel"] as? Bool == true && denied.results.last?["speechOutput"] as? Bool == true, "Output and generation remain independent of denied input for \(language)")
     SFSpeechRecognizer.status = .authorized
+}
+// Synthetic installed-voice metadata, executing the production speak/availability paths.
+let voiceHarness = Harness()
+let basic = AVSpeechSynthesisVoice("en-US", id: "basic")
+let enhanced = AVSpeechSynthesisVoice("en-US", id: "enhanced", quality: 2)
+let premium = AVSpeechSynthesisVoice("en-GB", id: "premium", quality: 3)
+AVSpeechSynthesisVoice.voices = [basic, enhanced, premium]
+let spoken = CAPPluginCall("voice", language: "en", text: "I've drafted that for you.")
+voiceHarness.speak(spoken); drain()
+expect(voiceHarness.spokenUtterance?.voice === premium, "Prefer an installed premium same-language voice over lower quality")
+expect(voiceHarness.spokenUtterance?.rate == AVSpeechUtteranceDefaultSpeechRate, "Use the natural system rate without age-based slowdown")
+expect(voiceHarness.spokenUtterance?.speechString == "I've drafted that for you." && spoken.results.count == 1, "Speak the conversation without adding capability labels")
+let exactPremium = AVSpeechSynthesisVoice("en-US", id: "premium-us", quality: 3)
+AVSpeechSynthesisVoice.voices = [premium, exactPremium]
+voiceHarness.speak(CAPPluginCall("exact", language: "en", text: "Got it.")); drain()
+expect(voiceHarness.spokenUtterance?.voice === exactPremium, "Requested region breaks equal-quality ties")
+let tieA = AVSpeechSynthesisVoice("en-US", id: "a", quality: 2)
+let tieB = AVSpeechSynthesisVoice("en-US", id: "b", quality: 2)
+for voices in [[tieA, tieB], [tieB, tieA]] {
+    AVSpeechSynthesisVoice.voices = voices
+    voiceHarness.speak(CAPPluginCall("stable", language: "en", text: "Got it.")); drain()
+    expect(voiceHarness.spokenUtterance?.voice === tieA, "Equal-quality choice is stable across inventory order")
+}
+for voice in [enhanced, basic] {
+    AVSpeechSynthesisVoice.voices = [voice]
+    voiceHarness.speak(CAPPluginCall("fallback", language: "en", text: "Got it.")); drain()
+    expect(voiceHarness.spokenUtterance?.voice === voice, "An installed lower-quality matching voice is an honest fallback")
+}
+let novelty = AVSpeechSynthesisVoice("en-US", id: "novelty", quality: 3, traits: .isNoveltyVoice)
+let personal = AVSpeechSynthesisVoice("en-US", id: "personal", quality: 3, traits: .isPersonalVoice)
+AVSpeechSynthesisVoice.voices = [novelty, personal, basic]
+voiceHarness.speak(CAPPluginCall("ordinary", language: "en", text: "Got it.")); drain()
+expect(voiceHarness.spokenUtterance?.voice === basic, "Assistant uses an ordinary voice rather than a character or someone's Personal Voice")
+for voices in [[], [AVSpeechSynthesisVoice("fr-FR")], [novelty, personal]] {
+    AVSpeechSynthesisVoice.voices = voices
+    let availability = CAPPluginCall("missing-voice", language: "en")
+    voiceHarness.availability(availability); drain()
+    expect(availability.results.last?["speechOutput"] as? Bool == false && availability.results.last?["speechOutputReason"] as? String == "voice-unavailable", "Availability uses the same eligible installed inventory as speak")
+    let unavailable = CAPPluginCall("no-fallback", language: "en", text: "Hello")
+    let count = voiceHarness.synthesizer.spoken.count
+    voiceHarness.speak(unavailable); drain()
+    expect(unavailable.rejections == ["UNAVAILABLE"] && voiceHarness.synthesizer.spoken.count == count, "No matching installed voice rejects without another language or fabricated download")
 }
 let first = h.begin("first")
 first.callback?(FakeResult(bestTranscription: Transcription(formattedString: "Move this chair"), isFinal: false), nil); drain()

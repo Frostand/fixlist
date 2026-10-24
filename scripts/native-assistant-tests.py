@@ -29,10 +29,10 @@ def declaration(marker):
 
 
 markers = (
-    'private func sessionID(', 'private func language(', '@objc func availability(', '@objc private func suspendAudio(',
+    'private func sessionID(', 'private func language(', 'private func input(', '@objc func availability(', '@objc private func suspendAudio(',
     'private func rejectStart(', '@objc func stopListening(',
     '@objc func cancelListening(', 'private func finishRecognition(',
-    'private func releaseRecognition(', '@objc func stopSpeaking(',
+    'private func releaseRecognition(', '@objc func speak(', '@objc func stopSpeaking(',
     'private func finishSpeech(', 'private func speechProgress(',
     'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart',
     'public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString',
@@ -47,6 +47,7 @@ stubs = (ROOT / 'scripts/native-assistant-tests.swift').read_text()
 locales = next(line for line in SOURCE.splitlines() if line.startswith('private let assistantLocales ='))
 locale_helper = declaration('private func assistantLocale(')
 stubs = stubs.replace('/* PRODUCTION_LOCALES */', locales + '\n' + locale_helper)
+stubs = stubs.replace('/* PRODUCTION_SPEECH_POLICY */', declaration('private enum AssistantSpeech'))
 stubs = stubs.replace('/* PRODUCTION_METHODS */', methods).replace('/* PRODUCTION_RECOGNITION_CALLBACK */', recognition)
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--frameworks', type=Path)

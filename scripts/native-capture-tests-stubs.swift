@@ -129,3 +129,83 @@ final class CaptureVideoLifecycleHarness {
     }
     /* PRODUCTION_VIDEO_LIFECYCLE_METHODS */
 }
+
+// Only the rendering/ray provider is stubbed. Corner, aim, Done, undo and door
+// actions below are the production controller bodies, not a second state machine.
+struct UIColor {
+    static let white = UIColor()
+    static let systemGreen = UIColor()
+}
+struct UnlitMaterial { init(color: UIColor) {} }
+class ModelEntity {
+    struct Model { var materials: [UnlitMaterial] = [] }
+    var model: Model? = Model()
+    var children: [Any] = []
+    var position = SIMD3<Float>.zero
+    var scale = SIMD3<Float>(repeating: 1)
+    var orientation = simd_quatf()
+    var isEnabled = false
+}
+final class UIImpactFeedbackGenerator {
+    enum Style { case medium }
+    init(style: Style) {}
+    func impactOccurred() {}
+}
+final class UINotificationFeedbackGenerator {
+    enum Feedback { case success }
+    func notificationOccurred(_ feedback: Feedback) {}
+}
+struct OutlineLabel { var text: String? }
+final class OutlineARView {
+    struct Ray { let origin: SIMD3<Float>; let direction: SIMD3<Float> }
+    var bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+    var frame = CGRect.zero {
+        didSet { frameWrites += 1; bounds = CGRect(origin: .zero, size: frame.size) }
+    }
+    var frameWrites = 0
+    var rayPoints: [CGPoint] = []
+    var hit = SIMD2<Float>(0, 0)
+    func ray(through point: CGPoint) -> Ray? {
+        rayPoints.append(point)
+        return Ray(origin: SIMD3(0, 1.5, 0), direction: SIMD3(hit.x, -1.5, hit.y))
+    }
+}
+final class ViewportContainer { var bounds = CGRect(x: 0, y: 0, width: 390, height: 844) }
+final class UITapGestureRecognizer {
+    let parentPoint: CGPoint
+    init(parentPoint: CGPoint) { self.parentPoint = parentPoint }
+    func location(in view: OutlineARView) -> CGPoint {
+        CGPoint(x: parentPoint.x - view.frame.minX + view.bounds.minX,
+                y: parentPoint.y - view.frame.minY + view.bounds.minY)
+    }
+}
+final class CaptureOutlineHarness {
+    enum Step { case floor, outline, photos }
+    enum Mark { case corner, door }
+    var step = Step.outline
+    var floorY: Float? = 0
+    var corners = [SIMD2<Float>(0, 0), SIMD2(2, 0), SIMD2(2, 2)]
+    var doors: [SIMD2<Float>] = []
+    var history: [Mark] = [.corner, .corner, .corner]
+    var closed = false
+    var doorMode = false
+    var trackingNormal = true
+    var interrupted = false
+    var finished = false
+    var saving = false
+    var aimPosition: SIMD2<Float>?
+    var aimSnapsToFirst = false // Permits executing the pre-fix controller.
+    let arView = OutlineARView()
+    let view = ViewportContainer()
+    var cameraImageResolution: CGSize?
+    var viewportAvailableBounds: CGRect?
+    let aimOverlay = ModelEntity()
+    let aimRing = ModelEntity()
+    let aimLine = ModelEntity()
+    let countLabel = OutlineLabel()
+    var photoTransitions = 0
+    func drawOutline() {}
+    func refresh() {}
+    func beginPhotos() { step = .photos; photoTransitions += 1 }
+    /* PRODUCTION_OUTLINE_METHODS */
+}

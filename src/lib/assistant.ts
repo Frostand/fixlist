@@ -3,6 +3,7 @@ import { SKILLS, TASK_CATEGORIES, TOOLS, type Assistant, type AssistantAvailabil
 import { analyzeTaskWithRules, clearRuleTask, ruleFollowup, ruleUrgency } from '../community/task-rules';
 import type { Language } from '../domain/roles';
 import { localeFor } from '../i18n';
+import { assistantConversationCopy as copy } from './assistant-copy';
 
 /** Native returns untrusted bridge data; validate before showing a job preview. */
 export interface NativeAssistantPlugin {
@@ -44,17 +45,6 @@ export interface AssistantDependencies {
 }
 const plugin = registerPlugin<NativeAssistantPlugin>('FixListAssistant');
 const TIMEOUT_MS = 20_000;
-const copy: Record<Language, { question: string; ready: string }> = {
-  en: { question: 'What do you need help with, and in which room?', ready: 'I wrote this up for you. Would you like to post it?' },
-  es: { question: '¿Con qué necesita ayuda y en qué habitación?', ready: 'Ya preparé su solicitud. ¿Quiere publicarla?' },
-  zh: { question: '您需要什么帮助，在哪个房间？', ready: '我已为您写好请求。您想发布吗？' },
-  vi: { question: 'Bác cần giúp việc gì và ở phòng nào?', ready: 'Tôi đã viết yêu cầu giúp bác. Bác có muốn đăng không?' },
-  ko: { question: '어떤 도움이 필요하시고, 어느 방인가요?', ready: '요청을 정리해 드렸어요. 게시할까요?' },
-  tl: { question: 'Ano po ang kailangan ninyong tulong at saang silid?', ready: 'Naisulat ko na po ang inyong kahilingan. Gusto po ba ninyong i-post ito?' },
-  ru: { question: 'С чем вам нужна помощь и в какой комнате?', ready: 'Я подготовил вашу просьбу. Хотите её опубликовать?' },
-  fr: { question: 'De quelle aide avez-vous besoin et dans quelle pièce ?', ready: 'J’ai rédigé votre demande. Voulez-vous la publier ?' },
-  ar: { question: 'ما المساعدة التي تحتاج إليها، وفي أي غرفة؟', ready: 'كتبت طلبك لك. هل تريد نشره؟' },
-};
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const textValue = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= 4000;
 function nativeJob(value: unknown, language: Language): JobAnalysis {
@@ -77,8 +67,18 @@ async function bounded<T>(run: () => Promise<T>, cancelled: Promise<never> = new
   finally { clearTimeout(timer); }
 }
 function quietly(run: () => Promise<unknown>): void { void bounded(run).catch(() => {}); }
+function browserVoice(synthesis: SpeechSynthesis | undefined, language: Language): SpeechSynthesisVoice | undefined {
+  const locale = localeFor(language).toLowerCase(), base = locale.split('-')[0];
+  try {
+    return synthesis?.getVoices().filter(voice => voice.localService && voice.lang.toLowerCase().split('-')[0] === base).sort((left, right) => {
+      const leftExact = left.lang.toLowerCase() === locale, rightExact = right.lang.toLowerCase() === locale;
+      if (leftExact !== rightExact) return leftExact ? -1 : 1;
+      return left.voiceURI < right.voiceURI ? -1 : left.voiceURI > right.voiceURI ? 1 : 0;
+    })[0];
+  } catch { return undefined; }
+}
 function browserAvailability(browser: AssistantBrowser | undefined, language: Language): AssistantAvailability {
-  return { language, onDeviceModel: false, speechInput: !!(browser?.SpeechRecognition ?? browser?.webkitSpeechRecognition), speechOutput: !!(browser?.speechSynthesis && browser.SpeechSynthesisUtterance) };
+  return { language, onDeviceModel: false, speechInput: !!(browser?.SpeechRecognition ?? browser?.webkitSpeechRecognition), speechOutput: !!(browser?.SpeechSynthesisUtterance && browserVoice(browser.speechSynthesis, language)) };
 }
 /** Keep a small, auditable user-only provenance window within Job.originalText's limit.
  * Fail closed rather than silently truncate a correction or an oversized turn. */
@@ -88,20 +88,29 @@ function conversationWindow(turns: readonly ChatTurn[]): ChatTurn[] | null {
   const original = recent.filter(turn => turn.role === 'user').map(turn => turn.text).join('\n');
   return original.length <= 4000 ? recent : null;
 }
-function rulesConversationJob(turns: readonly ChatTurn[], language: Language, rules: typeof analyzeTaskWithRules): JobAnalysis | null {
+function rulesConversationJob(turns: readonly ChatTurn[], language: Language, rules: typeof analyzeTaskWithRules): { job: JobAnalysis; reply: 'ready' | 'updated' | 'timing' | 'detail' } | null {
   let task: string | null = null, timing: JobAnalysis['urgency'] | undefined;
+  let reply: 'ready' | 'updated' | 'timing' | 'detail' = 'ready';
   for (const turn of turns) {
     if (turn.role !== 'user') continue;
-    if (clearRuleTask(turn.text)) { task = turn.text; timing = undefined; }
+    if (clearRuleTask(turn.text)) { reply = task ? 'updated' : 'ready'; task = turn.text; timing = undefined; }
     else {
       const followup = ruleFollowup(turn.text);
-      if (task && followup) { if (followup === 'timing') timing = ruleUrgency(turn.text); }
+      if (task && followup) { reply = followup === 'timing' ? 'timing' : 'detail'; if (followup === 'timing') timing = ruleUrgency(turn.text); }
       else { task = null; timing = undefined; }
     }
   }
   if (!task) return null;
   const job = rules(task, language);
-  return timing === undefined ? job : { ...job, urgency: timing };
+  return { job: timing === undefined ? job : { ...job, urgency: timing }, reply };
+}
+/** Whole utterances only: social words embedded in a request never change task parsing. */
+function rulesConversationReply(text: string, language: Language): string {
+  const social = text.normalize('NFKC').toLocaleLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '');
+  if (/^(?:hi|hello|hey|hola|你好|您好|안녕하세요|안녕|xinchào|chào|kumusta|здравствуйте|привет|bonjour|salut|مرحبا|مرحبًا)$/u.test(social)) return copy[language].greeting;
+  if (/^(?:thanks|thankyou|gracias|谢谢|謝謝|감사합니다|고마워요|cảmơn|salamat|спасибо|merci|شكرا|شكرًا)$/u.test(social)) return copy[language].thanks;
+  if (/^(?:(?:actually|no|cancel|нет|не|hindi|không|non|ليس|لا)(?![\p{L}\p{N}])|아니|不是|不要|取消)/iu.test(text.trim())) return copy[language].clarify;
+  return copy[language].question;
 }
 function shortReply(value: unknown, language: Language): value is string {
   if (!textValue(value) || value.length > 500 || (value.match(/[?؟？]/gu)?.length ?? 0) > 1) return false;
@@ -230,8 +239,8 @@ export function createAssistant(deps: AssistantDependencies = {}): Assistant {
           return { text: value.text, job, engine: 'apple-on-device', ...(job ? { originalText } : {}) };
         } catch { /* A failed session never prevents typing a request. */ }
       }
-      const job = rulesConversationJob(recent, language, rules);
-      return { text: job ? copy[language].ready : copy[language].question, job, engine: 'rules', ...(job ? { originalText } : {}) };
+      const draft = rulesConversationJob(recent, language, rules);
+      return { text: draft ? copy[language][draft.reply] : rulesConversationReply(recent.at(-1)!.text, language), job: draft?.job ?? null, engine: 'rules', ...(draft ? { originalText } : {}) };
     },
     async startListening(language, onPartial, signal) {
       if (signal?.aborted) throw new Error('Speech input was cancelled.');
@@ -346,6 +355,8 @@ export function createAssistant(deps: AssistantDependencies = {}): Assistant {
       if (epoch !== speechEpoch) return;
       const web = browser(), synthesis = web?.speechSynthesis, Utterance = web?.SpeechSynthesisUtterance;
       if (!synthesis || !Utterance) return;
+      const voice = browserVoice(synthesis, language);
+      if (!voice) return;
       await new Promise<void>(resolve => {
         let utterance: SpeechSynthesisUtterance | undefined, timer: ReturnType<typeof setTimeout> | undefined, ended = false;
         const finish = () => {
@@ -357,10 +368,7 @@ export function createAssistant(deps: AssistantDependencies = {}): Assistant {
         finishSpeech = finish;
         try {
           utterance = new Utterance(text);
-          utterance.lang = localeFor(language); utterance.rate = 0.85;
-          const voices = synthesis.getVoices();
-          const voice = voices.find(v => v.lang === utterance!.lang && v.localService) ?? voices.find(v => v.lang === utterance!.lang) ?? voices.find(v => v.lang.split('-')[0] === utterance!.lang.split('-')[0]);
-          if (voice) utterance.voice = voice;
+          utterance.lang = localeFor(language); utterance.rate = 1; utterance.voice = voice;
           utterance.onend = finish; utterance.onerror = finish; utterance.onstart = progress; utterance.onboundary = progress;
           progress(); synthesis.speak(utterance);
         } catch { finish(); }

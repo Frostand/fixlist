@@ -6,14 +6,19 @@ import * as domain from '../../community';
 import { createMemoryCaptureStore, type CaptureStore, type StoredCapture } from '../../lib/capture-storage';
 import { parseCaptureBundle } from '../../lib/capture-bundle';
 import bundle from '../../../scan/tests/capture-parity/valid-bundle.json';
+import fixtureFlags from '../../../scan/tests/capture-parity/valid-flags.json';
+import type { CaptureManifest } from '../../lib/capture-types';
+import { validateCaptureSuggestions } from '../../lib/capture-suggestions';
+import * as photoStorage from '../../lib/photo-storage';
 import { RoomCapture } from './RoomCapture';
 import { CommunityBody } from './CommunityApp';
 import type { CommunityController } from './useCommunity';
 import { CaptureFlow, GuidedPhotoTour } from '../CaptureScreens';
+import { PhotoInputActions } from '../Photos';
 import { Button, Sheet } from './UI';
 import { CaptureVideos } from '../CaptureVideos';
 import { syntheticVideoAssets } from '../../lib/__fixtures__/capture-video';
-import { translate } from '../../i18n';
+import { LANGUAGES, translate } from '../../i18n';
 import { createInitialState } from '../../domain/workflow';
 import { demoScenario } from '../../data/demo-scenario';
 // A small hook driver exercises component event handlers without a DOM, browser,
@@ -93,7 +98,7 @@ function press(tree: ReactNode, label: string) {
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 beforeEach(() => {
-    vi.clearAllMocks(); runtime.stores.clear();
+    vi.clearAllMocks(); runtime.stores.clear(); runtime.language = 'en';
     runtime.stores.set('reset-1:elder-margaret', createMemoryCaptureStore());
     runtime.stores.set('reset-1:elder-soonja', createMemoryCaptureStore());
     runtime.stores.set('reset-2:elder-margaret', createMemoryCaptureStore());
@@ -105,6 +110,20 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function fixture() { const p = await parseCaptureBundle(JSON.stringify(bundle)); if (!p.ok) throw new Error(p.error); return p.value; }
 async function ready(view: ReturnType<typeof driver>) { await vi.waitFor(() => { expect(nodes(view.render(), Button).some(n => n.props.children === 'Take room photos')).toBe(true); }); }
 function tour(tree: ReactNode) { return nodes(tree, GuidedPhotoTour)[0]!.props as unknown as Parameters<typeof GuidedPhotoTour>[0]; }
+function allowThumbnails() {
+    vi.stubGlobal('createImageBitmap', async () => ({ width: 16, height: 16, close() {} }));
+    const context = { drawImage() {}, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {}, strokeRect() {}, ellipse() {} };
+    vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => context, toDataURL: () => 'data:image/jpeg;base64,c3ludGhldGlj' }) });
+}
+async function saveFlags(store: CaptureStore, manifest: CaptureManifest) {
+    const flags = validateCaptureSuggestions({ ...fixtureFlags, capture: { ...fixtureFlags.capture, captureId: manifest.captureId } }, manifest);
+    if (!flags.ok) throw new Error(flags.error);
+    await store.writeFlags(manifest.roomId, flags.value);
+}
+async function review(view: ReturnType<typeof driver>) {
+    await vi.waitFor(() => expect(nodes(view.render(), 'h2').some(n => n.props.children === translate('en', 'c.scan.review'))).toBe(true));
+    expect(nodes(view.render(), 'article')).toHaveLength(1);
+}
 const props = { ownerId: 'elder-margaret', resetEpoch: 'reset-1', onDraft: vi.fn(), onType: vi.fn() };
 describe('shared retained video effects and classic capture cancellation', () => {
     it('owns object URLs across replacement, owner/room changes, removal and unmount; shows playback failure', async () => {
@@ -155,6 +174,216 @@ describe('shared retained video effects and classic capture cancellation', () =>
     });
 });
 describe('community RoomCapture store and operation identity', () => {
+    it.each(LANGUAGES.map(({ code }) => code))('offers the explicit photo tour in %s even with ARKit available, without checking or starting native capture', async language => {
+        runtime.language = language;
+        runtime.availability.mockResolvedValue({ arkit: true });
+        const view = driver(() => RoomCapture(props));
+        const { catalogText } = await import('../../i18n/catalog');
+        const t = Object.assign((key: import('../../i18n').MessageKey) => translate(language, key), { language });
+        press(view.render(), catalogText(t, 'room', 'living-room'));
+        await vi.waitFor(() => expect(nodes(view.render(), Button).some(n => n.props.children === translate(language, 'c.scan.start'))).toBe(true));
+        press(view.render(), translate(language, 'room.startPhotos'));
+        expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(1);
+        expect(runtime.availability).not.toHaveBeenCalled();
+        expect(runtime.native).not.toHaveBeenCalled();
+        expect(runtime.analyze).not.toHaveBeenCalled();
+        tour(view.render()).onCancel();
+        expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(0);
+        expect(await runtime.stores.get('reset-1:elder-margaret')!.read('living-room')).toBeNull();
+        view.unmount();
+    });
+    it('keeps both retake actions and review cards for a saved flagged room; cancelling consent or the photo tour preserves all old assets', async () => {
+        allowThumbnails();
+        const store = runtime.stores.get('reset-1:elder-margaret')!, { manifest, photos } = await fixture();
+        const assets = await syntheticVideoAssets(manifest);
+        await store.writeCapture(manifest, photos, false, undefined, null, assets);
+        await saveFlags(store, manifest);
+        const original = await store.read(manifest.roomId), write = vi.spyOn(store, 'writeCapture');
+        runtime.availability.mockResolvedValue({ arkit: true });
+        const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await review(view);
+        press(view.render(), 'Take room photos');
+        expect(nodes(view.render(), Sheet)).toHaveLength(1);
+        (nodes(view.render(), Sheet)[0]!.props.onClose as () => void)();
+        await review(view);
+        press(view.render(), 'Start photo tour');
+        expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(0);
+        const sheet = nodes(view.render(), Sheet)[0]!;
+        (sheet.props.onClose as () => void)();
+        await settle();
+        expect(nodes(view.render(), Sheet)).toHaveLength(0);
+        expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(0);
+        await review(view);
+        expect(await store.read(manifest.roomId)).toEqual(original);
+        press(view.render(), 'Start photo tour'); press(view.render(), 'Replace room photos');
+        expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(1);
+        tour(view.render()).onCancel();
+        await review(view);
+        expect(await store.read(manifest.roomId)).toEqual(original);
+        expect(nodes(view.render(), CaptureVideos)).toHaveLength(1);
+        expect(runtime.availability).not.toHaveBeenCalled(); expect(runtime.native).not.toHaveBeenCalled();
+        expect(write).not.toHaveBeenCalled();
+        view.unmount();
+    });
+    it.each([false, true])('restores saved flagged review after native replacement is cancelled (cleanup failure %s)', async cleanupFailed => {
+        allowThumbnails();
+        const store = runtime.stores.get('reset-1:elder-margaret')!, { manifest, photos } = await fixture();
+        await store.writeCapture(manifest, photos, false, undefined, null, await syntheticVideoAssets(manifest));
+        await saveFlags(store, manifest);
+        const original = (await store.read(manifest.roomId))!, write = vi.spyOn(store, 'writeCapture');
+        runtime.availability.mockResolvedValue({ arkit: true });
+        runtime.native.mockResolvedValue({ status: 'cancelled', cleanupFailed });
+        const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await review(view);
+        const cards = nodes(view.render(), 'article').map(n => ({ key: n.key, question: nodes(n, 'p')[0]!.props.children }));
+        press(view.render(), 'Take room photos'); press(view.render(), 'Replace room photos');
+        await vi.waitFor(() => expect(runtime.native).toHaveBeenCalledOnce());
+        await review(view);
+        expect(nodes(view.render(), 'article').map(n => ({ key: n.key, question: nodes(n, 'p')[0]!.props.children }))).toEqual(cards);
+        expect(nodes(view.render(), Button).map(n => n.props.children)).toEqual(expect.arrayContaining(['Take room photos', 'Start photo tour']));
+        expect(nodes(view.render(), Sheet)).toHaveLength(0); expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(0);
+        expect(runtime.native).toHaveBeenCalledWith(expect.objectContaining({ store, replaceConfirmed: true, expectedCaptureId: manifest.captureId }));
+        expect(runtime.analyze).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled();
+        const retained = nodes(view.render(), CaptureVideos)[0]!.props.record as StoredCapture, saved = (await store.read(manifest.roomId))!;
+        expect(retained).toEqual(original); expect(saved).toEqual(original);
+        for (const [id, blob] of original.photos) expect(await saved.photos.get(id)!.arrayBuffer()).toEqual(await blob.arrayBuffer());
+        expect(await saved.videoBlobs!.get('v01')!.arrayBuffer()).toEqual(await original.videoBlobs!.get('v01')!.arrayBuffer());
+        const notices = nodes(view.render(), 'p').map(n => n.props.children);
+        expect(notices).not.toContain(translate('en', 'c.scan.captureFailed'));
+        expect(notices.includes(translate('en', 'capture.cleanupFailed'))).toBe(cleanupFailed);
+        view.unmount();
+    });
+    it('saves an existing-library photo through the real guided tour, atomically replacing flagged AR geometry and video with photos only', async () => {
+        allowThumbnails();
+        const store = runtime.stores.get('reset-1:elder-margaret')!, { manifest, photos } = await fixture();
+        await store.writeCapture(manifest, photos, false, undefined, null, await syntheticVideoAssets(manifest));
+        await saveFlags(store, manifest);
+        const original = await store.read(manifest.roomId), write = vi.spyOn(store, 'writeCapture'), remove = vi.spyOn(store, 'remove'), flagsWrite = vi.spyOn(store, 'writeFlags');
+        runtime.availability.mockResolvedValue({ arkit: true });
+        const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await review(view);
+        press(view.render(), 'Start photo tour'); press(view.render(), 'Replace room photos');
+        const tourProps = tour(view.render()), guided = driver(() => GuidedPhotoTour(tourProps));
+        const actions = nodes(guided.render(), PhotoInputActions)[0]!.props as unknown as Parameters<typeof PhotoInputActions>[0];
+        const inputs = driver(() => PhotoInputActions(actions)), controls = inputs.render();
+        expect(nodes(controls, 'button').map(n => n.props.children)).toEqual([translate('en', 'scanViewer.takePhoto'), translate('en', 'scanViewer.choosePhoto')]);
+        expect(nodes(controls, 'input').filter(n => n.props.capture === 'environment')).toHaveLength(1);
+        const library = nodes(controls, 'input').find(n => !n.props.capture)!;
+        const image = manifest.photos[0]!, encoded = vi.spyOn(photoStorage, 'reencodePhoto').mockResolvedValue({ blob: photos.get(image.photoId)!, width: image.width, height: image.height });
+        const file = new File([photos.get(image.photoId)!], 'camera-app-wide-photo.jpg', { type: 'image/jpeg' });
+        const target = { files: [file], value: file.name };
+        (library.props.onChange as (event: { target: typeof target }) => void)({ target });
+        expect(target.value).toBe('');
+        await vi.waitFor(() => expect(nodes(guided.render(), 'button').some(n => n.props.children === translate('en', 'capture.native.retake'))).toBe(true));
+        expect(encoded).toHaveBeenCalledWith(file);
+        expect(await store.read(manifest.roomId)).toEqual(original);
+        press(guided.render(), translate('en', 'capture.native.done'));
+        await vi.waitFor(() => expect(runtime.analyze).toHaveBeenCalledOnce()); await ready(view);
+        const saved = (await store.read(manifest.roomId))!;
+        expect(saved.manifest).toMatchObject({ mode: 'photos', floorY: null, outline: null, doors: [], photos: [{ photoId: 'p01', checklistItemId: null, camera: null }] });
+        expect(saved.manifest.captureId).not.toBe(manifest.captureId);
+        expect(saved.flags).toBeNull(); expect(saved.videos).toBeNull(); expect(saved.videoBlobs?.size).toBe(0);
+        expect(saved.photos.size).toBe(1); expect(await saved.photos.get('p01')!.arrayBuffer()).toEqual(await photos.get('p01')!.arrayBuffer());
+        expect(write).toHaveBeenCalledOnce();
+        expect(write.mock.calls[0]!.slice(2)).toEqual([true, expect.any(Function), manifest.captureId]);
+        expect(remove).not.toHaveBeenCalled(); expect(flagsWrite).not.toHaveBeenCalled();
+        const retained = nodes(view.render(), CaptureVideos)[0]!.props as unknown as Parameters<typeof CaptureVideos>[0];
+        expect(retained.record.videos).toBeNull(); expect(retained.record.videoBlobs?.size).toBe(0);
+        const playback = driver(() => CaptureVideos(retained)); expect(playback.render()).toBeNull(); playback.unmount();
+        expect(runtime.availability).not.toHaveBeenCalled(); expect(runtime.native).not.toHaveBeenCalled();
+        guided.unmount(); inputs.unmount(); view.unmount();
+    });
+    it('keeps retake actions hidden for a sample illustration without changing the saved capture identity', async () => {
+        allowThumbnails();
+        const store = runtime.stores.get('reset-1:elder-margaret')!, { manifest, photos } = await fixture();
+        await store.writeCapture(manifest, photos); await saveFlags(store, manifest);
+        const original = await store.read(manifest.roomId);
+        const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await review(view);
+        press(view.render(), translate('en', 'c.scan.sample'));
+        const buttons = nodes(view.render(), Button).map(n => n.props.children);
+        expect(buttons).not.toContain(translate('en', 'c.scan.start')); expect(buttons).not.toContain(translate('en', 'room.startPhotos'));
+        expect(nodes(view.render(), Sheet)).toHaveLength(0);
+        expect(await store.read(manifest.roomId)).toEqual(original);
+        press(view.render(), 'Choose another room'); press(view.render(), 'Living room'); await review(view);
+        press(view.render(), 'Start photo tour'); press(view.render(), 'Replace room photos');
+        await tour(view.render()).onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos);
+        expect((await store.read(manifest.roomId))?.manifest.captureId).not.toBe(manifest.captureId);
+        view.unmount();
+    });
+    it('rejects photo replacement when the consented capture was replaced by another operation, preserving its flags and video', async () => {
+        const store = runtime.stores.get('reset-1:elder-margaret')!, { manifest, photos } = await fixture();
+        await store.writeCapture(manifest, photos);
+        const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await ready(view);
+        press(view.render(), 'Start photo tour'); press(view.render(), 'Replace room photos');
+        const oldTour = tour(view.render()), newer = { ...manifest, captureId: 'cap-newer-replacement' };
+        await store.writeCapture(newer, photos, true, undefined, manifest.captureId, await syntheticVideoAssets(newer));
+        await saveFlags(store, newer);
+        const original = await store.read(manifest.roomId);
+        await oldTour.onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos);
+        expect(await store.read(manifest.roomId)).toEqual(original);
+        expect(runtime.analyze).not.toHaveBeenCalled();
+        expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(0);
+        view.unmount();
+    });
+    it('keeps both retake actions after successful photo analysis reaches real review', async () => {
+        allowThumbnails();
+        const store = runtime.stores.get('reset-1:elder-margaret')!, { manifest, photos } = await fixture();
+        runtime.analyze.mockImplementationOnce(async () => {
+            const saved = (await store.read(manifest.roomId))!;
+            expect(saved.flags).toBeNull(); expect(saved.videos).toBeNull();
+            await saveFlags(store, saved.manifest);
+        });
+        const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await ready(view);
+        press(view.render(), 'Start photo tour');
+        await tour(view.render()).onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos);
+        await review(view);
+        expect(nodes(view.render(), Button).map(n => n.props.children)).toContain('Take room photos');
+        press(view.render(), 'Start photo tour');
+        expect(nodes(view.render(), Sheet)).toHaveLength(1);
+        expect(nodes(view.render(), 'article')).toHaveLength(1);
+        (nodes(view.render(), Sheet)[0]!.props.onClose as () => void)();
+        expect((await store.read(manifest.roomId))?.flags).not.toBeNull();
+        view.unmount();
+    });
+    it.each(['owner', 'room', 'reset', 'newer'] as const)('a stale explicit photo tour cannot mutate storage or abort a newer native operation after %s changes', async change => {
+        const { manifest, photos } = await fixture(); let currentProps = props;
+        const view = driver(() => RoomCapture(currentProps)); press(view.render(), 'Living room'); await ready(view);
+        press(view.render(), 'Start photo tour'); const oldTour = tour(view.render());
+        expect(runtime.availability).not.toHaveBeenCalled();
+        if (change === 'owner' || change === 'reset') { currentProps = { ...props, ...(change === 'owner' ? { ownerId: 'elder-soonja' } : { resetEpoch: 'reset-2' }) }; view.render(); }
+        else if (change === 'room') press(view.render(), 'Choose another room');
+        else oldTour.onCancel();
+        if (change !== 'newer') { press(view.render(), change === 'room' ? 'Hallway' : 'Living room'); await ready(view); }
+        runtime.availability.mockResolvedValue({ arkit: true });
+        let finish!: (value: { status: string }) => void;
+        runtime.native.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        press(view.render(), 'Take room photos'); await settle();
+        const newer = runtime.native.mock.calls[0]![0];
+        await oldTour.onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos); oldTour.onCancel();
+        expect(newer.signal.aborted).toBe(false); expect(newer.isCurrent()).toBe(true);
+        expect(runtime.analyze).not.toHaveBeenCalled();
+        for (const store of runtime.stores.values()) { expect(await store.read('living-room')).toBeNull(); expect(await store.read('hallway')).toBeNull(); }
+        finish({ status: 'cancelled' }); await settle(); view.unmount();
+    });
+    it.each(['owner', 'room', 'reset', 'unmount'] as const)('rejects an in-flight explicit photo save after %s changes without clearing the old flags or video', async change => {
+        allowThumbnails();
+        const store = runtime.stores.get('reset-1:elder-margaret')!, { manifest, photos } = await fixture();
+        await store.writeCapture(manifest, photos, false, undefined, null, await syntheticVideoAssets(manifest)); await saveFlags(store, manifest);
+        const original = await store.read(manifest.roomId), write = store.writeCapture;
+        let release!: () => void, began!: () => void;
+        const blocked = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { began = resolve; });
+        vi.spyOn(store, 'writeCapture').mockImplementation(async (...args) => { began(); await blocked; await write(...args); });
+        let currentProps = props;
+        const view = driver(() => RoomCapture(currentProps)); press(view.render(), 'Living room'); await review(view);
+        press(view.render(), 'Start photo tour'); press(view.render(), 'Replace room photos');
+        const saving = tour(view.render()).onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos);
+        await started;
+        if (change === 'unmount') view.unmount();
+        else if (change === 'room') press(view.render(), 'Choose another room');
+        else { currentProps = { ...props, ...(change === 'owner' ? { ownerId: 'elder-soonja' } : { resetEpoch: 'reset-2' }) }; view.render(); }
+        release(); await saving;
+        expect(await store.read(manifest.roomId)).toEqual(original);
+        expect(runtime.analyze).not.toHaveBeenCalled();
+        expect(runtime.native).not.toHaveBeenCalled(); expect(runtime.availability).not.toHaveBeenCalled();
+        if (change !== 'unmount') view.unmount();
+    });
     it.each(['completed', 'cancelled'] as const)('shows temporary cleanup failure after native %s', async status => {
         runtime.availability.mockResolvedValue({ arkit: true });
         runtime.native.mockResolvedValue({ status, cleanupFailed: true });

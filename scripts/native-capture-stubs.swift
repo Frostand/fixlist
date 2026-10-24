@@ -23,7 +23,7 @@ final class UIAlertController {
 }
 enum UIAccessibility {
     enum Notification { case announcement }
-    static func post(notification: Notification, argument: String) {}
+    static func post(notification: Notification, argument: Any?) {}
 }
 struct FakePhoto { var camera: Bool? = true }
 struct FakeOverlay { var children = [1] }

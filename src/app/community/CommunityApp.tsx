@@ -41,7 +41,7 @@ function DemoCommunityApp() { const controller = useCommunity(), [guestLanguage,
 export function AccountHeader({ account, onSettings }: {
     account: Account;
     onSettings(): void;
-}) { const t = useT(); return <header className="c-app-header"><a className="c-wordmark" href={`#/c/${roleHome(account.role)}`}><Icon name="leaf"/>{t('c.brand')}</a><button className="c-avatar-button" onClick={onSettings}><Avatar name={account.name} tone={account.avatarTone}/><span>{t('c.settings')}</span></button></header>; }
+}) { const t = useT(); return <header className="c-app-header"><a className="c-wordmark" href="#/c/intro"><Icon name="leaf"/>{t('c.brand')}</a><button className="c-avatar-button" onClick={onSettings}><Avatar name={account.name} tone={account.avatarTone}/><span>{t('c.settings')}</span></button></header>; }
 export function Tabs({ account, screen }: {
     account: Account;
     screen: string;
@@ -80,9 +80,7 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     let screen = route.screen;
     if (!account && !['intro', 'signin', 'role', 'setup', 'accounts'].includes(screen))
         screen = 'intro';
-    if (import.meta.env.MODE === 'submission' && !account && screen === 'intro')
-        screen = 'signin';
-    if (account && (['intro', 'signin', 'role', 'accounts'].includes(screen) || account.role === 'volunteer' && screen === 'home'))
+    if (account && (['signin', 'role', 'accounts'].includes(screen) || account.role === 'volunteer' && screen === 'home'))
         screen = roleHome(account.role);
     if (account && (account.role === 'elder' || account.role === 'volunteer') && !state.session.onboarded.includes(account.id))
         screen = 'setup';
@@ -92,7 +90,7 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     const mainRoute = account ? roleHome(account.role) : 'intro';
     let content: ReactNode;
     if (screen === 'intro')
-        content = <Intro language={language} volunteer={domain.accountsByRole(state, 'volunteer')[0] ?? null} onLanguage={onGuestLanguage} onStart={() => goCommunity('signin')}/>;
+        content = <Intro language={language} volunteer={domain.accountsByRole(state, 'volunteer')[0] ?? null} onLanguage={onGuestLanguage} onStart={() => goCommunity(account ? roleHome(account.role) : 'signin')}/>;
     else if (screen === 'accounts')
         content = <Heading>{t('c.signin.choose')}</Heading>;
     else if (screen === 'signin')

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createAssistant } from './assistant';
+import { assistantRulesCopy } from './assistant-copy';
 import type { ChatTurn, Language } from '../community/types';
 
 const api = createAssistant({ isNative: () => false, browser: () => undefined });
@@ -10,6 +11,43 @@ const chat = (texts: string[], language: Language = 'en') => api.chat(texts.flat
 
 // This small corpus checks deterministic behavior, not fluency or translation quality.
 describe('bounded rules conversation corpus', () => {
+  it('greets as the FixList assistant and asks about just the task', async () => {
+    expect(await chat(['Hello'])).toMatchObject({
+      text: "Hi, I'm the FixList assistant. What would you like help with at home?", job: null, engine: 'rules',
+    });
+    const reply = await chat(['I need some help']);
+    expect(reply.text).toBe('What would you like help with at home?');
+    expect(reply.text).not.toMatch(/which room|and when/iu);
+  });
+  it('does not let social words embedded in a request hide a task or an ambiguous correction', async () => {
+    expect(await chat(['Hello, please water plants, thanks'])).toMatchObject({ job: { titleEnglish: 'Water the plants' } });
+    expect(await chat(['Hello, do not water plants'])).toMatchObject({ job: null });
+    expect((await chat(['Thanks, but maybe the phone instead?'])).text).toBe('What would you like help with at home?');
+  });
+  it.each([
+    ['en', 'Hello', 'Thanks'], ['es', 'Hola', 'Gracias'], ['zh', '你好', '谢谢'],
+    ['ko', '안녕하세요', '감사합니다'], ['vi', 'Xin chào', 'Cảm ơn'], ['tl', 'Kumusta', 'Salamat'],
+    ['ru', 'Здравствуйте', 'Спасибо'], ['fr', 'Bonjour', 'Merci'], ['ar', 'مرحبا', 'شكرا'],
+  ] satisfies [Language, string, string][])('keeps authored greetings and acknowledgments brief in %s', async (language, greeting, thanks) => {
+    const hello = await chat([greeting], language), acknowledgment = await chat([thanks], language);
+    expect(hello.job).toBeNull(); expect(acknowledgment.job).toBeNull();
+    expect(hello.text).toContain('FixList'); expect(hello.text).not.toBe(acknowledgment.text);
+    for (const reply of [hello, acknowledgment, await chat(['Water plants'], language)]) {
+      expect(reply.engine).toBe('rules'); expect(reply.text).not.toContain(assistantRulesCopy[language]);
+      expect(reply.text.match(/[?؟？]/gu)).toHaveLength(1);
+      expect(Array.from(new Intl.Segmenter(undefined, { granularity: 'sentence' }).segment(reply.text))).toHaveLength(2);
+    }
+  });
+  it('invites review without claiming to post or turning a yes into permission to act', async () => {
+    expect((await chat(['Water plants'])).text).toBe("I've drafted that for you. Would you like to review it?");
+    expect(await chat(['Water plants', 'Yes, post it'])).toMatchObject({ engine: 'rules', job: null });
+  });
+  it('acknowledges explicit corrections and a room detail without inventing draft content', async () => {
+    expect((await chat(['Water plants today', 'Actually, not urgent'])).text).toBe("Got it, I've updated the timing. Would you like to review the draft?");
+    expect((await chat(['Water plants', 'Actually, help move the sofa'])).text).toBe("Got it, I've updated the draft. Would you like to review it?");
+    expect((await chat(['Water plants', 'In the kitchen'])).text).toBe('Got it. Would you like to review the draft?');
+    expect(await chat(['Water plants', 'No, not that'])).toMatchObject({ text: "Let's get that right. What would you like help with at home?", job: null });
+  });
   it.each([
     ['en', 'water plants', 'Water the plants'], ['es', 'Regar plantas', 'Water the plants'],
     ['zh', '浇水', 'Water the plants'], ['ko', '화분에 물 주세요', 'Water the plants'],

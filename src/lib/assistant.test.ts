@@ -227,7 +227,7 @@ describe('assistant bridge (mocked native model and audio)', () => {
   it('uses the latest user message and recovers native chat errors', async () => {
     mock.chat.mockRejectedValue(new Error('UNAVAILABLE'));
     const result = await assistant.chat([{ role: 'user', text: 'Help me move this chair' }, { role: 'assistant', text: 'Where?' }, { role: 'user', text: 'Hello' }], 'en', { firstName: 'M' });
-    expect(result).toEqual({ text: 'What do you need help with, and in which room?', job: null, engine: 'rules' });
+    expect(result).toEqual({ text: "Hi, I'm the FixList assistant. What would you like help with at home?", job: null, engine: 'rules' });
   });
   it('falls back if native chat ignores the short-reply or single-question contract', async () => {
     mock.chat.mockResolvedValueOnce({ text: 'Hello. I can help. Tell me more.', job: null });
@@ -269,14 +269,26 @@ describe('assistant bridge (mocked native model and audio)', () => {
     await expect(web.startListening('en', vi.fn())).rejects.toThrow(/Speech input.*unavailable/i);
     expect(await web.translate('Hello', 'en', 'es')).toBeNull();
   });
-  it('falls back to browser speech synthesis with locale and slower delivery', async () => {
+  it('falls back to an installed local browser voice with locale and natural delivery', async () => {
     class Utterance { text: string; lang = ''; rate = 1; onend: (() => void) | null = null; onerror: (() => void) | null = null; constructor(text: string) { this.text = text; } }
-    const speech = { getVoices: () => [], speak: vi.fn((utterance: Utterance) => utterance.onend?.()), cancel: vi.fn() };
+    const local = { lang: 'fr-FR', localService: true, voiceURI: 'local-fr' };
+    const speech = { getVoices: () => [{ lang: 'fr-FR', localService: false, voiceURI: 'remote-fr' }, local], speak: vi.fn((utterance: Utterance) => utterance.onend?.()), cancel: vi.fn() };
     const browser = { speechSynthesis: speech, SpeechSynthesisUtterance: Utterance } as unknown as AssistantBrowser;
     mock.speak.mockRejectedValueOnce(Object.assign(new Error('UNAVAILABLE'), { code: 'UNAVAILABLE' }));
     const api = createAssistant({ browser: () => browser }); await api.speak('Bonjour', 'fr');
-    expect(speech.speak.mock.calls[0]?.[0]).toMatchObject({ text: 'Bonjour', lang: 'fr-FR', rate: 0.85 });
+    expect(speech.speak.mock.calls[0]?.[0]).toMatchObject({ text: 'Bonjour', lang: 'fr-FR', rate: 1, voice: local });
     api.stopSpeaking(); expect(speech.cancel).toHaveBeenCalled();
+  });
+  it.each([
+    { voices: [] },
+    { voices: [{ lang: 'fr-FR', localService: false, voiceURI: 'remote' }] },
+    { voices: [{ lang: 'en-US', localService: true, voiceURI: 'other-language' }] },
+  ])('does not speak through a remote or mismatched browser default voice %#', async ({ voices }) => {
+    class Utterance { lang = ''; rate = 1; }
+    const speech = { getVoices: () => voices, speak: vi.fn(), cancel: vi.fn() };
+    const api = createAssistant({ isNative: () => false, browser: () => ({ speechSynthesis: speech, SpeechSynthesisUtterance: Utterance } as unknown as AssistantBrowser) });
+    expect(await api.availability('fr')).toMatchObject({ speechOutput: false });
+    await api.speak('Bonjour', 'fr'); expect(speech.speak).not.toHaveBeenCalled();
   });
   it('cancels speech without allowing a late native rejection to start browser speech', async () => {
     let reject: ((error: Error) => void) | undefined;
@@ -328,7 +340,7 @@ describe('assistant bridge (mocked native model and audio)', () => {
       lang = ''; rate = 1; onend = null; onerror = null; onstart = null; onboundary = null;
       constructor() { utterance = this as unknown as SpeechSynthesisUtterance; }
     }
-    const synthesis = { cancel: vi.fn(), getVoices: () => [], speak: vi.fn() };
+    const synthesis = { cancel: vi.fn(), getVoices: () => [{ lang: 'en-US', localService: true, voiceURI: 'local-en' }], speak: vi.fn() };
     const api = createAssistant({ isNative: () => false, browser: () => ({ speechSynthesis: synthesis, SpeechSynthesisUtterance: Utterance } as unknown as AssistantBrowser) });
     const speaking = api.speak('Browser reply', 'en'); await flush();
     expect(vi.getTimerCount()).toBe(1); api.stopSpeaking(); await speaking;

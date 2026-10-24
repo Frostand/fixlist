@@ -1,5 +1,102 @@
 import type { Language } from '../domain/roles';
 
+/** Authored conversation phrases; capability labels stay separate from spoken replies. */
+export const assistantConversationCopy: Record<Language, {
+  question: string; greeting: string; thanks: string; clarify: string;
+  ready: string; updated: string; timing: string; detail: string;
+}> = {
+  en: {
+    question: 'What would you like help with at home?',
+    greeting: "Hi, I'm the FixList assistant. What would you like help with at home?",
+    thanks: "You're welcome. What would you like help with at home?",
+    clarify: "Let's get that right. What would you like help with at home?",
+    ready: "I've drafted that for you. Would you like to review it?",
+    updated: "Got it, I've updated the draft. Would you like to review it?",
+    timing: "Got it, I've updated the timing. Would you like to review the draft?",
+    detail: 'Got it. Would you like to review the draft?',
+  },
+  es: {
+    question: '¿Con qué necesita ayuda en casa?',
+    greeting: 'Hola, soy el asistente de FixList. ¿Con qué necesita ayuda en casa?',
+    thanks: 'De nada. ¿Con qué necesita ayuda en casa?',
+    clarify: 'Vamos a aclararlo. ¿Con qué necesita ayuda en casa?',
+    ready: 'Ya preparé un borrador. ¿Quiere revisarlo?',
+    updated: 'Entendido, actualicé el borrador. ¿Quiere revisarlo?',
+    timing: 'Entendido, actualicé el plazo. ¿Quiere revisar el borrador?',
+    detail: 'Entendido. ¿Quiere revisar el borrador?',
+  },
+  zh: {
+    question: '您需要家里哪方面的帮助？',
+    greeting: '您好，我是FixList助手。您需要家里哪方面的帮助？',
+    thanks: '不客气。您需要家里哪方面的帮助？',
+    clarify: '我们再确认一下。您需要家里哪方面的帮助？',
+    ready: '我已经写好草稿了。您想看看吗？',
+    updated: '明白了，我已修改草稿。您想看看吗？',
+    timing: '明白了，我已修改时间安排。您想看看草稿吗？',
+    detail: '明白了。您想看看草稿吗？',
+  },
+  vi: {
+    question: 'Bạn cần giúp việc gì ở nhà?',
+    greeting: 'Xin chào, tôi là trợ lý FixList. Bạn cần giúp việc gì ở nhà?',
+    thanks: 'Không có gì. Bạn cần giúp việc gì ở nhà?',
+    clarify: 'Mình làm rõ lại nhé. Bạn cần giúp việc gì ở nhà?',
+    ready: 'Tôi đã soạn bản nháp. Bạn muốn xem lại không?',
+    updated: 'Đã rõ, tôi đã sửa bản nháp. Bạn muốn xem lại không?',
+    timing: 'Đã rõ, tôi đã sửa thời gian. Bạn muốn xem lại bản nháp không?',
+    detail: 'Đã rõ. Bạn muốn xem lại bản nháp không?',
+  },
+  ko: {
+    question: '집에서 어떤 도움이 필요하세요?',
+    greeting: '안녕하세요, FixList 도우미예요. 집에서 어떤 도움이 필요하세요?',
+    thanks: '천만에요. 집에서 어떤 도움이 필요하세요?',
+    clarify: '다시 확인할게요. 집에서 어떤 도움이 필요하세요?',
+    ready: '초안을 작성했어요. 확인해 보시겠어요?',
+    updated: '알겠어요, 초안을 수정했어요. 확인해 보시겠어요?',
+    timing: '알겠어요, 시간을 수정했어요. 초안을 확인해 보시겠어요?',
+    detail: '알겠어요. 초안을 확인해 보시겠어요?',
+  },
+  tl: {
+    question: 'Anong tulong ang kailangan ninyo sa bahay?',
+    greeting: 'Kumusta, ako ang FixList assistant. Anong tulong ang kailangan ninyo sa bahay?',
+    thanks: 'Walang anuman. Anong tulong ang kailangan ninyo sa bahay?',
+    clarify: 'Linawin natin. Anong tulong ang kailangan ninyo sa bahay?',
+    ready: 'Nagawa ko na ang draft. Gusto ba ninyong suriin ito?',
+    updated: 'Sige, binago ko na ang draft. Gusto ba ninyong suriin ito?',
+    timing: 'Sige, binago ko na ang oras. Gusto ba ninyong suriin ang draft?',
+    detail: 'Sige. Gusto ba ninyong suriin ang draft?',
+  },
+  ru: {
+    question: 'С чем вам нужна помощь дома?',
+    greeting: 'Здравствуйте, я помощник FixList. С чем вам нужна помощь дома?',
+    thanks: 'Пожалуйста. С чем вам нужна помощь дома?',
+    clarify: 'Давайте уточним. С чем вам нужна помощь дома?',
+    ready: 'Черновик готов. Хотите его проверить?',
+    updated: 'Понятно, черновик обновлён. Хотите его проверить?',
+    timing: 'Понятно, сроки изменены. Хотите проверить черновик?',
+    detail: 'Понятно. Хотите проверить черновик?',
+  },
+  fr: {
+    question: 'De quelle aide avez-vous besoin à la maison ?',
+    greeting: 'Bonjour, je suis l’assistant FixList. De quelle aide avez-vous besoin à la maison ?',
+    thanks: 'Avec plaisir. De quelle aide avez-vous besoin à la maison ?',
+    clarify: 'Reprenons ensemble. De quelle aide avez-vous besoin à la maison ?',
+    ready: 'J’ai préparé un brouillon. Voulez-vous le relire ?',
+    updated: 'D’accord, j’ai modifié le brouillon. Voulez-vous le relire ?',
+    timing: 'D’accord, j’ai modifié le délai. Voulez-vous relire le brouillon ?',
+    detail: 'D’accord. Voulez-vous relire le brouillon ?',
+  },
+  ar: {
+    question: 'ما المساعدة التي تحتاج إليها في المنزل؟',
+    greeting: 'مرحبًا، أنا مساعد FixList. ما المساعدة التي تحتاج إليها في المنزل؟',
+    thanks: 'على الرحب والسعة. ما المساعدة التي تحتاج إليها في المنزل؟',
+    clarify: 'لنوضح ذلك. ما المساعدة التي تحتاج إليها في المنزل؟',
+    ready: 'أعددت مسودة لك. هل تريد مراجعتها؟',
+    updated: 'حسنًا، عدّلت المسودة. هل تريد مراجعتها؟',
+    timing: 'حسنًا، عدّلت التوقيت. هل تريد مراجعة المسودة؟',
+    detail: 'حسنًا. هل تريد مراجعة المسودة؟',
+  },
+};
+
 /** Authored rules-mode labels, not runtime translations or a fluency claim. */
 export const assistantRulesCopy: Record<Language, string> = {
   en: 'Using local task rules. Review and edit the draft before posting.',

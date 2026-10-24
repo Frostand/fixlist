@@ -13,6 +13,8 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private let completion: ([String: Any]) -> Void
     private let createdAt = CaptureFiles.timestamp()
     private let arView: ARView
+    private var cameraImageResolution: CGSize?
+    private var viewportAvailableBounds: CGRect?
     private let overlay = AnchorEntity(world: .zero)
     // Transient aiming geometry never enters the saved outline or its history.
     private let aimOverlay = AnchorEntity(world: .zero)
@@ -77,7 +79,6 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         self.refresh()
     }
     private var aimPosition: SIMD2<Float>?
-    private var aimSnapsToFirst = false
     #if DEBUG && targetEnvironment(simulator)
     private var uiPreviewState = 0
     private var uiPreviewHasPhoto = false
@@ -135,12 +136,9 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        arView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(arView)
-        NSLayoutConstraint.activate([
-            arView.leadingAnchor.constraint(equalTo: view.leadingAnchor), arView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            arView.topAnchor.constraint(equalTo: view.topAnchor), arView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
+        // Its frame is fitted to the camera's real portrait aspect ratio once
+        // a frame arrives. The black parent supplies noninteractive letterboxes.
         arView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
         arView.isAccessibilityElement = true
         arView.accessibilityLabel = text("aimCorner")
@@ -199,9 +197,33 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        if updateViewport() { updateAim() }
         #if DEBUG && targetEnvironment(simulator)
         if CaptureUIPreview.enabled { uiPreviewGradient.frame = arView.bounds }
         #endif
+    }
+
+    @discardableResult
+    private func updateViewport(imageResolution: CGSize? = nil) -> Bool {
+        if let resolution = imageResolution,
+           resolution.width.isFinite, resolution.height.isFinite,
+           resolution.width > 0, resolution.height > 0, resolution != cameraImageResolution {
+            cameraImageResolution = resolution
+            viewportAvailableBounds = nil
+        }
+        guard let resolution = cameraImageResolution, viewportAvailableBounds != view.bounds,
+              let frame = CaptureViewportMath.portraitFrame(in: view.bounds, imageResolution: resolution) else { return false }
+        viewportAvailableBounds = view.bounds
+        guard arView.frame != frame else { return false }
+        // No constraints or setNeedsLayout on the camera view: unchanged frames
+        // do no layout work, and bounds changes reuse the last valid resolution.
+        arView.frame = frame
+        #if DEBUG
+        os_log("Full-image portrait viewport: sensor %.0fx%.0f, available %.0fx%.0f, ARView %.1fx%.1f",
+               log: captureLog, type: .debug, resolution.width, resolution.height,
+               view.bounds.width, view.bounds.height, frame.width, frame.height)
+        #endif
+        return true
     }
 
     private func configuration() -> ARWorldTrackingConfiguration {
@@ -525,7 +547,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         else if step == .floor && !relocalizing { status = text("findFloor") }
         else if !trackingNormal { status = text("trackingLimited") }
         else if isOutline {
-            status = text(doorMode ? "doorMode" : aimSnapsToFirst ? "closeAtFirst" : corners.count >= 3 ? "moreCorners" : "aimCorner")
+            status = text(doorMode ? "doorMode" : corners.count >= 3 ? "moreCorners" : "aimCorner")
         } else { status = progress }
         styleLabel(statusLabel, size: isPhotos ? 13 : 17, weight: .semibold, style: isPhotos ? .caption1 : .body)
         statusLabel.text = status
@@ -535,8 +557,8 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         }
         stepLabel.text = text(isPhotos ? "stepPhotos" : "stepOutline")
         instructionIcon.image = UIImage(systemName: interrupted || !trackingNormal && step != .floor ? "exclamationmark.triangle" :
-                                        isPhotos ? "camera" : step == .floor ? "viewfinder" : aimSnapsToFirst ? "checkmark.circle" : "plus.viewfinder")
-        instructionIcon.tintColor = aimSnapsToFirst && isOutline ? .systemGreen : .white
+                                        isPhotos ? "camera" : step == .floor ? "viewfinder" : "plus.viewfinder")
+        instructionIcon.tintColor = .white
         countLabel.text = text("cornerCount").replacingOccurrences(of: "{count}", with: String(corners.count))
         promptLabel.isHidden = !isPhotos
         if isPhotos { promptLabel.text = prompts[promptIndex].text }
@@ -557,11 +579,11 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         recordVideoButton.alpha = recordVideoButton.isEnabled ? 1 : 0.45
         countLabel.isHidden = !isOutline
         undoButton.isEnabled = isOutline && !history.isEmpty
-        closeButton.isEnabled = isOutline && corners.count >= 3 && trackingNormal && !interrupted
-        addButton.isEnabled = isOutline && aimPosition != nil && trackingNormal && !interrupted &&
-            (doorMode ? doors.count < 8 : corners.count < 32 || aimSnapsToFirst)
+        closeButton.isEnabled = isOutline && !saving && corners.count >= 3 && trackingNormal && !interrupted
+        addButton.isEnabled = isOutline && !saving && aimPosition != nil && trackingNormal && !interrupted &&
+            (doorMode ? doors.count < 8 : corners.count < 32)
         addButton.alpha = addButton.isEnabled ? 1 : 0.45
-        addButton.accessibilityLabel = text(doorMode ? "markDoor" : aimSnapsToFirst ? "closeOutline" : "addCorner")
+        addButton.accessibilityLabel = text(doorMode ? "markDoor" : "addCorner")
         shutterButton.isEnabled = trackingNormal && !interrupted && !saving && isVideoIdle
         shutterButton.alpha = shutterButton.isEnabled ? 1 : 0.45
         retakeButton.isEnabled = !saving && isVideoIdle
@@ -576,8 +598,8 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         doorChip.isHidden = !isOutline || !doorMode
         reticle.isHidden = !isOutline || !trackingNormal || interrupted
         aimOverlay.isEnabled = isOutline && trackingNormal && !interrupted && aimPosition != nil
-        reticle.tintColor = aimSnapsToFirst ? .systemGreen : .white
-        reticle.image = UIImage(systemName: aimSnapsToFirst ? "checkmark.circle" : "scope")
+        reticle.tintColor = .white
+        reticle.image = UIImage(systemName: "scope")
         reticle.alpha = aimPosition == nil ? 0.45 : 1
         coaching.isHidden = step != .floor || hasPhoto || interrupted
         if coaching.isHidden { coaching.setActive(false, animated: false) }
@@ -590,13 +612,13 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         if CaptureUIPreview.enabled { advanceUIPreview(); return true }
         #endif
         updateAim()
-        if aimSnapsToFirst && !doorMode { closeTapped() }
-        else { place(at: CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)) }
+        place(at: CGPoint(x: arView.bounds.midX, y: arView.bounds.midY))
         return true
     }
     @objc private func addTapped() { _ = placeAtCenter() }
     private func place(at point: CGPoint) {
-        guard step == .outline, trackingNormal, !interrupted, let floor = floorY, !finished,
+        guard step == .outline, trackingNormal, !interrupted, let floor = floorY, !finished, !saving,
+              point.x.isFinite, point.y.isFinite, arView.bounds.contains(point),
               let ray = arView.ray(through: point),
               let position = CaptureFloorMath.intersection(origin: ray.origin, direction: ray.direction, floorY: floor) else { return }
         if doorMode {
@@ -606,8 +628,8 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             doorMode = false
         } else {
             guard corners.count < 32,
-                  corners.last.map({ simd_distance($0, position) >= 0.03 }) ?? true,
-                  corners.first.map({ corners.count < 2 || simd_distance($0, position) >= 0.03 }) ?? true else { return }
+                  corners.last.map({ simd_distance($0, position) > 0.03 }) ?? true,
+                  corners.first.map({ corners.count < 2 || simd_distance($0, position) > 0.03 }) ?? true else { return }
             corners.append(position)
             history.append(.corner)
         }
@@ -635,37 +657,23 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         aimOverlay.isEnabled = false
     }
 
-    private func shouldSnapToFirst(_ position: SIMD2<Float>) -> Bool {
-        !doorMode && corners.count >= 3 && corners.first.map { simd_distance($0, position) <= 0.25 } == true
-    }
-
     private func updateAim() {
         #if DEBUG && targetEnvironment(simulator)
         if CaptureUIPreview.enabled {
-            aimSnapsToFirst = aimPosition.map(shouldSnapToFirst) ?? false
             refresh()
             return
         }
         #endif
         let oldHasAim = aimPosition != nil
-        let oldSnap = aimSnapsToFirst
         aimPosition = nil
-        aimSnapsToFirst = false
-        if step == .outline, trackingNormal, !interrupted, !finished, let floor = floorY,
+        if step == .outline, trackingNormal, !interrupted, !finished, !saving, let floor = floorY,
            let ray = arView.ray(through: CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)),
            let position = CaptureFloorMath.intersection(origin: ray.origin, direction: ray.direction, floorY: floor) {
             // Raycast against the SAME saved plane as taps, even if ARKit has
             // removed its anchors. It must not jump to a newly estimated plane.
-            aimSnapsToFirst = shouldSnapToFirst(position)
-            aimPosition = aimSnapsToFirst ? corners.first : position
+            aimPosition = position
             if let target = aimPosition {
                 aimRing.position = SIMD3(target.x, floor + 0.012, target.y)
-                if oldSnap != aimSnapsToFirst {
-                    let color: UIColor = aimSnapsToFirst ? .systemGreen : .white
-                    for case let segment as ModelEntity in aimRing.children {
-                        segment.model?.materials = [UnlitMaterial(color: color)]
-                    }
-                }
                 aimLine.isEnabled = !doorMode && !corners.isEmpty
                 if let last = corners.last, !doorMode {
                     let start = SIMD3(last.x, floor + 0.015, last.y)
@@ -681,7 +689,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             }
         }
         aimOverlay.isEnabled = aimPosition != nil
-        if oldHasAim != (aimPosition != nil) || oldSnap != aimSnapsToFirst { refresh() }
+        if oldHasAim != (aimPosition != nil) { refresh() }
     }
 
     private func drawOutline() {
@@ -709,16 +717,19 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     }
 
     @objc private func undoTapped() {
-        guard let mark = history.popLast(), !finished else { return }
+        guard step == .outline, !finished, !saving, let mark = history.popLast() else { return }
         switch mark { case .corner: corners.removeLast(); case .door: doors.removeLast() }
         closed = false
         drawOutline()
         updateAim()
         refresh()
     }
-    @objc private func doorTapped() { doorMode.toggle(); updateAim(); refresh() }
+    @objc private func doorTapped() {
+        guard step == .outline, !finished, !saving, trackingNormal, !interrupted else { return }
+        doorMode.toggle(); updateAim(); refresh()
+    }
     @objc private func closeTapped() {
-        guard corners.count >= 3, trackingNormal, !interrupted else { return }
+        guard step == .outline, !finished, !saving, corners.count >= 3, trackingNormal, !interrupted else { return }
         closed = true
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         drawOutline()
@@ -734,7 +745,6 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         doorMode = false
         aimOverlay.isEnabled = false
         aimPosition = nil
-        aimSnapsToFirst = false
         refresh()
         UIAccessibility.post(notification: .screenChanged, argument: promptLabel)
     }
@@ -1043,6 +1053,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     }
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard !finished else { return }
+        updateViewport(imageResolution: frame.camera.imageResolution)
         var normal = false, recovering = false
         switch frame.camera.trackingState {
         case .normal: normal = true
@@ -1116,6 +1127,8 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
 
     #if DEBUG && targetEnvironment(simulator)
     private func makeUIPreview() {
+        // This preview generates a 600x800 portrait image; it has no ARCamera.
+        updateViewport(imageResolution: CGSize(width: 800, height: 600))
         uiPreviewGradient.colors = [UIColor(white: 0.24, alpha: 1).cgColor, UIColor(white: 0.08, alpha: 1).cgColor]
         uiPreviewGradient.startPoint = CGPoint(x: 0, y: 0)
         uiPreviewGradient.endPoint = CGPoint(x: 1, y: 1)
@@ -1156,7 +1169,6 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         closed = false
         doorMode = false
         aimPosition = step == .outline ? SIMD2(0, 0) : nil
-        aimSnapsToFirst = state == 2
         promptIndex = state >= 3 ? min(prompt ?? 1, prompts.count - 1) : 0
         if uiPreviewHasPhoto {
             preview.image = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 800)).image { context in
