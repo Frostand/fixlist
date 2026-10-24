@@ -4,12 +4,11 @@ import { assistant, createAssistant, type AssistantBrowser, type BrowserRecognit
 
 const mock = vi.hoisted(() => ({ native: true, availability: vi.fn(), analyzeTask: vi.fn(), chat: vi.fn(), startListening: vi.fn(), stopListening: vi.fn(), cancelListening: vi.fn(), speak: vi.fn(), stopSpeaking: vi.fn(), translate: vi.fn(), addListener: vi.fn() }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => mock.native }, registerPlugin: () => mock }));
-vi.mock('../community/task-rules', () => ({ analyzeTaskWithRules: (text: string, language: string) => ({ title: text, titleEnglish: text, summary: text, summaryEnglish: text, category: 'household', skills: ['general'], tools: [], estimatedMinutes: 30, peopleNeeded: 1, urgency: 'flexible', safetyNotes: [], language, engine: 'rules' }) }));
 
 const job: JobAnalysis = { title: 'Move a chair', titleEnglish: 'Move a chair', summary: 'Move a chair in the living room.', summaryEnglish: 'Move a chair in the living room.', category: 'moving', skills: ['lifting'], tools: ['gloves'], estimatedMinutes: 20, peopleNeeded: 2, urgency: 'flexible', safetyNotes: [], language: 'en', engine: 'apple-on-device' };
 beforeEach(() => {
   vi.resetAllMocks(); mock.native = true;
-  mock.availability.mockResolvedValue({ onDeviceModel: true, speechInput: true, speechOutput: true });
+  mock.availability.mockResolvedValue({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
   mock.analyzeTask.mockResolvedValue(job); mock.chat.mockResolvedValue({ text: 'Shall I post this?', job });
   mock.startListening.mockResolvedValue({}); mock.stopListening.mockResolvedValue({ text: 'Move a chair' });
   mock.cancelListening.mockResolvedValue({}); mock.speak.mockResolvedValue({}); mock.stopSpeaking.mockResolvedValue({});
@@ -50,7 +49,7 @@ describe('session-scoped native speech lifecycle', () => {
     expect(await session.stop()).toBe(''); expect(bridge.count()).toBe(0);
     expect(mock.cancelListening).not.toHaveBeenCalled();
   });
-  it('still falls back to browser speech for a bridge failure without a native terminal', async () => {
+  it('rejects a native bridge failure without ever opening browser speech', async () => {
     const bridge = audioBridge(), browserStart = vi.fn();
     class Recognition {
       lang = ''; continuous = false; interimResults = false;
@@ -60,9 +59,28 @@ describe('session-scoped native speech lifecycle', () => {
     }
     mock.startListening.mockRejectedValue(new Error('Bridge unavailable'));
     const api = createAssistant({ browser: () => ({ SpeechRecognition: Recognition }) });
-    const session = await api.startListening('en', vi.fn());
-    expect(browserStart).toHaveBeenCalledOnce(); expect(bridge.count()).toBe(0);
-    expect(mock.cancelListening).toHaveBeenCalledOnce(); session.cancel();
+    await expect(api.startListening('en', vi.fn())).rejects.toThrow(/type/i);
+    expect(browserStart).not.toHaveBeenCalled(); expect(bridge.count()).toBe(0);
+    expect(mock.cancelListening).toHaveBeenCalledOnce();
+  });
+  it('recovers partial native words after a bridge rejection without a terminal or browser microphone', async () => {
+    const bridge = audioBridge(), browserStart = vi.fn();
+    class Recognition {
+      lang = ''; continuous = false; interimResults = false;
+      onstart: (() => void) | null = null; onend: (() => void) | null = null;
+      onerror: BrowserRecognition['onerror'] = null; onresult: BrowserRecognition['onresult'] = null;
+      start() { browserStart(); this.onstart?.(); } stop() {} abort() {}
+    }
+    mock.startListening.mockImplementation(({ sessionId }) => {
+      bridge.emit('partial', { sessionId, text: 'Recover my words' });
+      return Promise.reject(new Error('Lost bridge ACK'));
+    });
+    const partial = vi.fn(), api = createAssistant({ browser: () => ({ SpeechRecognition: Recognition }) });
+    const session = await api.startListening('en', partial);
+    expect(await session.done).toEqual({ sessionId: session.sessionId, reason: 'error', text: 'Recover my words' });
+    expect(partial).toHaveBeenCalledExactlyOnceWith('Recover my words'); expect(await session.stop()).toBe('Recover my words');
+    expect(browserStart).not.toHaveBeenCalled(); expect(bridge.count()).toBe(0);
+    expect(mock.cancelListening).toHaveBeenCalledExactlyOnceWith({ sessionId: session.sessionId });
   });
   it.each(['final', 'error', 'background', 'interrupted'] as const)('settles %s before startup ACK, retaining partial text', async reason => {
     const bridge = audioBridge(); let ack!: () => void;
@@ -181,10 +199,10 @@ describe('session-scoped native speech lifecycle', () => {
 
 describe('assistant bridge (mocked native model and audio)', () => {
   it('uses native generation, chat, translation and honest availability', async () => {
-    expect(await assistant.availability()).toEqual({ onDeviceModel: true, speechInput: true, speechOutput: true });
+    expect(await assistant.availability('en')).toEqual({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
     expect(await assistant.analyzeTask('Move a chair', 'en')).toEqual(job);
     expect(mock.analyzeTask).toHaveBeenCalledWith({ text: 'Move a chair', language: 'en' });
-    expect(await assistant.chat([{ role: 'user', text: 'Move a chair' }], 'en', { firstName: 'Margaret' })).toEqual({ text: 'Shall I post this?', job, engine: 'apple-on-device' });
+    expect(await assistant.chat([{ role: 'user', text: 'Move a chair' }], 'en', { firstName: 'Margaret' })).toEqual({ text: 'Shall I post this?', job, engine: 'apple-on-device', originalText: 'Move a chair' });
     expect(await assistant.translate('Move a chair', 'en', 'es')).toBe('Mover una silla');
     const bridge = audioBridge();
     mock.speak.mockImplementation(async ({ sessionId }) => { bridge.emit('speechEnded', { sessionId, reason: 'completed' }); return { sessionId }; });
@@ -247,7 +265,7 @@ describe('assistant bridge (mocked native model and audio)', () => {
   });
   it('reports web capabilities truthfully and rejects missing listening support clearly', async () => {
     const web = createAssistant({ isNative: () => false, browser: () => ({}) });
-    expect(await web.availability()).toEqual({ onDeviceModel: false, speechInput: false, speechOutput: false });
+    expect(await web.availability('en')).toEqual({ language: 'en', onDeviceModel: false, speechInput: false, speechOutput: false });
     await expect(web.startListening('en', vi.fn())).rejects.toThrow(/Speech input.*unavailable/i);
     expect(await web.translate('Hello', 'en', 'es')).toBeNull();
   });
@@ -353,5 +371,29 @@ describe('assistant bridge (mocked native model and audio)', () => {
     const second = await api.startListening('es', vi.fn());
     expect(vi.getTimerCount()).toBe(0);
     expect(await first).toBeInstanceOf(Error); second.cancel();
+  });
+});
+
+describe('selected-language capability contract', () => {
+  it('sends the selected language and preserves independent native capabilities', async () => {
+    mock.availability.mockResolvedValue({ language: 'ru', onDeviceModel: false, speechInput: true, speechOutput: false, reason: 'unsupported-language', speechOutputReason: 'voice-unavailable' });
+    expect(await createAssistant().availability('ru')).toEqual({ language: 'ru', onDeviceModel: false, speechInput: true, speechOutput: false, reason: 'unsupported-language', speechOutputReason: 'voice-unavailable' });
+    expect(mock.availability).toHaveBeenCalledExactlyOnceWith({ language: 'ru' });
+  });
+  it.each([
+    { language: 'es', onDeviceModel: true, speechInput: true, speechOutput: true },
+    { language: 'ru', onDeviceModel: 'true', speechInput: true, speechOutput: true },
+    { language: 'ru', onDeviceModel: false, speechInput: true, speechOutput: true, reason: { installed: true } },
+    { language: 'ru', onDeviceModel: false, speechInput: true, speechOutput: true, speechInputReason: 'made-up-install-status' },
+    { language: 'ru', onDeviceModel: true, speechInput: true, speechOutput: true, reason: 'unsupported-language' },
+  ])('fails closed on malformed or mismatched bridge availability %#', async value => {
+    mock.availability.mockResolvedValue(value);
+    const api = createAssistant({ browser: () => ({ SpeechRecognition: class {} } as unknown as AssistantBrowser) });
+    expect(await api.availability('ru')).toMatchObject({ language: 'ru', onDeviceModel: false, speechInput: false, speechOutput: false, reason: 'native-unavailable' });
+  });
+  it('never reports browser microphone support when the native bridge is missing', async () => {
+    mock.availability.mockRejectedValue(new Error('Missing plugin'));
+    const api = createAssistant({ browser: () => ({ SpeechRecognition: class {} } as unknown as AssistantBrowser) });
+    expect(await api.availability('ar')).toMatchObject({ language: 'ar', speechInput: false, speechOutput: false, reason: 'native-unavailable' });
   });
 });

@@ -1,4 +1,4 @@
-import type { JobAnalysis, Language } from './types';
+import type { JobAnalysis, Language, Urgency } from './types';
 
 export const QUICK_PICK_IDS = ['light-bulb', 'water-plants', 'groceries', 'move-furniture', 'grab-bar', 'tech-help', 'smoke-alarm', 'yard'] as const;
 export type QuickPickId = typeof QUICK_PICK_IDS[number];
@@ -96,12 +96,54 @@ function analysisFor(id: PatternId, language: Language): JobAnalysis {
     category: t.category, skills: [...t.skills], tools: [...t.tools], estimatedMinutes: t.estimatedMinutes, peopleNeeded: t.peopleNeeded, urgency: 'this-week', safetyNotes: [...t.safetyNotes], language, engine: 'rules' };
 }
 export function quickPickAnalysis(id: QuickPickId, language: Language): JobAnalysis { return analysisFor(id, language); }
+// Match whole words for spaced scripts, rather than substrings such as hoya/ngayđó.
+// CJK/Korean expressions use explicit phrases and suffixes.
+const NEGATED_URGENCY = /(?:^|[^\p{L}\p{N}])(?:not\s+urgent|no\s+rush|no\s+(?:es\s+)?urgente|sin\s+(?:prisa|urgencia)|không\s+(?:vội|khẩn cấp)|hindi\s+(?:agaran|apurahan)|не\s+срочно|sans\s+urgence|pas\s+urgent|غير\s+عاجل|ليس\s+عاجل(?:اً|ا)?)(?![\p{L}\p{N}])|급하지\s*않[가-힣]*|不(?:着急|著急|紧急|緊急|急)/giu;
+const NEGATED_TODAY = /(?:^|[^\p{L}\p{N}])(?:not\s+today|no\s+hoy|không\s+phải\s+hôm nay|hindi\s+ngayon|не\s+сегодня|pas\s+aujourd['’]hui|ليس\s+اليوم)(?![\p{L}\p{N}])|오늘\s*(?:말고|아니[가-힣]*)|不是今天/giu;
+const POSITIVE_URGENCY = /(?:^|[^\p{L}\p{N}])(?:today|urgent|urgente|hoy|hôm nay|ngay|khẩn cấp|ngayon|agaran|сегодня|срочно|aujourd['’]hui|اليوم|عاجل)(?![\p{L}\p{N}])|오늘|지금|긴급|今天|紧急|緊急/iu;
+const FLEXIBLE = /(?:^|[^\p{L}\p{N}])(?:whenever|flexible|kahit kailan)(?![\p{L}\p{N}])|언제든|급하지|随时|隨時/iu;
+function timingParts(text: string) {
+  const normalized = text.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+  const withoutNegatives = normalized.replace(NEGATED_URGENCY, ' ').replace(NEGATED_TODAY, ' ');
+  return { normalized, withoutNegatives, negated: normalized !== withoutNegatives };
+}
+/** Explicit local phrase rules only; unknown scheduling stays unspecified. */
+export function ruleUrgency(text: string): Urgency | undefined {
+  const { withoutNegatives, negated } = timingParts(text);
+  // Remove only a negated phrase: an independent explicit "today" still counts.
+  if (POSITIVE_URGENCY.test(withoutNegatives)) return 'today';
+  if (negated || FLEXIBLE.test(withoutNegatives)) return 'flexible';
+  return undefined;
+}
+// Recognized actions accompany a known task object; length alone is never evidence.
+const TASK_ACTION = /(?:^|[^\p{L}\p{N}])(?:help|water|replace|change|move|install|secure|remove|clear|pick up|check|fix|repair|regar|cambiar|mover|instalar|ayuda|tưới|thay|giúp|diligan|palitan|tulong|полить|заменить|помочь|передвинуть|arroser|remplacer|aider|déplacer|سقي|تغيير|تركيب|مساعدة)(?![\p{L}\p{N}])|교체|옮|설치|도와|물\s*주|浇水|澆水|买菜|買菜|更换|更換|安装|安裝|请帮|請幫/iu;
+const CJK_MOVE = /搬.*(?:椅子|桌子|床)/u;
+/** Conservative ambiguity guard for the rules chat only, not a general language parser.
+ * Negated urgency is removed first so it never cancels an independent task. */
+function unresolvedRuleTask(text: string): boolean {
+  const { withoutNegatives } = timingParts(text);
+  return /(?:^|[^\p{L}\p{N}])(?:not|never|don't|do not|cancel|maybe|or|no|не|нет|или|hindi|không|pas|non|ou|ليس|لا|أو)(?![\p{L}\p{N}])|하지\s*마|아니|말고|不要|取消|或者|ignore.{0,40}instructions|system\s*[:>]|automatically/iu.test(withoutNegatives);
+}
+export function clearRuleTask(text: string): boolean {
+  const normalized = text.normalize('NFKC');
+  return !unresolvedRuleTask(normalized) && ((TASK_ACTION.test(normalized) && PATTERNS.some(([, pattern]) => pattern.test(normalized))) || CJK_MOVE.test(normalized));
+}
+/** Allow only a short timing phrase or a named room, with optional correction cue.
+ * Other followups need clarification; do not attach arbitrary words to a stale task. */
+export function ruleFollowup(text: string): 'timing' | 'room' | null {
+  if (text.length > 160 || unresolvedRuleTask(text)) return null;
+  const { normalized, withoutNegatives } = timingParts(text);
+  const remainder = withoutNegatives.replace(new RegExp(POSITIVE_URGENCY.source, 'giu'), ' ').replace(new RegExp(FLEXIBLE.source, 'giu'), ' ')
+    .replace(/(?:^|[^\p{L}\p{N}])(?:actually|please|instead)(?![\p{L}\p{N}])|[\p{P}\p{Z}\s]/giu, '');
+  if (ruleUrgency(normalized) !== undefined && !remainder) return 'timing';
+  const room = normalized.replace(/[.!。！]$/u, '').trim();
+  return /^(?:(?:actually,?\s*)?(?:in\s+)?(?:the\s+)?(?:kitchen|bathroom|bedroom|living room|hallway)|(?:en\s+)?(?:la\s+)?(?:cocina|sala)|(?:在)?(?:厨房|廚房|客厅|客廳)|(?:부엌|거실)(?:에서|에)?|(?:ở\s+)?(?:nhà bếp|phòng khách)|(?:sa\s+)?(?:kusina|sala)|(?:на\s+)?кухне|(?:в\s+)?гостиной|(?:dans\s+la\s+)?cuisine|(?:في\s+)?(?:المطبخ|غرفة المعيشة))$/iu.test(room) ? 'room' : null;
+}
 export function analyzeTaskWithRules(text: string, language: Language): JobAnalysis {
   const normalized = text.normalize('NFKC').trim();
-  const id = PATTERNS.find(([, pattern]) => pattern.test(normalized))?.[0] ?? 'general';
+  const id = PATTERNS.find(([, pattern]) => pattern.test(normalized))?.[0] ?? (CJK_MOVE.test(normalized) ? 'move-furniture' : 'general');
   const result = analysisFor(id, language);
-  if (/\btoday\b|urgent|hoy|urgente|오늘|지금|今天|紧急|緊急|hôm nay|ngay|ngayon|сегодня|срочно|aujourd.hui|اليوم|عاجل/iu.test(normalized)) result.urgency = 'today';
-  else if (/whenever|no rush|flexible|sin prisa|언제든|급하지|不急|随时|隨時|không vội|kahit kailan|не срочно|sans urgence|غير عاجل/iu.test(normalized)) result.urgency = 'flexible';
+  result.urgency = ruleUrgency(normalized) ?? result.urgency;
   return result;
 }
 /** A draft request from a flag, never confirmation that a hazard exists or a repair is safe. */

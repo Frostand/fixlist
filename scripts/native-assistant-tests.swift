@@ -1,6 +1,33 @@
 // Host boundary stubs; the runner injects real production plugin method bodies.
-// This checks bridge/state behavior, not microphone capture or audible playback.
+// This checks capability and bridge/state behavior, not generation, capture or audible playback.
 import Foundation
+/* PRODUCTION_LOCALES */
+enum ModelReason { case appleIntelligenceNotEnabled, deviceNotEligible, modelNotReady }
+enum ModelAvailability: Equatable { case available, unavailable(ModelReason) }
+final class SystemLanguageModel {
+    static let `default` = SystemLanguageModel()
+    var availability: ModelAvailability = .available
+    var locales: Set<String> = ["en-US"]
+    func supportsLocale(_ locale: Locale) -> Bool { locales.contains(locale.identifier) }
+}
+final class SFSpeechRecognizer {
+    enum AuthorizationStatus { case authorized, denied, restricted, notDetermined }
+    static var status: AuthorizationStatus = .authorized
+    static var local: Set<String> = ["en-US"]
+    static var ready: Set<String> = ["en-US"]
+    let supportsOnDeviceRecognition: Bool
+    let isAvailable: Bool
+    init?(locale: Locale) { supportsOnDeviceRecognition = Self.local.contains(locale.identifier); isAvailable = Self.ready.contains(locale.identifier) }
+    static func authorizationStatus() -> AuthorizationStatus { status }
+}
+final class AVSpeechSynthesisVoice {
+    struct Quality { let rawValue: Int }
+    let language: String
+    let quality = Quality(rawValue: 1)
+    init(_ language: String) { self.language = language }
+    static var voices = [AVSpeechSynthesisVoice("en-US")]
+    static func speechVoices() -> [AVSpeechSynthesisVoice] { voices }
+}
 
 final class FixtureQueue {
     var callbacks: [() -> Void] = []
@@ -12,10 +39,11 @@ final class FixtureQueue {
 enum DispatchQueue { static let main = FixtureQueue() }
 final class CAPPluginCall {
     let id: String
+    let language: String?
     var results: [[String: Any]] = []
     var rejections: [String] = []
-    init(_ id: String) { self.id = id }
-    func getString(_ key: String) -> String? { key == "sessionId" ? id : nil }
+    init(_ id: String, language: String? = nil) { self.id = id; self.language = language }
+    func getString(_ key: String) -> String? { key == "sessionId" ? id : key == "language" ? language : nil }
     func resolve(_ data: [String: Any] = [:]) { results.append(data) }
     func reject(_ message: String, _ code: String) { rejections.append(code) }
 }
@@ -39,7 +67,12 @@ final class AVSpeechSynthesizer {
 }
 enum UIApplication { static let didEnterBackgroundNotification = Notification.Name("background") }
 let AVAudioSessionInterruptionTypeKey = "type"
-enum AVAudioSession {
+final class AVAudioSession {
+    enum RecordPermission { case granted, denied, undetermined }
+    static let instance = AVAudioSession()
+    var recordPermission: RecordPermission = .granted
+    static func sharedInstance() -> AVAudioSession { instance }
+
     static let interruptionNotification = Notification.Name("interruption")
     enum InterruptionType: UInt { case began = 1, ended = 0 }
 }
@@ -69,6 +102,48 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
 func event(_ harness: Harness, _ name: String) -> [String: Any] { harness.events.last { $0.0 == name }?.1 ?? [:] }
 func drain() { DispatchQueue.main.drain() }
 let h = Harness()
+let missingLanguage = CAPPluginCall("missing")
+h.availability(missingLanguage); drain()
+expect(missingLanguage.rejections == ["INVALID_INPUT"], "Availability requires an explicit supported language")
+let unsupported = CAPPluginCall("unsupported", language: "ru")
+h.availability(unsupported); drain()
+expect(unsupported.results.last?["language"] as? String == "ru", "Availability echoes selected language")
+expect(unsupported.results.last?["onDeviceModel"] as? Bool == false, "Another language's model support cannot enable selected language")
+expect(unsupported.results.last?["speechInput"] as? Bool == false, "Another language's recognizer cannot enable selected language")
+expect(unsupported.results.last?["speechOutput"] as? Bool == false, "Another language's voice cannot enable selected language")
+SFSpeechRecognizer.local = ["ru-RU"]; SFSpeechRecognizer.ready = ["ru-RU"]
+let independent = CAPPluginCall("independent", language: "ru")
+h.availability(independent); drain()
+expect(independent.results.last?["speechInput"] as? Bool == true && independent.results.last?["onDeviceModel"] as? Bool == false, "Selected speech input is independent of generation")
+SFSpeechRecognizer.ready = []
+let notReady = CAPPluginCall("not-ready", language: "ru")
+h.availability(notReady); drain()
+expect(notReady.results.last?["speechInput"] as? Bool == false, "Unavailable recognizer is not ready even with on-device support")
+SystemLanguageModel.default.availability = .unavailable(.appleIntelligenceNotEnabled)
+let disabled = CAPPluginCall("disabled", language: "en")
+h.availability(disabled); drain()
+expect(disabled.results.last?["reason"] as? String == "apple-intelligence-not-enabled", "Model reason is an explicit stable bridge code")
+expect(disabled.results.last?["speechOutput"] as? Bool == true, "Installed selected voice remains available when generation is disabled")
+SystemLanguageModel.default.availability = .available
+
+// Synthetic metadata, varied for every app language; never a device support list.
+for (language, locale) in assistantLocales {
+    SystemLanguageModel.default.locales = [locale]
+    SFSpeechRecognizer.local = []; SFSpeechRecognizer.ready = []
+    AVSpeechSynthesisVoice.voices = []
+    let modelOnly = CAPPluginCall("model-only", language: language)
+    h.availability(modelOnly); drain()
+    expect(modelOnly.results.last?["onDeviceModel"] as? Bool == true && modelOnly.results.last?["reason"] == nil, "Selected supported/ready model is available for \(language)")
+    expect(modelOnly.results.last?["speechInput"] as? Bool == false && modelOnly.results.last?["speechOutput"] as? Bool == false, "Generation never implies audio for \(language)")
+    SFSpeechRecognizer.local = [locale]; SFSpeechRecognizer.ready = [locale]
+    AVSpeechSynthesisVoice.voices = [AVSpeechSynthesisVoice(locale)]
+    SFSpeechRecognizer.status = .denied
+    let denied = CAPPluginCall("denied", language: language)
+    h.availability(denied); drain()
+    expect(denied.results.last?["speechInput"] as? Bool == false && denied.results.last?["speechInputReason"] as? String == "permission-denied", "Speech permission blocks only input for \(language)")
+    expect(denied.results.last?["onDeviceModel"] as? Bool == true && denied.results.last?["speechOutput"] as? Bool == true, "Output and generation remain independent of denied input for \(language)")
+    SFSpeechRecognizer.status = .authorized
+}
 let first = h.begin("first")
 first.callback?(FakeResult(bestTranscription: Transcription(formattedString: "Move this chair"), isFinal: false), nil); drain()
 expect(event(h, "partial")["sessionId"] as? String == "first", "Real partial callback includes the client session ID")
