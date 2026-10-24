@@ -5,7 +5,7 @@ import AuthenticationServices
 import Security
 import CryptoKit
 
-/// Target registration is intentionally left to the parent-owned Xcode integration.
+/// Registered in the App target and FixListBridgeViewController.
 /// No session/refresh token/nonce is written to UserDefaults or logged.
 @objc(FixListAuthPlugin)
 public class FixListAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding, ASWebAuthenticationPresentationContextProviding {

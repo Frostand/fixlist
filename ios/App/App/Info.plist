@@ -22,12 +22,23 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.fixlist.demo.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>app.fixlist.demo</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>FixList uses the camera when you add a photo or walk through a room. Photos and room outlines stay on this device unless you choose to send them to your own computer.</string>
+	<string>FixList uses the camera for optional room photos, outlines, and a silent video up to 30 seconds. Photos, outlines, and video stay on this device. You can choose to export or share photos and outlines.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>FixList opens your photo library only when you choose a photo to add. Photos stay on this device.</string>
+	<string>FixList opens your photo library only when you choose a photo to add. Photos stay on this device unless you choose to export or share them.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Talk to FixList to describe what you would like help with. Your audio stays on this phone.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

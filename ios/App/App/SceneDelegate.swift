@@ -26,6 +26,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 /// Registers app-local native plugins on the Capacitor bridge.
 class FixListBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
+        bridge?.registerPluginInstance(FixListAuthPlugin())
         bridge?.registerPluginInstance(FixListPrintPlugin())
         bridge?.registerPluginInstance(FixListCapturePlugin())
         bridge?.registerPluginInstance(FixListHazardsPlugin())
