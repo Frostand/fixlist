@@ -30,6 +30,8 @@ struct FakeOverlay { var children = [1] }
 final class FakeSession {
     enum Options: Hashable { case resetTracking, removeExistingAnchors }
     var resets = 0
+    var delegate: Bool? = true
+    func pause() {}
     func run(_ configuration: String, options: Set<Options>) { resets += 1 }
 }
 struct FakeARView { let session = FakeSession() }
@@ -55,6 +57,8 @@ final class CaptureStateHarness {
     var resetNotice = false
     var presentedViewController: UIAlertController?
     let arView = FakeARView()
+    var discardedVideoAttempts = 0
+    func discardActiveVideo(showInterrupted: Bool) { discardedVideoAttempts += 1 }
     func configuration() -> String { "horizontal-gravity" }
     func refresh() {}
     func text(_ key: String) -> String { key }

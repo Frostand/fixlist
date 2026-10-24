@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C47A001020261024B1000002 /* CaptureVideoWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261024B1000001 /* CaptureVideoWriter.swift */; };
 		F17A20261023000200000002 /* FixListAssistantPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000200000001 /* FixListAssistantPlugin.swift */; };
 		F17A20261023000100000002 /* FixListHazardsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000001 /* FixListHazardsPlugin.swift */; };
 		F17A20261023000100000004 /* HazardImageEncoder.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000003 /* HazardImageEncoder.mlpackage */; };
@@ -25,6 +26,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C47A001020261024B1000001 /* CaptureVideoWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureVideoWriter.swift; sourceTree = "<group>"; };
 		F17A20261023000200000001 /* FixListAssistantPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListAssistantPlugin.swift; sourceTree = "<group>"; };
 		F17A20261023000100000001 /* FixListHazardsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListHazardsPlugin.swift; sourceTree = "<group>"; };
 		F17A20261023000100000003 /* HazardImageEncoder.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = HazardImageEncoder.mlpackage; sourceTree = "<group>"; };
@@ -80,6 +82,7 @@
 				F17A20261023000200000001 /* FixListAssistantPlugin.swift */,
 				F17A20261023000100000007 /* HazardModel */,
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
+				C47A001020261024B1000001 /* CaptureVideoWriter.swift */,
 				C47A001020261018A1000003 /* FixListCaptureViewController.swift */,
 				C47A001020261018A1000001 /* FixListCapturePlugin.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
@@ -229,6 +232,7 @@
 				F17A20261023000100000004 /* HazardImageEncoder.mlpackage in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				C47A001020261024B1000002 /* CaptureVideoWriter.swift in Sources */,
 				C47A001020261018A1000004 /* FixListCaptureViewController.swift in Sources */,
 				C47A001020261018A1000002 /* FixListCapturePlugin.swift in Sources */,
 			);

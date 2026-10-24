@@ -79,6 +79,7 @@ expect(capture.corners.count == 3 && capture.floorY == -1.2 && capture.photos[0]
        "Canceling restart preserves drawing, pending photo, poses and world")
 let restart = capture.presentedViewController!.actions.first { $0.style == .destructive }!
 restart.handler?(restart)
+expect(capture.discardedVideoAttempts == 1, "Production tracking reset discards the active video attempt")
 expect(capture.worldGeneration == 3 && capture.floorY == nil && capture.planeHeights.isEmpty
        && capture.corners.isEmpty && capture.doors.isEmpty && capture.history.isEmpty
        && !capture.closed && !capture.doorMode && capture.overlay.children.isEmpty,
@@ -171,6 +172,96 @@ oldController.completion(["status": "completed"])
 expect(lifecycle.pendingCall === newer && active.resolutions.count == 1 && newer.resolutions.isEmpty, "Late controller completion cannot settle or clear the new ID")
 let discardNewer = CAPPluginCall(); lifecycle.discard(discardNewer, id: "cap-active-test-02")
 drain { discardNewer.resolutions.count == 1 }
+// Production controller lifecycle: no camera/UI animation is simulated as physical evidence.
+let videoLifecycle = CaptureVideoLifecycleHarness()
+let clipURL = CaptureFiles.folder(videoLifecycle.options.captureId).appendingPathComponent("v01.mp4")
+let savedClip = CaptureVideo(takenAt: "2026-10-24T01:02:03.000Z", width: 180, height: 320,
+                            durationMs: 1000, byteLength: 1000, sha256: String(repeating: "a", count: 64), url: clipURL)
+videoLifecycle.acceptedVideo = savedClip
+videoLifecycle.skipTapped()
+expect(!videoLifecycle.finished && videoLifecycle.outcomes.isEmpty && videoLifecycle.removedPhotos == 0
+       && videoLifecycle.acceptedVideo?.url == clipURL && videoLifecycle.videoNotice == "videoNeedsPhoto",
+       "Final Skip warns and preserves accepted clip with zero photos")
+if videoLifecycle.finished { print("FAIL: Final Skip deleted the video-only capture instead of warning"); exit(1) }
+videoLifecycle.completeCapture()
+expect(!videoLifecycle.finished, "Video alone cannot complete a room capture")
+videoLifecycle.videoState = .recording
+videoLifecycle.videoGeneration = UUID()
+videoLifecycle.candidateVideo = savedClip
+videoLifecycle.sessionWasInterrupted(videoLifecycle.arView.session)
+expect(videoLifecycle.videoGeneration == nil && videoLifecycle.candidateVideo == nil
+       && videoLifecycle.videoWriter.cancels == 1 && videoLifecycle.acceptedVideo?.url == clipURL
+       && videoLifecycle.interrupted && videoLifecycle.videoNotice == "videoStopped",
+       "Interruption discards candidate and preserves accepted clip")
+videoLifecycle.videoState = .recording
+videoLifecycle.videoGeneration = UUID()
+videoLifecycle.pauseCaptureForBackground()
+expect(videoLifecycle.videoGeneration == nil && videoLifecycle.videoWriter.cancels == 2
+       && videoLifecycle.acceptedVideo?.url == clipURL && videoLifecycle.interrupted,
+       "Backgrounding discards active take and retains accepted video")
+videoLifecycle.photos = [LifecyclePhoto(photoId: "p01", url: clipURL.deletingLastPathComponent().appendingPathComponent("p01.jpg"))]
+videoLifecycle.session(videoLifecycle.arView.session, didFailWithError: NSError(domain: "AR-test", code: 99))
+expect(videoLifecycle.beganPhotos && videoLifecycle.photos.count == 1 && !videoLifecycle.finished,
+       "Unrecoverable tracking leaves accepted photos finishable")
+videoLifecycle.completeCapture()
+expect(videoLifecycle.finished && videoLifecycle.outcomes.isEmpty, "Completed result waits for dismissal")
+videoLifecycle.pendingDismiss?()
+expect(videoLifecycle.outcomes.count == 1, "Completed result settles once")
+let bridgeCapture = videoLifecycle.outcomes[0]["capture"] as! [String: Any]
+let bridgeFiles = bridgeCapture["files"] as! [String: String]
+let bridgeVideos = bridgeCapture["videos"] as! [String: Any]
+expect(Set(bridgeFiles.keys) == ["p01", "v01"] && bridgeFiles["v01"] == clipURL.absoluteString,
+       "Bridge files contain exactly photo IDs plus v01")
+expect(bridgeVideos["format"] as? String == "fixlist-capture-videos" && bridgeVideos["version"] as? Int == 1
+       && bridgeVideos["captureId"] as? String == videoLifecycle.options.captureId
+       && bridgeVideos["roomId"] as? String == videoLifecycle.options.roomId,
+       "Video sidecar binds exact capture and room")
+let videoJSON = (bridgeVideos["clips"] as! [[String: Any]])[0]
+expect(Set(videoJSON.keys) == ["videoId", "takenAt", "mimeType", "codec", "width", "height", "durationMs", "byteLength", "sha256"]
+       && videoJSON["videoId"] as? String == "v01" && bridgeCapture["videoFiles"] == nil,
+       "Clip has exact media fields with no checklist/pose or separate videoFiles")
+let photoOnly = CaptureVideoLifecycleHarness()
+photoOnly.photos = videoLifecycle.photos
+photoOnly.completeCapture(); photoOnly.pendingDismiss?()
+expect((photoOnly.outcomes[0]["capture"] as! [String: Any])["videos"] == nil,
+       "Legacy photo-only result omits videos and preserves v1 keys")
+let abortVideo = CaptureVideoLifecycleHarness()
+abortVideo.videoGeneration = UUID(); abortVideo.videoState = .recording
+abortVideo.abort()
+expect(abortVideo.cancellationsAtDismiss == 1 && abortVideo.videoGeneration == nil,
+       "Whole-capture abort enqueues writer cancellation before UIKit dismissal")
+CaptureFiles.queue.suspend()
+abortVideo.pendingDismiss?()
+expect(abortVideo.outcomes.isEmpty, "Abort never claims folder cleanup before queue completes")
+CaptureFiles.queue.resume()
+drain { abortVideo.outcomes.count == 1 }
+expect(abortVideo.outcomes[0]["status"] as? String == "cancelled", "Abort settles after queued cleanup")
+let committing = CaptureVideoLifecycleHarness()
+committing.acceptedVideo = savedClip
+committing.candidateVideo = savedClip
+committing.videoState = .reviewing
+committing.videoGeneration = UUID()
+committing.photos = videoLifecycle.photos
+committing.useVideoTapped()
+committing.pauseCaptureForBackground()
+committing.completeCapture()
+expect(!committing.finished && committing.videoCommitPending && !committing.isVideoIdle,
+       "Interruption waits for atomic Use result before permitting Done")
+let newClip = CaptureVideo(takenAt: savedClip.takenAt, width: 180, height: 320, durationMs: 2000,
+                           byteLength: 2000, sha256: String(repeating: "b", count: 64), url: clipURL)
+committing.videoWriter.pendingUse?(.success(newClip))
+expect(committing.acceptedVideo?.sha256 == newClip.sha256 && committing.isVideoIdle,
+       "Replacement committed before interruption reconciles accepted metadata")
+committing.completeCapture(); committing.pendingDismiss?()
+let committedSidecar = (committing.outcomes[0]["capture"] as! [String: Any])["videos"] as! [String: Any]
+expect((committedSidecar["clips"] as! [[String: Any]])[0]["sha256"] as? String == newClip.sha256,
+       "Final manifest describes committed bytes after interruption")
+let failedCleanup = CaptureVideoLifecycleHarness()
+CaptureFiles.failRemove = true
+failedCleanup.abort(); failedCleanup.pendingDismiss?()
+drain { failedCleanup.outcomes.count == 1 }
+expect(failedCleanup.outcomes[0]["cleanupFailed"] as? Bool == true, "Native cleanup failure is returned visibly")
+CaptureFiles.failRemove = false
 try? CaptureFiles.remove(CaptureFiles.root)
 if failures.isEmpty { print("PASS: \(checks) native capture helper checks (no ARKit/device claim)") }
 else {
