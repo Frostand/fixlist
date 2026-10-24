@@ -1,0 +1,54 @@
+-- Supplements the original 18 tests. Synthetic data; works in the disposable
+-- PGlite harness or a disposable Supabase stack. AUTH GUCs are not verified JWTs.
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path = public, extensions;
+select plan(34);
+insert into auth.users (id, email_confirmed_at) values
+ ('11111111-1111-4111-8111-111111111111', now()),
+ ('22222222-2222-4222-8222-222222222222', now());
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","is_anonymous":false}';
+select ok((select not rolsuper and not rolbypassrls from pg_roles where rolname = current_user), 'Authenticated role has no superuser or RLS bypass');
+select ok(row_security_active('public.account_profiles'), 'Actual PostgreSQL RLS is active for client role');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,created_at) values ('11111111-1111-4111-8111-111111111111','elder','Name','Town','en','2000-01-01')$$, '42501', null, 'Client cannot set created_at');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,needs) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en',array['Need'])$$, '23514', null, 'Volunteer cannot store elder needs');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,skills) values ('11111111-1111-4111-8111-111111111111','elder','Name','Town','en',array['yard'])$$, '23514', null, 'Elder cannot store volunteer skills');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,tools) values ('11111111-1111-4111-8111-111111111111','elder','Name','Town','en',array['gloves'])$$, '23514', null, 'Elder cannot store volunteer tools');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,availability) values ('11111111-1111-4111-8111-111111111111','elder','Name','Town','en','[{"day":1,"part":"morning"}]')$$, '23514', null, 'Elder cannot store volunteer availability');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,max_miles) values ('11111111-1111-4111-8111-111111111111','elder','Name','Town','en',20)$$, '23514', null, 'Elder cannot store volunteer distance');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,school) values ('11111111-1111-4111-8111-111111111111','elder','Name','Town','en','School')$$, '23514', null, 'Elder cannot store volunteer school');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,skills) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en',array['screened'])$$, '23514', null, 'Unknown skill is rejected by table constraint');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,tools) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en',array[null]::text[])$$, '23514', null, 'Null tool is rejected by table constraint');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,availability) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en','{}')$$, '23514', null, 'Non-array availability is rejected by table constraint');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,availability) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en','[null]')$$, '23514', null, 'Non-object availability slot is rejected');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,availability) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en','[{"part":"morning"}]')$$, '23514', null, 'Missing slot day is rejected');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,availability) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en','[{"day":"1","part":"morning"}]')$$, '23514', null, 'String slot day is rejected');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,availability) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en','[{"day":1,"part":null}]')$$, '23514', null, 'Null slot part is rejected by table constraint');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,availability) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en','[{"day":1,"part":"morning","screened":true}]')$$, '23514', null, 'Extra slot authority field is rejected by table constraint');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language,availability) values ('11111111-1111-4111-8111-111111111111','volunteer','Name','Town','en',(select jsonb_agg(jsonb_build_object('day',1,'part','morning')) from generate_series(1,22)))$$, '23514', null, 'Availability is bounded to 21 slots');
+select lives_ok($$insert into public.account_profiles(user_id,role,name,area,language,needs) values ('11111111-1111-4111-8111-111111111111','elder','Private Elder','Town','en',array['Help with steps'])$$, 'Valid own elder profile inserts after rejected writes');
+select is((select needs from public.account_profiles), array['Help with steps'], 'Own profile reload retains preferences');
+select ok((select created_at = now() and updated_at = now() from public.account_profiles), 'Both timestamps come from PostgreSQL defaults');
+set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","is_anonymous":false}';
+select is((select count(*) from public.account_profiles where user_id='11111111-1111-4111-8111-111111111111'), 0::bigint, 'Other UID targeted read is hidden by RLS');
+select throws_ok($$update public.account_profiles set name='Forged' where user_id='11111111-1111-4111-8111-111111111111'$$, '42501', null, 'Other UID targeted update is denied');
+select throws_ok($$delete from public.account_profiles where user_id='11111111-1111-4111-8111-111111111111'$$, '42501', null, 'Other UID targeted delete is denied');
+select lives_ok($$insert into public.account_profiles(user_id,role,name,area,language,skills,tools,availability,max_miles,school) values ('22222222-2222-4222-8222-222222222222','volunteer','Private Volunteer','Town','es',array['yard'],array['gloves'],'[{"day":2,"part":"evening"}]',23,'School')$$, 'Valid own volunteer profile inserts');
+select results_eq($$select role, skills, tools, availability, max_miles, school from public.account_profiles$$, $$values ('volunteer'::text,array['yard'],array['gloves'],'[{"day":2,"part":"evening"}]'::jsonb,23,'School'::text)$$, 'Volunteer reload returns exactly own preferences');
+set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","is_anonymous":true}';
+select is((select count(*) from public.account_profiles), 0::bigint, 'Anonymous claim cannot read even its existing own profile');
+set local request.jwt.claims = '{}';
+select is(auth.uid(), null::uuid, 'Absent JWT subject yields SQL NULL');
+select is((select count(*) from public.account_profiles), 0::bigint, 'Authenticated role without subject cannot read profiles');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language) values ('11111111-1111-4111-8111-111111111111','elder','Name','Town','en')$$, '42501', null, 'Authenticated role without subject cannot insert');
+set local request.jwt.claims = '';
+select is(auth.jwt(), null::jsonb, 'Empty JWT GUC yields SQL NULL');
+select is((select count(*) from public.account_profiles), 0::bigint, 'No JWT context cannot read profiles');
+set local role anon;
+set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","is_anonymous":false}';
+select throws_ok($$select * from public.account_profiles$$, '42501', null, 'JWT role text cannot grant authenticated database authority');
+select throws_ok($$insert into public.account_profiles(user_id,role,name,area,language) values ('11111111-1111-4111-8111-111111111111','elder','Name','Town','en')$$, '42501', null, 'Unauthenticated role cannot insert even with a subject');
+reset role;
+select * from finish();
+rollback;

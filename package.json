@@ -14,6 +14,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:db": "node scripts/test-db.mjs",
+    "test:db:runner": "vitest run scripts/test-db-runner.test.mjs",
     "test:watch": "vitest",
     "test:setup": "vitest run scripts/setup.test.mjs scripts/verify-ios-model.test.mjs",
     "ios:model:check": "/bin/sh scripts/verify-ios-model.sh",
@@ -40,6 +42,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",
+    "@electric-sql/pglite": "0.4.6",
     "@types/leaflet": "1.9.20",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
