@@ -8,13 +8,16 @@
     "npm": ">=11 <12"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "ios:sync": "npm run build && cap sync ios",
+    "test:setup": "vitest run scripts/setup.test.mjs scripts/verify-ios-model.test.mjs",
+    "ios:model:check": "/bin/sh scripts/verify-ios-model.sh",
+    "ios:sync": "npm run ios:model:check && npm run build && cap sync ios",
     "ios:demo": "npm run ios:demo:stage && npm run ios:sync && npm run ios:demo:install",
     "ios:demo:stage": "node scripts/ios-demo-scan.mjs --stage ios/DerivedData/fixlist-demo-scan-stage viennese-v2",
     "ios:demo:install": "node scripts/ios-demo-scan.mjs --install-staged ios/DerivedData/fixlist-demo-scan-stage",
