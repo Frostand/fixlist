@@ -11,7 +11,8 @@ export class AuthController {
     private unsubscribe: (() => void) | undefined;
     private disposed = false;
     private mutating = false;
-    private leaving: Promise<void> | null = null;
+    private leaving: Promise<boolean> | null = null;
+    private restorationBlocked = false;
     constructor(readonly gateway: AuthGateway) {}
     subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
     private publish(patch: Partial<AuthState>) { if (!this.disposed) { this.state = { ...this.state, ...patch }; this.listeners.forEach(fn => fn()); } }
@@ -24,6 +25,7 @@ export class AuthController {
         await this.refresh();
     }
     async refresh(recovery = false) {
+        if (this.restorationBlocked) return;
         const g = this.invalidate();
         this.publish({ ...empty(), phase: 'loading', busy: true });
         try {
@@ -42,7 +44,7 @@ export class AuthController {
         } catch { if (this.current(g)) this.publish({ ...empty(), message: 'auth-error' }); }
     }
     private async action(work: () => Promise<void>, message: AuthMessage = null, refresh = false) {
-        if (this.state.busy || this.disposed) return;
+        if (this.state.busy || this.disposed || this.restorationBlocked) return;
         const g = this.generation;
         this.mutating = true; this.publish({ busy: true, message: null });
         try {
@@ -59,7 +61,7 @@ export class AuthController {
     oauth = (provider: 'google' | 'apple') => this.action(() => this.gateway.oauth(provider), null, true);
     updatePassword = (password: string) => this.state.phase !== 'recovery' ? Promise.resolve() : this.action(() => this.gateway.updatePassword(password), 'password-updated', true);
     async callback(url: string) {
-        if (this.disposed) return;
+        if (this.disposed || this.restorationBlocked) return;
         // Callback processing is serialized by the gateway; do not run verification inside SDK event locks.
         const g = this.invalidate();
         this.publish({ ...empty(), phase: 'loading', busy: true });
@@ -83,22 +85,29 @@ export class AuthController {
     }
     cancel = () => this.leave('cancelled');
     signOut = () => this.leave(null);
-    private leave(message: AuthMessage): Promise<void> {
+    private leave(message: AuthMessage): Promise<boolean> {
         if (this.leaving) return this.leaving;
         const operation = this.performLeave(message);
         this.leaving = operation;
-        void operation.finally(() => { this.leaving = null; });
+        const clear = () => { this.leaving = null; };
+        void operation.then(clear, clear);
         return operation;
     }
     private async performLeave(message: AuthMessage) {
         const g = this.invalidate();
-        this.publish({ ...empty(), busy: true }); this.mutating = true;
+        this.restorationBlocked = true;
+        this.publish({ ...empty(), phase: 'loading', busy: true }); this.mutating = true;
         try {
             // Try both cleanup steps even if native cancellation itself is unavailable.
-            try { await this.gateway.cancel(); } finally { await this.gateway.signOut(); }
-            if (this.current(g)) this.publish({ ...empty(), message });
-        } catch { if (this.current(g)) this.publish({ ...empty(), message: 'auth-error' }); }
+            let failed = false;
+            try { await this.gateway.cancel(); } catch { failed = true; }
+            try { await this.gateway.signOut(); } catch { failed = true; }
+            if (!this.current(g)) return false;
+            if (failed) this.publish({ ...empty(), phase: 'sign-out-error', message: 'auth-error' });
+            else { this.restorationBlocked = false; this.publish({ ...empty(), message }); }
+            return !failed;
+        }
         finally { this.mutating = false; }
     }
-    dispose() { this.invalidate(); this.state = empty(); this.disposed = true; this.unsubscribe?.(); this.listeners.clear(); }
+    dispose() { this.invalidate(); this.state = this.restorationBlocked ? { ...empty(), phase: 'sign-out-error', message: 'auth-error' } : empty(); this.disposed = true; this.unsubscribe?.(); this.listeners.clear(); }
 }

@@ -32,7 +32,7 @@ export interface AuthGateway {
 }
 export type AuthMessage = 'confirmation' | 'reset-sent' | 'auth-error' | 'cancelled' | 'password-updated' | null;
 export interface AuthState {
-    phase: 'loading' | 'signed-out' | 'onboarding' | 'ready' | 'profile-error' | 'recovery';
+    phase: 'loading' | 'signed-out' | 'sign-out-error' | 'onboarding' | 'ready' | 'profile-error' | 'recovery';
     session: AuthSession | null; workspace: Workspace | null; profile: AccountProfile | null;
     busy: boolean; message: AuthMessage;
 }
