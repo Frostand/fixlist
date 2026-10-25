@@ -32,6 +32,39 @@ export interface ElderProfile {
   /** Fictional street-level hint, revealed to a volunteer only after they accept a job. */
   addressHint: string;
   familyIds: readonly string[];
+  visitInstructions?: string;
+  preferences?: ElderPreferences;
+}
+
+export interface ElderPreferences {
+  contact: 'messages' | 'ask-first';
+  visitTimes: readonly AvailabilitySlot[];
+  notes: string;
+}
+export interface ElderProfileEdit {
+  name: string;
+  area: string;
+  needs: readonly string[];
+  addressHint: string;
+  visitInstructions: string;
+  preferences: ElderPreferences;
+}
+export type FamilyScope = 'requests' | 'capture' | 'messages' | 'profile';
+export interface FamilyGrant {
+  familyId: string;
+  elderId: string;
+  revision: number;
+  scopes: readonly FamilyScope[];
+  approvedById: string;
+  approvedAt: string;
+  revokedAt: string | null;
+  revokedById: string | null;
+  origin: 'elder-approved' | 'legacy-link' | 'fictional-demo';
+}
+export interface FamilyHistory {
+  grants: readonly FamilyGrant[];
+  /** Imported receipts preserve the original actor; they grant no new completion authority. */
+  legacyConfirmations: readonly { jobId: string; familyId: string; at: string }[];
 }
 
 export const SKILLS = ['general', 'lifting', 'electrical-basic', 'plumbing-basic', 'carpentry', 'yard', 'tech-help', 'cleaning', 'errands', 'safety-install', 'companionship'] as const;
@@ -93,7 +126,7 @@ export interface ScanEvidence {
 
 export type JobStatus = 'open' | 'accepted' | 'on-the-way' | 'arrived' | 'reported-done' | 'completed' | 'cancelled';
 export type JobEventType = 'posted' | 'accepted' | 'on-the-way' | 'arrived' | 'reported-done' | 'confirmed' | 'rated' | 'cancelled';
-export interface JobEvent { at: string; actorId: string; type: JobEventType; note?: string }
+export interface JobEvent { at: string; actorId: string; type: JobEventType; note?: string; familyGrantRevision?: number }
 export interface Rating { stars: 1 | 2 | 3 | 4 | 5; note?: string; byId: string; at: string }
 
 export interface Job {
@@ -123,6 +156,7 @@ export interface ChatMessage {
   text: string;
   language: Language;
   translations: Partial<Record<Language, string>>;
+  familyGrantRevision?: number;
 }
 
 export type MatchReason =
@@ -157,6 +191,8 @@ export interface CommunityState {
   elders: readonly ElderProfile[];
   volunteers: readonly VolunteerProfile[];
   families: readonly FamilyLink[];
+  /** Absent only in version-1 snapshots predating delegated consent. */
+  familyHistory?: FamilyHistory;
   jobs: readonly Job[];
   messages: readonly ChatMessage[];
 }
@@ -178,13 +214,20 @@ export interface AssistantAvailability {
   speechInputReason?: AssistantInputReason;
   speechOutputReason?: 'voice-unavailable';
 }
-export interface ChatTurn { role: 'user' | 'assistant'; text: string }
+export interface ChatTurn {
+  role: 'user' | 'assistant'; text: string;
+  id?: string;
+  /** Controller-validated operations with user evidence, never assistant text as evidence. */
+  extraction?: import('../lib/assistant-conversation').NativeConversationPatch;
+}
 export interface AssistantReply {
   text: string;            // reply in the user's language, short, warm, plain
   job: JobAnalysis | null; // present when the assistant has enough to draft a request
   engine: AnalysisEngine;
   /** Original user turns in the bounded context window, in order. Never model-produced or assistant text. */
   originalText?: string;
+  conversation?: import('../lib/assistant-conversation').ConversationState;
+  extraction?: import('../lib/assistant-conversation').NativeConversationPatch;
 }
 export interface ListeningSession {
   readonly sessionId: string;

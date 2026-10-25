@@ -1,0 +1,178 @@
+{
+  "repository": "FluidInference/kokoro-82m-coreml",
+  "revision": "e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105",
+  "assetBytes": 340058078,
+  "files": [
+    {
+      "path": "G2PDecoder.mlmodelc/analytics/coremldata.bin",
+      "bytes": 243,
+      "sha256": "dbf1767747fdc188222d467a45b04608b396c76c71db3abb18a5fb3680ef9827",
+      "hfGitBlobId": "c84340b0ccb949dce940a54b3078ed7b0e11f375",
+      "lfsSha256": "dbf1767747fdc188222d467a45b04608b396c76c71db3abb18a5fb3680ef9827",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PDecoder.mlmodelc/analytics/coremldata.bin?download=true"
+    },
+    {
+      "path": "G2PDecoder.mlmodelc/coremldata.bin",
+      "bytes": 545,
+      "sha256": "607e960f19b4d9a30317a5a11869fcce84b300a909fcab2cc756c0d98e2dacd9",
+      "hfGitBlobId": "f008fd814b5b3680c0e1319f0413498547550c87",
+      "lfsSha256": "607e960f19b4d9a30317a5a11869fcce84b300a909fcab2cc756c0d98e2dacd9",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PDecoder.mlmodelc/coremldata.bin?download=true"
+    },
+    {
+      "path": "G2PDecoder.mlmodelc/metadata.json",
+      "bytes": 3064,
+      "sha256": "e54e98484fd60d26f22fd3c4e7fe87b0d92a5d2de1f958cc3c4bb36d4ae06a44",
+      "hfGitBlobId": "14a7991cc66167e7d70ad3cae487e9f272e1a337",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PDecoder.mlmodelc/metadata.json?download=true"
+    },
+    {
+      "path": "G2PDecoder.mlmodelc/model.mil",
+      "bytes": 19737,
+      "sha256": "fe647c598e0d9454d360b8ee49a59ae57ca147fc5330863ba84ccb90dce482ad",
+      "hfGitBlobId": "1ebf9a6a97bafe433918f7104acf7e81cd62ba51",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PDecoder.mlmodelc/model.mil?download=true"
+    },
+    {
+      "path": "G2PDecoder.mlmodelc/weights/weight.bin",
+      "bytes": 828030,
+      "sha256": "cbaeb4e743359f607ab161af0c6d8a817462fdaec622ee788ef8ef952c5f8214",
+      "hfGitBlobId": "5e8b8fbfe1ddfab9d2966dcab454e508730984b8",
+      "lfsSha256": "cbaeb4e743359f607ab161af0c6d8a817462fdaec622ee788ef8ef952c5f8214",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PDecoder.mlmodelc/weights/weight.bin?download=true"
+    },
+    {
+      "path": "G2PEncoder.mlmodelc/analytics/coremldata.bin",
+      "bytes": 243,
+      "sha256": "cf7fbd7e7a65529b2d2bf3941e458a0ab6dff7a298bf48e205a1727c81c26a99",
+      "hfGitBlobId": "e9344e499b612514b32da57ae4039fa67c3ffbe3",
+      "lfsSha256": "cf7fbd7e7a65529b2d2bf3941e458a0ab6dff7a298bf48e205a1727c81c26a99",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PEncoder.mlmodelc/analytics/coremldata.bin?download=true"
+    },
+    {
+      "path": "G2PEncoder.mlmodelc/coremldata.bin",
+      "bytes": 398,
+      "sha256": "0f14d46ca9fd06c68b4717294575b2b99449e67d40b7a2c56f926bf05cd90b11",
+      "hfGitBlobId": "c46bd79935a0d55714afb36fd8ff6febd4a4b2c7",
+      "lfsSha256": "0f14d46ca9fd06c68b4717294575b2b99449e67d40b7a2c56f926bf05cd90b11",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PEncoder.mlmodelc/coremldata.bin?download=true"
+    },
+    {
+      "path": "G2PEncoder.mlmodelc/metadata.json",
+      "bytes": 2034,
+      "sha256": "c8e0cfd7f494ac1b3662ff8f1914b2b45f79ffb2791724cdc0576981996732e1",
+      "hfGitBlobId": "a6976b81bf2ac9adedef1dfe76950e5bc67f510e",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PEncoder.mlmodelc/metadata.json?download=true"
+    },
+    {
+      "path": "G2PEncoder.mlmodelc/model.mil",
+      "bytes": 20392,
+      "sha256": "8c617e569f37286b056dad800d862dc145be9a95fa9ed43857bb646ba199d7da",
+      "hfGitBlobId": "aa1fcfca108654608989936bd1412d3d416c7457",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PEncoder.mlmodelc/model.mil?download=true"
+    },
+    {
+      "path": "G2PEncoder.mlmodelc/weights/weight.bin",
+      "bytes": 694592,
+      "sha256": "6926bcd2827d21fec82839487b987e06f85fd8a6a5bb896bc4f6062461d014ec",
+      "hfGitBlobId": "d8e23a106b824ee7373a1b9dc142a3588fda9167",
+      "lfsSha256": "6926bcd2827d21fec82839487b987e06f85fd8a6a5bb896bc4f6062461d014ec",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/G2PEncoder.mlmodelc/weights/weight.bin?download=true"
+    },
+    {
+      "path": "g2p_vocab.json",
+      "bytes": 1665,
+      "sha256": "295ed64b86c2820cd665b0602ae50c6947c0e82ac643082873e0be87dca282ce",
+      "hfGitBlobId": "32f4c8035afbfe2ff30b5a4ff39b4441de876c7b",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/g2p_vocab.json?download=true"
+    },
+    {
+      "path": "kokoro_21_15s.mlmodelc/analytics/coremldata.bin",
+      "bytes": 243,
+      "sha256": "47425b3bb1b3d7ea9b0e1a67b3a589b4095a14e55a5f11d9da2bf9ba1d9d10c8",
+      "hfGitBlobId": "bcf300f67e23e3789dc9a81cc58a3dd3146c0ed4",
+      "lfsSha256": "47425b3bb1b3d7ea9b0e1a67b3a589b4095a14e55a5f11d9da2bf9ba1d9d10c8",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/kokoro_21_15s.mlmodelc/analytics/coremldata.bin?download=true"
+    },
+    {
+      "path": "kokoro_21_15s.mlmodelc/coremldata.bin",
+      "bytes": 458,
+      "sha256": "90c4d4157d95d35fec699f7a8b114e300148063a1b111622c28f80dfa6cba3dd",
+      "hfGitBlobId": "bb084f8a3bfa3f6b32c9d56b0e117a5786693e59",
+      "lfsSha256": "90c4d4157d95d35fec699f7a8b114e300148063a1b111622c28f80dfa6cba3dd",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/kokoro_21_15s.mlmodelc/coremldata.bin?download=true"
+    },
+    {
+      "path": "kokoro_21_15s.mlmodelc/metadata.json",
+      "bytes": 4247,
+      "sha256": "fbc1b87785ba254b75c98d2ec17891b4559f5623560d04643d0f87cc06fea905",
+      "hfGitBlobId": "27687e21bc98da4793695fda0914bb1fbc293efc",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/kokoro_21_15s.mlmodelc/metadata.json?download=true"
+    },
+    {
+      "path": "kokoro_21_15s.mlmodelc/model.mil",
+      "bytes": 613722,
+      "sha256": "a7ff23684a05a64d563a8a57733dbece0568de27eb3cc757254106ce8308123d",
+      "hfGitBlobId": "7b949cf70ffc6ec14990d5c15eae299d53f0495f",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/kokoro_21_15s.mlmodelc/model.mil?download=true"
+    },
+    {
+      "path": "kokoro_21_15s.mlmodelc/weights/weight.bin",
+      "bytes": 324608768,
+      "sha256": "22af5b459c66b7b1c877bacf7d0b95377b8f181f15e4a21c4ddcc813dddca0f7",
+      "hfGitBlobId": "11c6b9318f0ff0740736f69cb13ad4e410f5d142",
+      "lfsSha256": "22af5b459c66b7b1c877bacf7d0b95377b8f181f15e4a21c4ddcc813dddca0f7",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/kokoro_21_15s.mlmodelc/weights/weight.bin?download=true"
+    },
+    {
+      "path": "us_lexicon_cache.json",
+      "bytes": 10444631,
+      "sha256": "6b36ba313202227d6914ad32cd684a0304bd2757e9ec4158ea7bc36ec40e224e",
+      "hfGitBlobId": "58b22ebce0ebddbde48b08a09e22e8baab13f4b4",
+      "lfsSha256": "6b36ba313202227d6914ad32cd684a0304bd2757e9ec4158ea7bc36ec40e224e",
+      "verification": "lfs-sha256+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/us_lexicon_cache.json?download=true"
+    },
+    {
+      "path": "vocab_index.json",
+      "bytes": 2034,
+      "sha256": "433690ab1da1256639c00179e7961a9e9f50ec91077a9c0877107c14e04fb989",
+      "hfGitBlobId": "edf8a1ea2660b4044dfd9e44884386a1f1eec6a4",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/vocab_index.json?download=true"
+    },
+    {
+      "path": "voices/af_heart.json",
+      "bytes": 2813032,
+      "sha256": "73e35f2a88e454474a76bddd16c680470818c378b14312f0a2720105b95d4833",
+      "hfGitBlobId": "bf6bdb11f9a68515f9a54bb369016329ce81cd1c",
+      "lfsSha256": null,
+      "verification": "git-blob-sha1+bytes",
+      "url": "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105/voices/af_heart.json?download=true"
+    }
+  ]
+}

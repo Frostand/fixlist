@@ -28,7 +28,7 @@ export function useCommunity() {
         store.refresh();
         return () => { unsubscribe(); target?.removeEventListener('storage', sync); };
     }, [storage, store]);
-    return { state: store.state, account: currentAccount(store.state), resetEpoch: store.resetEpoch, run: store.run, reset: store.reset, issue: store.issue, clearIssue: store.clearIssue };
+    return { state: store.state, account: currentAccount(store.state), resetEpoch: store.resetEpoch, run: store.run, reset: store.reset, issue: store.issue, clearIssue: store.clearIssue, readScope: () => ({ state: store.state, resetEpoch: store.resetEpoch }) };
 }
 // Older injected UI facades need not implement persistence metadata. The live hook always returns a string epoch and a reset result.
-export type CommunityController = Omit<ReturnType<typeof useCommunity>, 'resetEpoch' | 'reset'> & { resetEpoch?: string; reset(): CommunityResult | void };
+export type CommunityController = Omit<ReturnType<typeof useCommunity>, 'resetEpoch' | 'reset' | 'readScope'> & { readScope?: ReturnType<typeof useCommunity>['readScope']; resetEpoch?: string; reset(): CommunityResult | void };

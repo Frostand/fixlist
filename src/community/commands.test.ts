@@ -153,7 +153,7 @@ describe('demo profiles and permissions', () => {
 
 describe('request lifecycle and immutability', () => {
   it('posts for an elder or linked family with a copied draft; rejects other actors and invalid drafts', () => {
-    const analysis = quickPickAnalysis('light-bulb', 'en'), payload = { actorId: FAMILY, elderId: ELDER, source: 'quick-pick' as const, originalText: ' Help please ', analysis };
+    const analysis = quickPickAnalysis('light-bulb', 'en'), payload = { actorId: FAMILY, familyRevision: 1, elderId: ELDER, source: 'quick-pick' as const, originalText: ' Help please ', analysis };
     const base = as(createSeedState(NOW), FAMILY), before = JSON.stringify(base), result = postJob(base, payload, NOW);
     expect(result.ok).toBe(true); if (!result.ok) return;
     const job = result.state.jobs.find((j) => j.id === result.jobId)!; expect(job).toMatchObject({ status: 'open', createdById: FAMILY, originalText: 'Help please', hoursCredited: null });
@@ -173,16 +173,17 @@ describe('request lifecycle and immutability', () => {
     state = resultState(rateJob(state, { jobId, actorId: ELDER, stars: 5, note: 'Thank you' }, NOW));
     const job = state.jobs.at(-1)!;
     expect(job.timeline.map((e) => e.type)).toEqual(['posted', 'accepted', 'on-the-way', 'arrived', 'reported-done', 'confirmed', 'rated']);
-    expect(job.timeline[4]!.note).toBe('Replaced the bulb'); expect(job.hoursCredited).toBe(0.5); expect(job.rating?.stars).toBe(5);
+    expect(job.timeline[4]!.note).toBe('Replaced the bulb'); expect(job.hoursCredited).toBeNull(); expect(job.rating?.stars).toBe(5);
     expect(before).not.toBe(JSON.stringify(state));
   });
   it.each(['accepted', 'on-the-way', 'arrived'] as const)('allows an assigned volunteer to report done from %s', (status) => {
     const { state, jobId } = withStatus(status);
     expect(resultState(reportDone(state, { jobId, volunteerId: VOL }, NOW)).jobs.at(-1)!.status).toBe('reported-done');
   });
-  it.each([[1, 0.5], [20, 0.5], [23, 0.75], [37, 0.75], [38, 1], [60, 1.25], [75, 1.5], [90, 1.75]])('credits %i estimated minutes as %f hours including travel', (minutes, hours) => {
+  it.each([1, 20, 23, 37, 38, 60, 75, 90])('confirms %i estimated minutes without issuing policy-free hours', minutes => {
     const { state, jobId } = withStatus('reported-done', minutes);
-    expect(resultState(confirmDone(as(state, FAMILY), { jobId, actorId: FAMILY }, NOW)).jobs.at(-1)!.hoursCredited).toBe(hours);
+    expect(confirmDone(as(state, FAMILY), { jobId, actorId: FAMILY }, NOW)).toMatchObject({ ok: false, code: 'permission_denied' });
+    expect(resultState(confirmDone(as(state, ELDER), { jobId, actorId: ELDER }, NOW)).jobs.at(-1)!.hoursCredited).toBeNull();
   });
   it('rejects acceptance by non-volunteers, absent actors, repeated acceptance and invalid schedules', () => {
     const { state, jobId } = posted(), payload = { jobId, volunteerId: VOL, scheduledFor: LATER };
@@ -223,15 +224,15 @@ describe('request lifecycle and immutability', () => {
   it('blocks premature/repeated confirmations, premature/repeated ratings, and invalid stars', () => {
     const open = posted(); expect(confirmDone(open.state, { jobId: open.jobId, actorId: ELDER }, NOW)).toMatchObject({ ok: false, code: 'invalid_state' });
     expect(rateJob(open.state, { jobId: open.jobId, actorId: ELDER, stars: 5 }, NOW)).toMatchObject({ ok: false, code: 'invalid_state' });
-    const { state: done, jobId } = withStatus('completed'), state = as(done, FAMILY), payload = { jobId, actorId: FAMILY, stars: 4 };
-    expect(confirmDone(state, { jobId, actorId: FAMILY }, NOW)).toMatchObject({ ok: false, code: 'invalid_state' });
+    const { state: done, jobId } = withStatus('completed'), state = as(done, FAMILY), payload = { jobId, actorId: FAMILY, familyRevision: 1, stars: 4 };
+    expect(confirmDone(state, { jobId, actorId: FAMILY }, NOW)).toMatchObject({ ok: false, code: 'permission_denied' });
     for (const stars of [0, 6, 2.5, NaN]) expect(rateJob(state, { ...payload, stars }, NOW)).toMatchObject({ ok: false, code: 'invalid_input' });
     expect(rateJob(as(state, VOL), { ...payload, actorId: VOL }, NOW)).toMatchObject({ ok: false, code: 'permission_denied' });
     expect(rateJob(state, { ...payload, jobId: 'missing' }, NOW)).toMatchObject({ ok: false, code: 'not_found' });
     const rated = resultState(rateJob(state, payload, NOW)); expect(rateJob(rated, payload, NOW)).toMatchObject({ ok: false, code: 'invalid_state' });
   });
   it.each(['open', 'accepted', 'on-the-way', 'arrived', 'reported-done'] as const)('allows family cancellation from %s, without creating credit', (status) => {
-    const { state: base, jobId } = withStatus(status), state = as(base, FAMILY), payload = { jobId, actorId: FAMILY };
+    const { state: base, jobId } = withStatus(status), state = as(base, FAMILY), payload = { jobId, actorId: FAMILY, familyRevision: 1 };
     const next = resultState(cancelJob(state, payload, NOW)); expect(next.jobs.at(-1)!).toMatchObject({ status: 'cancelled', hoursCredited: null });
     expect(cancelJob(next, payload, NOW)).toMatchObject({ ok: false, code: 'invalid_state' });
     expect(reportDone(as(next, VOL), { jobId, volunteerId: VOL }, NOW).ok).toBe(false);
@@ -245,7 +246,7 @@ describe('request lifecycle and immutability', () => {
     const { state: base, jobId } = assigned(), before = JSON.stringify(base), translations = { es: 'Voy en camino' };
     let state = resultState(sendMessage(base, { jobId, fromId: VOL, text: ' On my way ', language: 'en', translations }, NOW));
     translations.es = 'changed'; expect(state.messages.at(-1)!.translations.es).toBe('Voy en camino');
-    for (const actorId of [ELDER, FAMILY]) state = resultState(sendMessage(as(state, actorId), { jobId, fromId: actorId, text: 'Thank you', language: 'en' }, NOW));
+    for (const actorId of [ELDER, FAMILY]) state = resultState(sendMessage(as(state, actorId), { jobId, fromId: actorId, familyRevision: 1, text: 'Thank you', language: 'en' }, NOW));
     expect(state.messages).toHaveLength(3); expect(state.messages[0]!.text).toBe('On my way'); expect(JSON.stringify(base)).toBe(before);
     expect(sendMessage(as(base, OTHER), { jobId, fromId: OTHER, text: 'hello', language: 'en' }, NOW)).toMatchObject({ ok: false, code: 'permission_denied' });
     expect(sendMessage(base, { jobId: 'missing', fromId: VOL, text: 'hello', language: 'en' }, NOW)).toMatchObject({ ok: false, code: 'not_found' });

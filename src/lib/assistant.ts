@@ -1,15 +1,15 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
-import { SKILLS, TASK_CATEGORIES, TOOLS, type Assistant, type AssistantAvailability, type ChatTurn, type JobAnalysis, type ListeningSession } from '../community/types';
-import { analyzeTaskWithRules, clearRuleTask, ruleFollowup, ruleUrgency } from '../community/task-rules';
+import { SKILLS, TASK_CATEGORIES, TOOLS, type Assistant, type AssistantAvailability, type JobAnalysis, type ListeningSession } from '../community/types';
+import { analyzeTaskWithRules } from '../community/task-rules';
 import type { Language } from '../domain/roles';
 import { localeFor } from '../i18n';
-import { assistantConversationCopy as copy } from './assistant-copy';
+import { applyNativeExtraction, clarificationPatch, prepareConversation, resolveConversation, type NativeConversationRequest } from './assistant-conversation';
 
 /** Native returns untrusted bridge data; validate before showing a job preview. */
 export interface NativeAssistantPlugin {
   availability(options: { language: Language }): Promise<unknown>;
   analyzeTask(options: { text: string; language: Language }): Promise<unknown>;
-  chat(options: { turns: readonly ChatTurn[]; language: Language; firstName: string }): Promise<unknown>;
+  chat(options: { language: Language; request: NativeConversationRequest }): Promise<unknown>;
   startListening(options: { sessionId: string; language: Language }): Promise<unknown>;
   stopListening(options: { sessionId: string }): Promise<unknown>;
   cancelListening(options: { sessionId: string }): Promise<unknown>;
@@ -79,45 +79,6 @@ function browserVoice(synthesis: SpeechSynthesis | undefined, language: Language
 }
 function browserAvailability(browser: AssistantBrowser | undefined, language: Language): AssistantAvailability {
   return { language, onDeviceModel: false, speechInput: !!(browser?.SpeechRecognition ?? browser?.webkitSpeechRecognition), speechOutput: !!(browser?.SpeechSynthesisUtterance && browserVoice(browser.speechSynthesis, language)) };
-}
-/** Keep a small, auditable user-only provenance window within Job.originalText's limit.
- * Fail closed rather than silently truncate a correction or an oversized turn. */
-function conversationWindow(turns: readonly ChatTurn[]): ChatTurn[] | null {
-  const recent = turns.slice(-12);
-  if (!recent.length || recent.at(-1)?.role !== 'user' || recent.some(turn => !['user', 'assistant'].includes(turn.role) || !textValue(turn.text))) return null;
-  const original = recent.filter(turn => turn.role === 'user').map(turn => turn.text).join('\n');
-  return original.length <= 4000 ? recent : null;
-}
-function rulesConversationJob(turns: readonly ChatTurn[], language: Language, rules: typeof analyzeTaskWithRules): { job: JobAnalysis; reply: 'ready' | 'updated' | 'timing' | 'detail' } | null {
-  let task: string | null = null, timing: JobAnalysis['urgency'] | undefined;
-  let reply: 'ready' | 'updated' | 'timing' | 'detail' = 'ready';
-  for (const turn of turns) {
-    if (turn.role !== 'user') continue;
-    if (clearRuleTask(turn.text)) { reply = task ? 'updated' : 'ready'; task = turn.text; timing = undefined; }
-    else {
-      const followup = ruleFollowup(turn.text);
-      if (task && followup) { reply = followup === 'timing' ? 'timing' : 'detail'; if (followup === 'timing') timing = ruleUrgency(turn.text); }
-      else { task = null; timing = undefined; }
-    }
-  }
-  if (!task) return null;
-  const job = rules(task, language);
-  return { job: timing === undefined ? job : { ...job, urgency: timing }, reply };
-}
-/** Whole utterances only: social words embedded in a request never change task parsing. */
-function rulesConversationReply(text: string, language: Language): string {
-  const social = text.normalize('NFKC').toLocaleLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '');
-  if (/^(?:hi|hello|hey|hola|你好|您好|안녕하세요|안녕|xinchào|chào|kumusta|здравствуйте|привет|bonjour|salut|مرحبا|مرحبًا)$/u.test(social)) return copy[language].greeting;
-  if (/^(?:thanks|thankyou|gracias|谢谢|謝謝|감사합니다|고마워요|cảmơn|salamat|спасибо|merci|شكرا|شكرًا)$/u.test(social)) return copy[language].thanks;
-  if (/^(?:(?:actually|no|cancel|нет|не|hindi|không|non|ليس|لا)(?![\p{L}\p{N}])|아니|不是|不要|取消)/iu.test(text.trim())) return copy[language].clarify;
-  return copy[language].question;
-}
-function shortReply(value: unknown, language: Language): value is string {
-  if (!textValue(value) || value.length > 500 || (value.match(/[?؟？]/gu)?.length ?? 0) > 1) return false;
-  const sentences = typeof Intl.Segmenter === 'function'
-    ? Array.from(new Intl.Segmenter(localeFor(language), { granularity: 'sentence' }).segment(value)).filter((part) => part.segment.trim())
-    : value.split(/[.!?。！？؟]+/u).filter((part) => part.trim());
-  return sentences.length <= 2;
 }
 
 let audioSequence = 0;
@@ -227,20 +188,24 @@ export function createAssistant(deps: AssistantDependencies = {}): Assistant {
       if (isNative()) { try { return nativeJob(await bounded(() => native.analyzeTask({ text, language })), language); } catch { /* Deterministic, labelled local fallback. */ } }
       return rules(text, language);
     },
-    async chat(turns, language, context) {
-      const recent = conversationWindow(turns);
-      if (!recent) return { text: copy[language].question, job: null, engine: 'rules' };
-      const originalText = recent.filter(turn => turn.role === 'user').map(turn => turn.text).join('\n');
-      if (isNative()) {
-        try {
-          const value = await bounded(() => native.chat({ turns: recent, language, firstName: context.firstName }));
-          if (!record(value) || !shortReply(value.text, language)) throw new Error('Invalid assistant reply.');
-          const job = value.job == null ? null : nativeJob(value.job, language);
-          return { text: value.text, job, engine: 'apple-on-device', ...(job ? { originalText } : {}) };
-        } catch { /* A failed session never prevents typing a request. */ }
-      }
-      const draft = rulesConversationJob(recent, language, rules);
-      return { text: draft ? copy[language][draft.reply] : rulesConversationReply(recent.at(-1)!.text, language), job: draft?.job ?? null, engine: 'rules', ...(draft ? { originalText } : {}) };
+    async chat(turns, language, _context) {
+      const prepared = prepareConversation(turns, language, rules);
+      const conversation = prepared?.fallback ?? resolveConversation(turns, language, rules);
+      const reply = (state = conversation, engine: 'rules' | 'apple-on-device' = 'rules', extraction?: import('./assistant-conversation').NativeConversationPatch) => ({
+        text: state.text, job: state.job, engine, conversation: state,
+        ...(state.job ? { originalText: state.originalText } : {}), ...(extraction ? { extraction } : {}),
+      });
+      if (!prepared || conversation.status === 'blocked' || conversation.status === 'cancelled' || !isNative()) return reply();
+      let value: unknown;
+      try { value = await bounded(() => native.chat({ language, request: prepared.request })); }
+      catch (error) { if (!record(error) || !['INVALID_EXTRACTION', 'INVALID_INPUT'].includes(error.code as string)) return reply(); value = null; }
+      const applied = applyNativeExtraction(prepared.before, prepared.request, value, language, rules, prepared.fallback);
+      if (applied) return reply(applied.state, applied.useful ? 'apple-on-device' : 'rules', applied.patch);
+      // Invalid model data cannot promote a draft. Record only a controller-owned
+      // clarification operation so later turns cannot silently revive that review.
+      const patch = clarificationPatch(prepared.request);
+      const held = applyNativeExtraction(prepared.before, prepared.request, patch, language, rules, prepared.fallback);
+      return held ? reply(held.state, 'rules', patch) : reply();
     },
     async startListening(language, onPartial, signal) {
       if (signal?.aborted) throw new Error('Speech input was cancelled.');

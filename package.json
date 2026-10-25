@@ -28,7 +28,10 @@
     "ios:demo:install": "node scripts/ios-demo-scan.mjs --install-staged ios/DerivedData/fixlist-demo-scan-stage",
     "i18n:status": "node scripts/i18n/cli.mjs status",
     "i18n:export": "node scripts/i18n/cli.mjs export",
-    "i18n:import": "node scripts/i18n/cli.mjs import"
+    "i18n:import": "node scripts/i18n/cli.mjs import",
+    "voice:verify": "node scripts/voice-pack/verify.mjs",
+    "voice:generate": "node scripts/voice-pack/regenerate.mjs",
+    "test:native-voice": "python3 scripts/native-voice-pack-tests.py"
   },
   "dependencies": {
     "@capacitor/core": "8.5.3",

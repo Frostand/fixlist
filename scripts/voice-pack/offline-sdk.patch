@@ -1,0 +1,493 @@
+diff -ruN a/Sources/FluidAudio/DownloadUtils.swift b/Sources/FluidAudio/DownloadUtils.swift
+--- a/Sources/FluidAudio/DownloadUtils.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/DownloadUtils.swift	2026-10-24 22:21:35
+@@ -1,3 +1,4 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ import CoreML
+ import Foundation
+ import OSLog
+@@ -8,7 +9,7 @@
+     private static let logger = AppLogger(category: "DownloadUtils")
+ 
+     /// Shared URLSession with registry and proxy configuration
+-    public static let sharedSession: URLSession = ModelRegistry.configuredSession()
++    public static let sharedSession: URLSession = URLSession(configuration: .ephemeral)
+ 
+     /// Get HuggingFace token from environment if available.
+     /// Supports multiple env vars for compatibility with different HuggingFace tools:
+@@ -16,9 +17,7 @@
+     /// - HUGGING_FACE_HUB_TOKEN: Python huggingface_hub library
+     /// - HUGGINGFACEHUB_API_TOKEN: LangChain and older integrations
+     private static var huggingFaceToken: String? {
+-        ProcessInfo.processInfo.environment["HF_TOKEN"]
+-            ?? ProcessInfo.processInfo.environment["HUGGING_FACE_HUB_TOKEN"]
+-            ?? ProcessInfo.processInfo.environment["HUGGINGFACEHUB_API_TOKEN"]
++        nil
+     }
+ 
+     /// Create a URLRequest with optional auth header and timeout
+@@ -36,7 +35,7 @@
+     /// Use this for API calls that need auth tokens for private repos or higher rate limits
+     public static func fetchWithAuth(from url: URL) async throws -> (Data, URLResponse) {
+         let request = authorizedRequest(url: url)
+-        return try await sharedSession.data(for: request)
++        return try await ProbeOfflineAssets.blockedData()
+     }
+ 
+     /// Validate that response data is JSON, not HTML error page
+@@ -312,7 +311,7 @@
+             let dirURL = try ModelRegistry.apiModels(repo.remotePath, apiPath)
+             let request = authorizedRequest(url: dirURL)
+ 
+-            let (dirData, response) = try await sharedSession.data(for: request)
++            let (dirData, response) = try await ProbeOfflineAssets.blockedData()
+ 
+             if let httpResponse = response as? HTTPURLResponse {
+                 if httpResponse.statusCode == 429 || httpResponse.statusCode == 503 {
+@@ -434,7 +433,7 @@
+                     }
+                 )
+             } else {
+-                let (url, response) = try await sharedSession.download(for: request)
++                let (url, response) = try await ProbeOfflineAssets.blockedDownload()
+                 guard let resp = response as? HTTPURLResponse else {
+                     throw HuggingFaceDownloadError.invalidResponse
+                 }
+@@ -553,7 +552,7 @@
+         )
+         defer { session.finishTasksAndInvalidate() }
+ 
+-        let (tempURL, response) = try await session.download(for: request)
++        let (tempURL, response) = try await ProbeOfflineAssets.blockedDownload()
+ 
+         guard let httpResponse = response as? HTTPURLResponse else {
+             throw HuggingFaceDownloadError.invalidResponse
+@@ -635,7 +634,7 @@
+             let fileURL = try ModelRegistry.resolveModel(repo.remotePath, encodedPath)
+             let request = authorizedRequest(url: fileURL)
+ 
+-            let (tempURL, response) = try await sharedSession.download(for: request)
++            let (tempURL, response) = try await ProbeOfflineAssets.blockedDownload()
+             guard let httpResponse = response as? HTTPURLResponse else {
+                 throw HuggingFaceDownloadError.invalidResponse
+             }
+@@ -678,7 +677,7 @@
+ 
+         for attempt in 1...maxAttempts {
+             do {
+-                let (data, response) = try await sharedSession.data(for: request)
++                let (data, response) = try await ProbeOfflineAssets.blockedData()
+ 
+                 guard let httpResponse = response as? HTTPURLResponse else {
+                     throw HuggingFaceDownloadError.invalidResponse
+diff -ruN a/Sources/FluidAudio/Shared/AssetDownloader.swift b/Sources/FluidAudio/Shared/AssetDownloader.swift
+--- a/Sources/FluidAudio/Shared/AssetDownloader.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/Shared/AssetDownloader.swift	2026-10-24 22:20:59
+@@ -1,3 +1,4 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ import Foundation
+ import OSLog
+ 
+@@ -77,14 +78,14 @@
+ 
+         switch descriptor.transferMode {
+         case .data(let writer):
+-            let (data, response) = try await session.data(from: descriptor.remoteURL)
++            let (data, response) = try await ProbeOfflineAssets.blockedData()
+             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+             guard (200..<300).contains(status) else {
+                 throw Error.invalidResponse(description: descriptor.description, statusCode: status)
+             }
+             try writer(data, descriptor.destinationURL)
+         case .file(let handler):
+-            let (tempURL, response) = try await session.download(from: descriptor.remoteURL)
++            let (tempURL, response) = try await ProbeOfflineAssets.blockedDownload()
+             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+             guard (200..<300).contains(status) else {
+                 throw Error.invalidResponse(description: descriptor.description, statusCode: status)
+@@ -104,7 +105,7 @@
+     ) async throws -> Data {
+         logger.debug("Fetching \(description) from \(remoteURL.absoluteString)")
+ 
+-        let (data, response) = try await session.data(from: remoteURL)
++        let (data, response) = try await ProbeOfflineAssets.blockedData()
+         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+         guard (200..<300).contains(status) else {
+             throw Error.invalidResponse(description: description, statusCode: status)
+diff -ruN a/Sources/FluidAudio/Shared/ProbeOfflineAssets.swift b/Sources/FluidAudio/Shared/ProbeOfflineAssets.swift
+--- a/Sources/FluidAudio/Shared/ProbeOfflineAssets.swift	1969-12-31 19:00:00
++++ b/Sources/FluidAudio/Shared/ProbeOfflineAssets.swift	2026-10-24 22:22:29
+@@ -0,0 +1,56 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
++import Foundation
++
++/// Isolated probe API. Configure exactly once, after manifest verification, before initializing Kokoro.
++/// No global cache, CWD fallback, asset creation, or network transport is permitted.
++public enum ProbeOfflineAssets {
++    private final class Storage: @unchecked Sendable {
++        let lock = NSLock()
++        var root: URL?
++    }
++    private static let storage = Storage()
++    public static func configure(root: URL) throws {
++        guard root.isFileURL else { throw TTSError.processingFailed("Offline root must be a local file URL") }
++        let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
++        var directory: ObjCBool = false
++        guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &directory), directory.boolValue else {
++            throw TTSError.modelNotFound("Offline asset root missing")
++        }
++        storage.lock.lock()
++        defer { storage.lock.unlock() }
++        if let previous = storage.root, previous != canonical {
++            throw TTSError.processingFailed("Offline root cannot change within a process")
++        }
++        storage.root = canonical
++    }
++    public static func rootURL() throws -> URL {
++        storage.lock.lock()
++        defer { storage.lock.unlock() }
++        guard let root = storage.root else { throw TTSError.modelNotFound("Offline asset root not configured") }
++        return root
++    }
++    public static func require(_ relative: String) throws -> URL {
++        guard !relative.hasPrefix("/"), !relative.split(separator: "/").contains("..") else {
++            throw TTSError.processingFailed("Invalid offline asset path")
++        }
++        let root = try rootURL()
++        let file = root.appendingPathComponent(relative).resolvingSymlinksInPath()
++        guard file.path.hasPrefix(root.path + "/"), FileManager.default.fileExists(atPath: file.path) else {
++            throw TTSError.modelNotFound("Missing offline asset: \(relative)")
++        }
++        return file
++    }
++    static func blockedData() async throws -> (Data, URLResponse) {
++        throw TTSError.processingFailed("ALL runtime networking disabled in isolated voice probe")
++    }
++    static func blockedDownload() async throws -> (URL, URLResponse) {
++        throw TTSError.processingFailed("ALL runtime networking disabled in isolated voice probe")
++    }
++}
++
++extension ProbeOfflineAssets {
++    /// Probe-only explicit preload, so a covered phrase still validates both local G2P models.
++    public static func validateG2P() async throws {
++        try await G2PModel.shared.ensureModelsAvailable()
++    }
++}
+diff -ruN a/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/G2PModel.swift b/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/G2PModel.swift
+--- a/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/G2PModel.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/G2PModel.swift	2026-10-24 22:20:59
+@@ -1,3 +1,4 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ import CoreML
+ import Foundation
+ 
+@@ -165,7 +166,7 @@
+     private func loadIfNeeded() throws {
+         if graphemeToId != nil && encoder != nil && decoder != nil { return }
+ 
+-        let kokoroDir = try TtsModels.cacheDirectoryURL().appendingPathComponent("Models/kokoro")
++        let kokoroDir = try ProbeOfflineAssets.rootURL()
+ 
+         // Load g2p_vocab.json from cache directory
+         let vocabURL = kokoroDir.appendingPathComponent(ModelNames.G2P.vocabularyFile)
+diff -ruN a/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/KokoroVocabulary.swift b/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/KokoroVocabulary.swift
+--- a/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/KokoroVocabulary.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/KokoroVocabulary.swift	2026-10-24 22:20:59
+@@ -1,3 +1,4 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ import Foundation
+ import OSLog
+ 
+@@ -23,14 +24,8 @@
+     }
+ 
+     private func loadVocabulary() async throws {
+-        let cacheDir = try TtsModels.cacheDirectoryURL()
+-        let kokoroDir = cacheDir.appendingPathComponent("Models/kokoro")
+-        let vocabURL = kokoroDir.appendingPathComponent("vocab_index.json")
++        let vocabURL = try ProbeOfflineAssets.require("vocab_index.json")
+ 
+-        if !FileManager.default.fileExists(atPath: vocabURL.path) {
+-            logger.info("Vocabulary file not found in cache, downloading...")
+-            try await downloadVocabularyFile(to: cacheDir)
+-        }
+ 
+         let data: Data
+         do {
+@@ -73,24 +68,6 @@
+     }
+ 
+     private func downloadVocabularyFile(to cacheDir: URL) async throws {
+-        let kokoroDir = cacheDir.appendingPathComponent("Models/kokoro")
+-        try FileManager.default.createDirectory(at: kokoroDir, withIntermediateDirectories: true)
+-
+-        let fileName = "vocab_index.json"
+-        let localPath = kokoroDir.appendingPathComponent(fileName)
+-        let remoteURL = try ModelRegistry.resolveModel(Repo.kokoro.remotePath, fileName)
+-
+-        let descriptor = AssetDownloader.Descriptor(
+-            description: fileName,
+-            remoteURL: remoteURL,
+-            destinationURL: localPath
+-        )
+-
+-        do {
+-            _ = try await AssetDownloader.ensure(descriptor, logger: logger)
+-        } catch {
+-            logger.error("Failed to download vocabulary: \(error.localizedDescription)")
+-            throw TTSError.downloadFailed("Failed to obtain Kokoro vocabulary: \(error.localizedDescription)")
+-        }
++        throw TTSError.processingFailed("Runtime vocabulary download disabled")
+     }
+ }
+diff -ruN a/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/LexiconAssetManager.swift b/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/LexiconAssetManager.swift
+--- a/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/LexiconAssetManager.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/LexiconAssetManager.swift	2026-10-24 22:20:59
+@@ -1,18 +1,8 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ import Foundation
+-import OSLog
+ 
+ actor LexiconAssetManager {
+-
+-    private let logger = AppLogger(subsystem: "com.fluidaudio.tts", category: "LexiconAssetManager")
+-    private func ensureLexiconCache() async {
+-        do {
+-            try await TtsResourceDownloader.ensureLexiconFile(named: "us_lexicon_cache.json")
+-        } catch {
+-            logger.warning("Failed to download lexicon cache: \(error.localizedDescription)")
+-        }
+-    }
+-
+     func ensureCoreAssets() async throws {
+-        await ensureLexiconCache()
++        _ = try ProbeOfflineAssets.require("us_lexicon_cache.json")
+     }
+ }
+diff -ruN a/Sources/FluidAudio/TTS/Kokoro/Assets/TtsResourceDownloader.swift b/Sources/FluidAudio/TTS/Kokoro/Assets/TtsResourceDownloader.swift
+--- a/Sources/FluidAudio/TTS/Kokoro/Assets/TtsResourceDownloader.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/TTS/Kokoro/Assets/TtsResourceDownloader.swift	2026-10-24 22:20:59
+@@ -1,76 +1,16 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ import Foundation
+ 
+-/// Kokoro TTS resource downloader (lexicons, voice embeddings)
++/// Offline-only replacement for the pinned SDK's cache/download helper.
+ public enum TtsResourceDownloader {
+-
+-    private static let logger = AppLogger(category: "TtsResourceDownloader")
+-
+-    /// Download a voice embedding JSON file from HuggingFace
+     public static func downloadVoiceEmbedding(voice: String) async throws -> Data {
+-        let url = try ModelRegistry.resolveModel(Repo.kokoro.remotePath, "voices/\(voice).json")
+-
+-        do {
+-            let data = try await AssetDownloader.fetchData(
+-                from: url,
+-                description: "\(voice) voice embedding JSON",
+-                logger: logger
+-            )
+-            logger.info("Downloaded voice embedding JSON for \(voice)")
+-            return data
+-        } catch {
+-            throw TTSError.modelNotFound("Voice embedding JSON unavailable for \(voice): \(error.localizedDescription)")
+-        }
++        throw TTSError.processingFailed("Runtime voice download disabled")
+     }
+-
+-    /// Ensure a voice embedding is available in cache
+     public static func ensureVoiceEmbedding(voice: String = TtsConstants.recommendedVoice) async throws {
+-        let cacheDir = try TtsModels.cacheDirectoryURL()
+-        let voicesDir = cacheDir.appendingPathComponent("Models/kokoro/voices")
+-
+-        // Create directory if needed
+-        try FileManager.default.createDirectory(at: voicesDir, withIntermediateDirectories: true)
+-
+-        let jsonFile = "\(voice).json"
+-        let jsonURL = voicesDir.appendingPathComponent(jsonFile)
+-
+-        // Skip if already cached
+-        if FileManager.default.fileExists(atPath: jsonURL.path) {
+-            return
+-        }
+-
+-        // Try to download
+-        let data = try await downloadVoiceEmbedding(voice: voice)
+-        try data.write(to: jsonURL, options: [.atomic])
+-        logger.info("Voice embedding cached: \(voice)")
++        _ = try ProbeOfflineAssets.require("voices/\(voice).json")
+     }
+-
+-    /// Ensure a Kokoro lexicon file exists locally (e.g. `us_gold.json`).
+     @discardableResult
+     public static func ensureLexiconFile(named filename: String) async throws -> URL {
+-        let cacheDir = try TtsModels.cacheDirectoryURL()
+-        let kokoroDir = cacheDir.appendingPathComponent("Models/kokoro")
+-        try FileManager.default.createDirectory(at: kokoroDir, withIntermediateDirectories: true)
+-
+-        let localURL = kokoroDir.appendingPathComponent(filename)
+-        if FileManager.default.fileExists(atPath: localURL.path) {
+-            return localURL
+-        }
+-
+-        let remoteURL = try ModelRegistry.resolveModel(Repo.kokoro.remotePath, filename)
+-
+-        do {
+-            let descriptor = AssetDownloader.Descriptor(
+-                description: filename,
+-                remoteURL: remoteURL,
+-                destinationURL: localURL
+-            )
+-            return try await AssetDownloader.ensure(
+-                descriptor,
+-                logger: logger
+-            )
+-        } catch {
+-            throw TTSError.modelNotFound("Failed to download \(filename): \(error.localizedDescription)")
+-        }
++        try ProbeOfflineAssets.require(filename)
+     }
+-
+ }
+diff -ruN a/Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+ModelUtils.swift b/Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+ModelUtils.swift
+--- a/Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+ModelUtils.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+ModelUtils.swift	2026-10-24 22:20:59
+@@ -1,3 +1,4 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ @preconcurrency import CoreML
+ import Foundation
+ 
+@@ -17,8 +18,7 @@
+     }
+ 
+     public static func loadSimplePhonemeDictionary() async throws {
+-        let cacheDir = try TtsModels.cacheDirectoryURL()
+-        let kokoroDir = cacheDir.appendingPathComponent("Models/kokoro")
++        let kokoroDir = try ProbeOfflineAssets.rootURL()
+         let vocabulary = try await KokoroVocabulary.shared.getVocabulary()
+         let allowed = Set(vocabulary.keys)
+         try await lexiconCache.ensureLoaded(kokoroDirectory: kokoroDir, allowedTokens: allowed)
+@@ -115,7 +115,7 @@
+     }
+ 
+     static func modelBundleURL(for variant: ModelNames.TTS.Variant) throws -> URL {
+-        let base = try TtsModels.cacheDirectoryURL().appendingPathComponent("Models/kokoro")
++        let base = try ProbeOfflineAssets.rootURL()
+         return base.appendingPathComponent(variant.fileName)
+     }
+ 
+diff -ruN a/Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+VoiceEmbeddings.swift b/Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+VoiceEmbeddings.swift
+--- a/Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+VoiceEmbeddings.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+VoiceEmbeddings.swift	2026-10-24 22:20:59
+@@ -1,3 +1,4 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ import Accelerate
+ import CoreML
+ import Foundation
+@@ -25,8 +26,6 @@
+         voicesDir: URL
+     ) -> [URL] {
+         [
+-            cwd.appendingPathComponent("voices/\(voiceID).json"),
+-            cwd.appendingPathComponent("\(voiceID).json"),
+             voicesDir.appendingPathComponent("\(voiceID).json"),
+         ]
+     }
+@@ -77,9 +76,7 @@
+         phonemeCount: Int,
+         expectedDimension: Int
+     ) throws -> VoiceEmbeddingData {
+-        let cacheDir = try TtsModels.cacheDirectoryURL()
+-        let voicesDir = cacheDir.appendingPathComponent("Models/kokoro/voices")
+-        try FileManager.default.createDirectory(at: voicesDir, withIntermediateDirectories: true)
++        let voicesDir = try ProbeOfflineAssets.rootURL().appendingPathComponent("voices")
+         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+ 
+         func resolveVector(for voiceID: String) throws -> ([Float]?, URL, Bool) {
+diff -ruN a/Sources/FluidAudio/TTS/TtsModels.swift b/Sources/FluidAudio/TTS/TtsModels.swift
+--- a/Sources/FluidAudio/TTS/TtsModels.swift	2026-04-23 10:59:07
++++ b/Sources/FluidAudio/TTS/TtsModels.swift	2026-10-24 22:20:59
+@@ -1,3 +1,4 @@
++// MODIFIED 2026-10-25 for the isolated FixList voice probe: required local assets; runtime networking disabled.
+ import Accelerate
+ @preconcurrency import CoreML
+ import Foundation
+@@ -40,75 +41,11 @@
+         computeUnits: MLComputeUnits = .all,
+         progressHandler: DownloadUtils.ProgressHandler? = nil
+     ) async throws -> TtsModels {
+-        let targetDir = try directory ?? getCacheDirectory()
+-        // Pass Models subdirectory so models end up in ~/.cache/fluidaudio/Models/kokoro/
+-        let modelsDirectory = targetDir.appendingPathComponent(TtsConstants.defaultModelsSubdirectory)
+-        let targetVariants: [ModelNames.TTS.Variant] = {
+-            if let requested = requestedVariants, !requested.isEmpty {
+-                return requested.sorted { $0.fileName < $1.fileName }
+-            }
+-            return ModelNames.TTS.Variant.allCases
+-        }()
+-        let modelNames = targetVariants.map { $0.fileName }
+-        // Pass single variant name so only the requested model is downloaded
+-        let variantFilter: String? = targetVariants.count == 1 ? targetVariants[0].fileName : nil
+-        let dict = try await DownloadUtils.loadModels(
+-            .kokoro,
+-            modelNames: modelNames,
+-            directory: modelsDirectory,
+-            computeUnits: computeUnits,
+-            variant: variantFilter,
+-            progressHandler: progressHandler
+-        )
+-        var loaded: [ModelNames.TTS.Variant: MLModel] = [:]
+-        var warmUpDurations: [ModelNames.TTS.Variant: TimeInterval] = [:]
+-
+-        for variant in targetVariants {
+-            let name = variant.fileName
+-            guard let model = dict[name] else {
+-                throw TTSError.modelNotFound(name)
+-            }
+-            loaded[variant] = model
+-        }
+-
+-        for (variant, model) in loaded {
+-            let warmUpStart = Date()
+-            await warmUpModel(model, variant: variant)
+-            warmUpDurations[variant] = Date().timeIntervalSince(warmUpStart)
+-        }
+-
+-        for variant in targetVariants {
+-            if let duration = warmUpDurations[variant] {
+-                let formatted = String(format: "%.2f", duration)
+-                logger.info("Warm-up completed for \(variantDescription(variant)) in \(formatted)s")
+-            }
+-        }
+-
+-        return TtsModels(models: loaded)
++        throw TTSError.processingFailed("Runtime model download disabled in offline probe; provide TtsModels(models:)")
+     }
+ 
+     private static func getCacheDirectory() throws -> URL {
+-        let baseDirectory: URL
+-        #if os(macOS)
+-        baseDirectory = FileManager.default.homeDirectoryForCurrentUser
+-            .appendingPathComponent(".cache")
+-        #else
+-        guard let first = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+-            throw TTSError.processingFailed("Failed to locate caches directory")
+-        }
+-        baseDirectory = first
+-        #endif
+-
+-        let cacheDirectory = baseDirectory.appendingPathComponent("fluidaudio")
+-
+-        if !FileManager.default.fileExists(atPath: cacheDirectory.path) {
+-            try FileManager.default.createDirectory(
+-                at: cacheDirectory,
+-                withIntermediateDirectories: true
+-            )
+-        }
+-
+-        return cacheDirectory
++        throw TTSError.processingFailed("Global cache disabled in offline probe; configure ProbeOfflineAssets")
+     }
+ 
+     public static func cacheDirectoryURL() throws -> URL {

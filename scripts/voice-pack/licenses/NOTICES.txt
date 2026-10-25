@@ -1,0 +1,17 @@
+FixList English assistant prompt voice pack
+
+The WAVs are project-generated audio assets made from the authored public English prompts in src/lib/assistant-copy.ts. Each file is synthesized as one complete utterance. They are not redistributed model weights. Upstream Apache licenses do not, by themselves, establish that every generated audio output is Apache-licensed, public domain, or otherwise open source. No private/personal voice cloning is involved.
+
+Public voice: af_heart, Kokoro-82M by hexgrad, Core ML conversion by FluidInference. Asset repository FluidInference/kokoro-82m-coreml at e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105; selected v1 kokoro_21_15s.mlmodelc plus English G2P, vocabulary, lexicon and af_heart. The pinned conversion model card declares Apache-2.0 and credits hexgrad. Upstream original model revision used in that conversion is UNVERIFIED. The pinned conversion bytes and every SHA/size are recorded in scripts/voice-pack/model-assets.json.
+
+Generator SDK: FluidInference/FluidAudio v0.14.0, b10bdcb51dcfeedb8001353b4ba363da1a616d6d, Apache-2.0. Used only on the generation host; no FluidAudio SDK or model weights are linked or bundled into FixList. The exact local offline-loader and disabled-transport changes are in scripts/voice-pack/offline-sdk.patch with before/after SHA-256 in sdk-patch-manifest.json. Each patched file carries a modification notice. The SDK archive SHA is pinned; its original 410 files were verified against the immutable Git tree during the initial probe. All runtime download transports in this local SDK copy are disabled.
+
+English G2P: PeterReid/graphemes_to_phonemes_en_us, identified by the pinned SDK; its archived model card declares Apache-2.0. Original checkpoint/conversion revision for the Core ML G2P files is UNVERIFIED. The model card archive and license-reference pins are retained in scripts/voice-pack/licenses.
+
+Misaki: hexgrad/misaki, Apache-2.0. The upstream license reference is archived at fba1236595f2d2bf21d414ba6e57d25256afada3. This is license evidence only; the Misaki revision generating us_lexicon_cache.json is UNVERIFIED and must not be inferred from this reference.
+
+The complete historical SDK also contains FastCluster (BSD 2-Clause, copyright Daniel Müllner and Google) and VBx-derived code (Apache-2.0). Their notices are included in LICENSE.txt because the host generator compiles the complete historical SDK.
+
+LICENSE.txt retains the upstream Apache texts and FastCluster copyright/redistribution notice. Immutable license-reference URLs, model-card Git blob IDs, and hashes are in scripts/voice-pack/licenses/license-manifest.json and the archived metadata. Upstream HF Kokoro/G2P repos had no standalone LICENSE at their archived license-reference revisions; their included Apache license texts are reproduced with the attributions above.
+
+Generation: no concatenation, trimming, time stretching, or word timestamps; fixed gain 0.70 on every PCM16 sample. The manifest records hashes, waveform metrics and provenance. Short duration and quiet raw endpoints are mechanical checks, not proof of pronunciation, naturalness, or semantic completeness. Parent listening and physical-device acceptance remain required.

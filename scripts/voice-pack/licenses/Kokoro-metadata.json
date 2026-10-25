@@ -1,0 +1,436 @@
+{
+  "model": {
+    "_id": "676ca1388118866906abbd7c",
+    "id": "hexgrad/Kokoro-82M",
+    "private": false,
+    "pipeline_tag": "text-to-speech",
+    "tags": [
+      "text-to-speech",
+      "en",
+      "arxiv:2306.07691",
+      "arxiv:2203.02395",
+      "base_model:yl4579/StyleTTS2-LJSpeech",
+      "base_model:finetune:yl4579/StyleTTS2-LJSpeech",
+      "doi:10.57967/hf/4329",
+      "license:apache-2.0",
+      "region:us"
+    ],
+    "downloads": 10289544,
+    "likes": 7270,
+    "modelId": "hexgrad/Kokoro-82M",
+    "author": "hexgrad",
+    "sha": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+    "lastModified": "2025-04-10T18:12:48.000Z",
+    "gated": false,
+    "disabled": false,
+    "model-index": null,
+    "config": {},
+    "cardData": {
+      "license": "apache-2.0",
+      "language": [
+        "en"
+      ],
+      "base_model": [
+        "yl4579/StyleTTS2-LJSpeech"
+      ],
+      "pipeline_tag": "text-to-speech"
+    },
+    "siblings": [
+      {
+        "rfilename": ".gitattributes"
+      },
+      {
+        "rfilename": "DONATE.md"
+      },
+      {
+        "rfilename": "EVAL.md"
+      },
+      {
+        "rfilename": "README.md"
+      },
+      {
+        "rfilename": "SAMPLES.md"
+      },
+      {
+        "rfilename": "VOICES.md"
+      },
+      {
+        "rfilename": "config.json"
+      },
+      {
+        "rfilename": "eval/ArtificialAnalysis-2025-02-26.jpeg"
+      },
+      {
+        "rfilename": "eval/TTS_Arena-2025-02-26.jpeg"
+      },
+      {
+        "rfilename": "eval/TTS_Spaces_Arena-2025-02-26.jpeg"
+      },
+      {
+        "rfilename": "kokoro-v1_0.pth"
+      },
+      {
+        "rfilename": "samples/HEARME.wav"
+      },
+      {
+        "rfilename": "samples/af_heart_0.wav"
+      },
+      {
+        "rfilename": "samples/af_heart_1.wav"
+      },
+      {
+        "rfilename": "samples/af_heart_2.wav"
+      },
+      {
+        "rfilename": "samples/af_heart_3.wav"
+      },
+      {
+        "rfilename": "samples/af_heart_4.wav"
+      },
+      {
+        "rfilename": "samples/af_heart_5.wav"
+      },
+      {
+        "rfilename": "voices/af_alloy.pt"
+      },
+      {
+        "rfilename": "voices/af_aoede.pt"
+      },
+      {
+        "rfilename": "voices/af_bella.pt"
+      },
+      {
+        "rfilename": "voices/af_heart.pt"
+      },
+      {
+        "rfilename": "voices/af_jessica.pt"
+      },
+      {
+        "rfilename": "voices/af_kore.pt"
+      },
+      {
+        "rfilename": "voices/af_nicole.pt"
+      },
+      {
+        "rfilename": "voices/af_nova.pt"
+      },
+      {
+        "rfilename": "voices/af_river.pt"
+      },
+      {
+        "rfilename": "voices/af_sarah.pt"
+      },
+      {
+        "rfilename": "voices/af_sky.pt"
+      },
+      {
+        "rfilename": "voices/am_adam.pt"
+      },
+      {
+        "rfilename": "voices/am_echo.pt"
+      },
+      {
+        "rfilename": "voices/am_eric.pt"
+      },
+      {
+        "rfilename": "voices/am_fenrir.pt"
+      },
+      {
+        "rfilename": "voices/am_liam.pt"
+      },
+      {
+        "rfilename": "voices/am_michael.pt"
+      },
+      {
+        "rfilename": "voices/am_onyx.pt"
+      },
+      {
+        "rfilename": "voices/am_puck.pt"
+      },
+      {
+        "rfilename": "voices/am_santa.pt"
+      },
+      {
+        "rfilename": "voices/bf_alice.pt"
+      },
+      {
+        "rfilename": "voices/bf_emma.pt"
+      },
+      {
+        "rfilename": "voices/bf_isabella.pt"
+      },
+      {
+        "rfilename": "voices/bf_lily.pt"
+      },
+      {
+        "rfilename": "voices/bm_daniel.pt"
+      },
+      {
+        "rfilename": "voices/bm_fable.pt"
+      },
+      {
+        "rfilename": "voices/bm_george.pt"
+      },
+      {
+        "rfilename": "voices/bm_lewis.pt"
+      },
+      {
+        "rfilename": "voices/ef_dora.pt"
+      },
+      {
+        "rfilename": "voices/em_alex.pt"
+      },
+      {
+        "rfilename": "voices/em_santa.pt"
+      },
+      {
+        "rfilename": "voices/ff_siwis.pt"
+      },
+      {
+        "rfilename": "voices/hf_alpha.pt"
+      },
+      {
+        "rfilename": "voices/hf_beta.pt"
+      },
+      {
+        "rfilename": "voices/hm_omega.pt"
+      },
+      {
+        "rfilename": "voices/hm_psi.pt"
+      },
+      {
+        "rfilename": "voices/if_sara.pt"
+      },
+      {
+        "rfilename": "voices/im_nicola.pt"
+      },
+      {
+        "rfilename": "voices/jf_alpha.pt"
+      },
+      {
+        "rfilename": "voices/jf_gongitsune.pt"
+      },
+      {
+        "rfilename": "voices/jf_nezumi.pt"
+      },
+      {
+        "rfilename": "voices/jf_tebukuro.pt"
+      },
+      {
+        "rfilename": "voices/jm_kumo.pt"
+      },
+      {
+        "rfilename": "voices/pf_dora.pt"
+      },
+      {
+        "rfilename": "voices/pm_alex.pt"
+      },
+      {
+        "rfilename": "voices/pm_santa.pt"
+      },
+      {
+        "rfilename": "voices/zf_xiaobei.pt"
+      },
+      {
+        "rfilename": "voices/zf_xiaoni.pt"
+      },
+      {
+        "rfilename": "voices/zf_xiaoxiao.pt"
+      },
+      {
+        "rfilename": "voices/zf_xiaoyi.pt"
+      },
+      {
+        "rfilename": "voices/zm_yunjian.pt"
+      },
+      {
+        "rfilename": "voices/zm_yunxi.pt"
+      },
+      {
+        "rfilename": "voices/zm_yunxia.pt"
+      },
+      {
+        "rfilename": "voices/zm_yunyang.pt"
+      }
+    ],
+    "spaces": [
+      "hexgrad/Kokoro-TTS",
+      "hf-audio/open_tts_leaderboard",
+      "embedl/hfviewer",
+      "sahilmahendrakar/paradee",
+      "Steveeeeeeen/SpeechLLM-Playbook",
+      "wmr/tts_PTBR",
+      "mrfakename/kokoro-cloning",
+      "kywpcm/SpeechLLM-Playbook",
+      "Pendrokar/TTS-Spaces-Arena",
+      "remsky/Kokoro-TTS-Zero",
+      "ravediamond/baby-reachy-mini-companion",
+      "m-ric/open-notebooklm",
+      "fdaudens/podcast-jobs",
+      "Inferless/Open-Source-TTS-Gallary",
+      "Nymbo/Tools",
+      "TTS-AGI/TTS-Arena",
+      "aiqcamp/MCP-kokoro",
+      "mozilla-ai/document-to-podcast",
+      "build-small-hackathon/lolaby",
+      "NeuralFalcon/KOKORO-TTS-1.0",
+      "NeuralFalcon/Kokoro-TTS-Subtitle",
+      "Incorporo-user/kokoro-voice-creator",
+      "NeuralFalcon/Kokoro-TTS",
+      "build-small-hackathon/professor-pip",
+      "KwabsHug/GameConfigIdea",
+      "ginipick/DeepSeekR1-LIVE",
+      "build-small-hackathon/chhaya",
+      "build-small-hackathon/TinyNarrator",
+      "build-small-hackathon/ux-crime-scene",
+      "RobinsAIWorld/Kokoro-TTS-cpu",
+      "sagar007/DeepSeekR1_Search",
+      "oddadmix/Kokoro-7M-Distill-Demo",
+      "Wismut/Kokoro_TTS_Compare",
+      "remsky/FastKoko",
+      "hysts-mcp/Kokoro-TTS",
+      "beyoru/clone-tools",
+      "Hassan-16/TTS",
+      "nam194/kokorotts-hf-cpu",
+      "ysharma/Kokoro-TTS-mcp-test",
+      "nazdridoy/inferoxy-hub",
+      "leonelhs/kokoro-tts-spanish",
+      "leonelhs/kokoro-tts-hindi",
+      "MCP-1st-Birthday/science-storyteller",
+      "pollen-robotics/reachy-mini-chatbox",
+      "remsky/kokoro-inno-clone-tuner-zero",
+      "emanforhelp/model-pulse",
+      "itbetyar/5-image-to-story",
+      "Pendrokar/Kokoro-TTS",
+      "Chunte/Top-Downloaded-Trending-Models",
+      "build-small-hackathon/lingo-shadow-daily-language-practice",
+      "hugging-apps/kokoro-voice-cloning",
+      "RORONovaLuffy/hexgrad-Kokoro-82M",
+      "shukdevdatta123/Kokoro-TTS",
+      "aiqtech/Open-Source-TTS-Gallary",
+      "leonelhs/kokoro-tts-italian",
+      "marcelo1126/InfiniteTalk",
+      "elielsilva/tts_PTBR",
+      "build-small-hackathon/forgotten-lily",
+      "build-small-hackathon/feelin",
+      "build-small-hackathon/6ixPulse",
+      "buumba641/ZamVoice",
+      "remsky/kokoro-clone-tune-generator",
+      "ngxson/kokoro-podcast-backend",
+      "sdafd/Kokoro-TTS",
+      "Ogo123/Kokoro-TTS",
+      "CultriX/MCP-kokoro",
+      "kemuriririn/Voice-Clone-Router",
+      "RAHULJUNEJA33/Text2Voice-TTS",
+      "JymNils/Kokoro-TTSS",
+      "DopeyFace/Kokoro-TTS",
+      "slaterpeter/MCP-kokoro-pt",
+      "codewithjarair/Kokoro_TTS",
+      "YashChowdhary/Text_To_Speech",
+      "saumilyajj/driftcall",
+      "build-small-hackathon/openher",
+      "build-small-hackathon/NEXUS_Visual_Weaver",
+      "Mowdep/kokoro-french",
+      "ArtFix0/speech-to-speech-dashboard",
+      "Jamfreak333/nyra-talking-character",
+      "vrishv/graphics-studio",
+      "MosaHosseini/Image2story",
+      "tgu6/hexgrad-Kokoro-82M",
+      "jkeisling/smoltts_v0",
+      "BasToTheMax/FREE-KokoroTTS",
+      "sdafd/KOKORO-TTS-1.0",
+      "Libra8ed-Tech/Kokoro-TTS",
+      "SlouchyBuffalo/open-notebooklm",
+      "Agents-MCP-Hackathon/HiredGPT-Duel",
+      "Nymbo/TTS-Hub",
+      "Fancellu/Kokoro-TTS-Zero-CPU",
+      "amurienne/sambot",
+      "dcmyyds/hexgrad-Kokoro-82M",
+      "blio/Kokoro-TTS",
+      "Zulqarnainhub/Kokoro-TTS",
+      "rahul7star/infinitetalk",
+      "mrfakename/Kokoro-API-3",
+      "RobinsAIWorld/hexgrad-Kokoro-82M",
+      "teamup-tech/Kokoro",
+      "SixpennyKate/WalkingBook",
+      "willyd4776/lou-fusch-ultimate-demo-2"
+    ],
+    "createdAt": "2024-12-26T00:20:08.000Z",
+    "inference": "warm",
+    "usedStorage": 1234555949
+  },
+  "tree": [
+    {
+      "type": "directory",
+      "oid": "b2e65df8cbc39e5fa11ee92a313f03f432cf7576",
+      "size": 0,
+      "path": "eval"
+    },
+    {
+      "type": "directory",
+      "oid": "023e480044cc505599ebb24f37bb7dceeda3843d",
+      "size": 0,
+      "path": "samples"
+    },
+    {
+      "type": "directory",
+      "oid": "1861ef3fd405d6f50f35edc17e879d96f4616512",
+      "size": 0,
+      "path": "voices"
+    },
+    {
+      "type": "file",
+      "oid": "5e51cb80d60d400f8a6930b96feffb99f97fa5d5",
+      "size": 1913,
+      "path": ".gitattributes"
+    },
+    {
+      "type": "file",
+      "oid": "cd202d28b065e6d9eb396ca0c307d01520e1e296",
+      "size": 2562,
+      "path": "DONATE.md"
+    },
+    {
+      "type": "file",
+      "oid": "484ac8dcd971465258007528fb8bc4a99cf98633",
+      "size": 534,
+      "path": "EVAL.md"
+    },
+    {
+      "type": "file",
+      "oid": "d6dc124205ad567631d14cd8700f1af77a861c3f",
+      "size": 6348,
+      "path": "README.md"
+    },
+    {
+      "type": "file",
+      "oid": "d970051855ba0d8a16064c718af5dc29bcdd961a",
+      "size": 5956,
+      "path": "SAMPLES.md"
+    },
+    {
+      "type": "file",
+      "oid": "ed78a806ffa121525449a848624600eae34037c7",
+      "size": 7625,
+      "path": "VOICES.md"
+    },
+    {
+      "type": "file",
+      "oid": "14a726edd3718279eac426630879ff743955b16a",
+      "size": 2351,
+      "path": "config.json"
+    },
+    {
+      "type": "file",
+      "oid": "15769c415594dcb424579ba3dfae3085578aac4e",
+      "size": 327212226,
+      "lfs": {
+        "oid": "496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4",
+        "size": 327212226,
+        "pointerSize": 134
+      },
+      "xetHash": "0c0ac263f5ae91312df578d1b6adfb4c6dfda401cc3696ba97042f835619c52f",
+      "path": "kokoro-v1_0.pth"
+    }
+  ]
+}

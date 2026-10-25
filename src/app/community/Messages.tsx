@@ -1,22 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
+import { familyGrant } from '../../community/family';
 import { sendMessage } from '../../community';
 import type { Account, CommunityState, Job, Language } from '../../community/types';
 import { assistant } from '../../lib/assistant';
 import { localeFor, useT } from '../../i18n';
 import type { CommunityController } from './useCommunity';
 import { Button, Heading } from './UI';
-export function Messages({ state, account, job, run }: {
+export function Messages({ state, account, job, run, isCurrent = () => true, familyRevision }: {
     state: CommunityState;
     account: Account;
     job: Job;
     run: CommunityController['run'];
+    isCurrent?(): boolean;
+    familyRevision?: number;
 }) {
     const t = useT();
     const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), alive = useRef(true);
     useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-    async function send() { if (!text.trim() || busy)
+    const authorization = useRef(isCurrent);
+    authorization.current = isCurrent;
+    async function send() { if (!text.trim() || busy || !alive.current || !authorization.current())
         return; const words = text.trim(); setBusy(true); setError(''); try {
-        const targetIds = [job.elderId, job.volunteerId, ...state.families.filter((f) => f.elderIds.includes(job.elderId)).map((f) => f.accountId)];
+        const targetIds = [job.elderId, job.volunteerId, ...state.families.filter(f => familyGrant(state, f.accountId, job.elderId)?.scopes.includes('messages')).map(f => f.accountId)];
         const languages = [...new Set(state.accounts.filter((a) => targetIds.includes(a.id) && a.language !== account.language).map((a) => a.language))];
         const translations: Partial<Record<Language, string>> = {};
         await Promise.all(languages.map(async (to) => { try {
@@ -25,9 +30,9 @@ export function Messages({ state, account, job, run }: {
                 translations[to] = translated;
         }
         catch { /* Send readable original if translation is unavailable. */ } }));
-        if (!alive.current)
+        if (!alive.current || !authorization.current())
             return;
-        const r = run((s) => sendMessage(s, { jobId: job.id, fromId: account.id, text: words, language: account.language, translations }, new Date().toISOString()));
+        const r = run((s) => sendMessage(s, { jobId: job.id, fromId: account.id, text: words, language: account.language, translations, ...(familyRevision === undefined ? {} : { familyRevision }) }, new Date().toISOString()));
         if (r.ok)
             setText('');
     }

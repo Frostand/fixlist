@@ -58,7 +58,7 @@ export function createSeedState(now: string): CommunityState {
       { accountId: 'elder-wei', needs: ['Needs support getting into the bath', 'Lives alone'], addressHint: 'River Birch Ln area (fictional)', familyIds: [] },
       { accountId: 'elder-harold', needs: ['Has arthritis in his hands', 'Needs help with lifting and yard work'], addressHint: 'Pine Hollow Way area (fictional)', familyIds: [] },
       { accountId: NEW_ELDER_DEMO_ID, needs: [], addressHint: '', familyIds: [] },
-    ], volunteers, families: [{ accountId: 'family-alex', elderIds: ['elder-margaret'] }], jobs: [], messages: [] };
+    ], volunteers, families: [{ accountId: 'family-alex', elderIds: ['elder-margaret'] }], jobs: [], messages: [], familyHistory: { grants: [{ familyId: 'family-alex', elderId: 'elder-margaret', revision: 1, scopes: ['requests', 'capture', 'messages', 'profile'], approvedById: 'elder-margaret', approvedAt: at(-120), revokedAt: null, revokedById: null, origin: 'fictional-demo' }], legacyConfirmations: [] } };
   // These bilingual demo drafts are hand-authored, not evidence of a model or rules engine's output quality.
   const makeJob = (draft: SeedDraft): Job => {
     const { id, elderId, originalText, days, analysis } = draft;

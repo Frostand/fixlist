@@ -1,0 +1,1 @@
+export function verifyVoicePack(options?: { root?: string; packDir?: string; nativeSourcePath?: string; checkRecipe?: boolean }): Promise<{ clips: number; totalBytes: number; totalWavBytes: number; longestSeconds: number; inventorySHA256: string }>;

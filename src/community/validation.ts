@@ -1,6 +1,6 @@
 import { isLanguage } from '../domain/roles';
 import { SKILLS, TASK_CATEGORIES, TOOLS } from './types';
-import type { Account, AvailabilitySlot, ElderProfile, FamilyLink, Job, JobAnalysis, ScanEvidence, VolunteerProfile } from './types';
+import type { Account, AvailabilitySlot, ElderProfile, ElderPreferences, FamilyLink, Job, JobAnalysis, ScanEvidence, VolunteerProfile } from './types';
 
 export type Shape = Record<string, unknown>;
 export function shape(value: unknown, required: readonly string[], optional: readonly string[] = []): value is Shape {
@@ -40,8 +40,12 @@ export function account(v: unknown): v is Account {
     && text(v.area, 160) && shape(v.location, ['lat', 'lng']) && finite(v.location.lat, -90, 90) && finite(v.location.lng, -180, 180) && iso(v.createdAt);
 }
 export function elder(v: unknown): v is ElderProfile {
-  return shape(v, ['accountId', 'needs', 'addressHint', 'familyIds']) && id(v.accountId)
-    && list(v.needs, (n): n is string => text(n, 200), 30) && text(v.addressHint, 240, true) && ids(v.familyIds);
+  return shape(v, ['accountId', 'needs', 'addressHint', 'familyIds'], ['visitInstructions', 'preferences']) && id(v.accountId)
+    && list(v.needs, (n): n is string => text(n, 200), 30) && text(v.addressHint, 240, true) && ids(v.familyIds)
+    && (v.visitInstructions === undefined || text(v.visitInstructions, 1000, true)) && (v.preferences === undefined || elderPreferences(v.preferences));
+}
+export function elderPreferences(v: unknown): v is ElderPreferences {
+  return shape(v, ['contact', 'visitTimes', 'notes']) && oneOf(v.contact, ['messages', 'ask-first']) && slots(v.visitTimes) && text(v.notes, 1000, true);
 }
 export function volunteer(v: unknown): v is VolunteerProfile {
   return shape(v, ['accountId', 'skills', 'tools', 'availability', 'maxMiles', 'bio', 'badges'], ['school']) && id(v.accountId)
@@ -70,8 +74,8 @@ export function job(v: unknown): v is Job {
     && analysis(v.analysis) && list(v.evidence, evidence, 30) && slots(v.preferredSlots)
     && (v.repeatEveryDays === null || (finite(v.repeatEveryDays, 1, 365) && Number.isInteger(v.repeatEveryDays)))
     && oneOf(v.status, ['open', 'accepted', 'on-the-way', 'arrived', 'reported-done', 'completed', 'cancelled']) && (v.volunteerId === null || id(v.volunteerId))
-    && (v.scheduledFor === null || iso(v.scheduledFor)) && list(v.timeline, (e): e is Job['timeline'][number] => shape(e, ['at', 'actorId', 'type'], ['note'])
-      && iso(e.at) && id(e.actorId) && oneOf(e.type, ['posted', 'accepted', 'on-the-way', 'arrived', 'reported-done', 'confirmed', 'rated', 'cancelled'])
+    && (v.scheduledFor === null || iso(v.scheduledFor)) && list(v.timeline, (e): e is Job['timeline'][number] => shape(e, ['at', 'actorId', 'type'], ['note', 'familyGrantRevision'])
+      && (e.familyGrantRevision === undefined || Number.isSafeInteger(e.familyGrantRevision) && (e.familyGrantRevision as number) > 0) && iso(e.at) && id(e.actorId) && oneOf(e.type, ['posted', 'accepted', 'on-the-way', 'arrived', 'reported-done', 'confirmed', 'rated', 'cancelled'])
       && (!Object.hasOwn(e, 'note') || text(e.note, 2000, true)), 10000) && v.timeline.length > 0
     && (v.rating === null || (shape(v.rating, ['stars', 'byId', 'at'], ['note']) && finite(v.rating.stars, 1, 5) && Number.isInteger(v.rating.stars) && id(v.rating.byId)
       && iso(v.rating.at) && (!Object.hasOwn(v.rating, 'note') || text(v.rating.note, 2000, true))))

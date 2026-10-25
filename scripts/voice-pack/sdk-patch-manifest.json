@@ -1,0 +1,56 @@
+{
+  "sdkRevision": "b10bdcb51dcfeedb8001353b4ba363da1a616d6d",
+  "archiveSHA256": "1375169865ee60fc44b5aa9e156543194c2fb8d8941349624a6693066454833a",
+  "changes": [
+    {
+      "path": "Sources/FluidAudio/DownloadUtils.swift",
+      "beforeSHA256": "e005c54cfe7ee42ce8de9cbd6907b8d3440eae1d9410dab0e660ee20824fc229",
+      "afterSHA256": "fc4182a29441aaeb69dbb96864a923f14283062ecdf8702f198d6b4ea062df86"
+    },
+    {
+      "path": "Sources/FluidAudio/Shared/AssetDownloader.swift",
+      "beforeSHA256": "eee179217253ded1984aa489685981315f4f4f2fea073b9f6705484f9d667f09",
+      "afterSHA256": "e11bb85ff6fed58d453a557092aa1d211821ae63a900fea3689645d6df369eda"
+    },
+    {
+      "path": "Sources/FluidAudio/Shared/ProbeOfflineAssets.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "1373d9ced0120b0c0e18d90c67e28dcdba0bf0b803d6853cbb210474d9a6622d"
+    },
+    {
+      "path": "Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/G2PModel.swift",
+      "beforeSHA256": "3327399b22f074a77ef9f9c700a3ceceb4f3d10b892b0efc545513539cb1d10a",
+      "afterSHA256": "9fbd837b31a9c054fb905bfd8eb8d4d6a93ce5f168a3e8aa3b93bc59a7a4a72a"
+    },
+    {
+      "path": "Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/KokoroVocabulary.swift",
+      "beforeSHA256": "00299b374803f0d73dc0d8930fc0c6077d75243f84fc44a4b0c07014689d676f",
+      "afterSHA256": "131d887fc35eb722570c002174e18f64576d2ad1a1b03ec690e996d48e92a518"
+    },
+    {
+      "path": "Sources/FluidAudio/TTS/Kokoro/Assets/Lexicon/LexiconAssetManager.swift",
+      "beforeSHA256": "486af11c232cac66a0dc24f988144a33f0bc03e5c267348409bc079f2e7d601c",
+      "afterSHA256": "e9818bc10f6aa21d964f4f41b59a25d716e9764f49f9793d92ec5931e8c4858e"
+    },
+    {
+      "path": "Sources/FluidAudio/TTS/Kokoro/Assets/TtsResourceDownloader.swift",
+      "beforeSHA256": "5f529a5eda643375975eaa080d17bf3395e39a4c053dec8e06eed92711983abd",
+      "afterSHA256": "a9b68704ce1287bd3f10cc9ba65b69ae53cb303bb89a3a6fdcfa81728ae4104a"
+    },
+    {
+      "path": "Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+ModelUtils.swift",
+      "beforeSHA256": "2a828cfe6052dfcde3df75f1db22e60e8002196b6b6fa06662fa942f14b26b5b",
+      "afterSHA256": "7d3d92eba5bc41a78b28283d6e8da5101777e2696bf8c7e272a85e0a022a89bb"
+    },
+    {
+      "path": "Sources/FluidAudio/TTS/Kokoro/Pipeline/Synthesize/KokoroSynthesizer+VoiceEmbeddings.swift",
+      "beforeSHA256": "e384bbb45661835285620d24ab6123432621d56f31d792c62e3fc9da458dec97",
+      "afterSHA256": "3ab22094cc364229ffaecd51e7952cdc18a4fb9a78eb5718a52e4e260b2139cd"
+    },
+    {
+      "path": "Sources/FluidAudio/TTS/TtsModels.swift",
+      "beforeSHA256": "174ecbdfe60091e630fad91ecd34cc929597d256cfa26e42dcb94b597d8a1e19",
+      "afterSHA256": "9de1d28cac0ffc3c29394e24f78595be50df5fa9295fb8ac2bf29223c6e3bcd1"
+    }
+  ]
+}

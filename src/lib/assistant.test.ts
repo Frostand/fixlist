@@ -202,7 +202,8 @@ describe('assistant bridge (mocked native model and audio)', () => {
     expect(await assistant.availability('en')).toEqual({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
     expect(await assistant.analyzeTask('Move a chair', 'en')).toEqual(job);
     expect(mock.analyzeTask).toHaveBeenCalledWith({ text: 'Move a chair', language: 'en' });
-    expect(await assistant.chat([{ role: 'user', text: 'Move a chair' }], 'en', { firstName: 'Margaret' })).toEqual({ text: 'Shall I post this?', job, engine: 'apple-on-device', originalText: 'Move a chair' });
+    mock.chat.mockRejectedValue(new Error('UNAVAILABLE'));
+    expect(await assistant.chat([{ role: 'user', text: 'Move a chair to the kitchen' }], 'en', { firstName: 'Margaret' })).toMatchObject({ job: { category: 'moving', summaryEnglish: expect.stringContaining('Destination: kitchen'), engine: 'rules' }, engine: 'rules', originalText: 'Move a chair to the kitchen' });
     expect(await assistant.translate('Move a chair', 'en', 'es')).toBe('Mover una silla');
     const bridge = audioBridge();
     mock.speak.mockImplementation(async ({ sessionId }) => { bridge.emit('speechEnded', { sessionId, reason: 'completed' }); return { sessionId }; });
@@ -220,14 +221,14 @@ describe('assistant bridge (mocked native model and audio)', () => {
     mock.native = false;
     const question = await assistant.chat([{ role: 'user', text: 'Help' }], language, { firstName: 'Rosa' });
     expect(question.job).toBeNull(); expect(question.engine).toBe('rules'); expect(question.text).not.toContain('What do you need');
-    const result = await assistant.chat([{ role: 'user', text: 'Please move this chair' }], language, { firstName: 'Rosa' });
+    const result = await assistant.chat([{ role: 'user', text: 'Please move this chair to the kitchen' }], language, { firstName: 'Rosa' });
     expect(result.job).toMatchObject({ engine: 'rules', language }); expect(result.text).not.toContain('I wrote');
     expect(mock.chat).not.toHaveBeenCalled();
   });
   it('uses the latest user message and recovers native chat errors', async () => {
     mock.chat.mockRejectedValue(new Error('UNAVAILABLE'));
     const result = await assistant.chat([{ role: 'user', text: 'Help me move this chair' }, { role: 'assistant', text: 'Where?' }, { role: 'user', text: 'Hello' }], 'en', { firstName: 'M' });
-    expect(result).toEqual({ text: "Hi, I'm the FixList assistant. What would you like help with at home?", job: null, engine: 'rules' });
+    expect(result).toMatchObject({ text: 'Where should it go?', job: null, engine: 'rules', conversation: { facts: { object: { value: 'chair' } }, pending: { field: 'destination' } } });
   });
   it('falls back if native chat ignores the short-reply or single-question contract', async () => {
     mock.chat.mockResolvedValueOnce({ text: 'Hello. I can help. Tell me more.', job: null });
@@ -237,7 +238,7 @@ describe('assistant bridge (mocked native model and audio)', () => {
   });
   it('counts words in Chinese without requiring spaces', async () => {
     mock.native = false;
-    const result = await assistant.chat([{ role: 'user', text: '请帮我搬客厅的椅子' }], 'zh', { firstName: 'Wei' });
+    const result = await assistant.chat([{ role: 'user', text: '请帮我搬椅子到客厅' }], 'zh', { firstName: 'Wei' });
     expect(result.job).toMatchObject({ language: 'zh', engine: 'rules' });
   });
   it('wires partial events before starting and removes them on stop, ignoring late events', async () => {

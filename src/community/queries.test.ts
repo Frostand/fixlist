@@ -74,22 +74,21 @@ describe('community queries and privacy', () => {
     const state = createSeedState(NOW), before = JSON.stringify(state);
     expect(currentAccount(state)).toBeNull(); expect(currentAccount({ ...state, session: { ...state.session, accountId: VOL } })?.id).toBe(VOL);
     expect(accountsByRole(state, 'elder')).toHaveLength(7); expect(accountsByRole(state, 'family')).toHaveLength(1);
-    const jobs = jobsForElder(state, 'elder-soonja'); expect(jobs).toHaveLength(8);
+    const jobs = jobsForElder({ ...state, session: { ...state.session, accountId: 'elder-soonja' } }, 'elder-soonja'); expect(jobs).toHaveLength(8);
     expect(jobs.map((j) => Date.parse(j.createdAt))).toEqual(jobs.map((j) => Date.parse(j.createdAt)).sort((a, b) => b - a));
     expect(jobsForVolunteer(state, VOL)).toHaveLength(6); expect(jobsForVolunteer(state, 'volunteer-ethan')).toHaveLength(2);
     expect(JSON.stringify(state)).toBe(before);
   });
   it('reveals an address only to the elder, linked family and assigned volunteer', () => {
     const state = createSeedState(NOW), jobId = 'job-past-margaret';
-    for (const viewerId of ['elder-margaret', 'family-alex', VOL]) expect(visibleJob(state, jobId, viewerId)?.address).toBe('Oak Hollow Ct area (fictional)');
-    for (const viewerId of ['volunteer-marcus', 'elder-rosa', 'volunteer-priya']) {
-      const view = visibleJob(state, jobId, viewerId)!;
-      expect(view.address).toBeNull(); expect(view.elder.area).toBe('Cumming, GA'); expect(JSON.stringify(view)).not.toContain('Oak Hollow');
-    }
-    expect(visibleJob(state, 'job-open-soonja-bulb', VOL)?.address).toBeNull();
-    expect(visibleJob(state, jobId, 'missing')).toBeNull(); expect(visibleJob(state, 'missing', VOL)).toBeNull();
-    const revoked = { ...state, families: [{ accountId: 'family-alex', elderIds: [] }] };
-    expect(visibleJob(revoked, jobId, 'family-alex')?.address).toBeNull();
+    const asViewer = (id: string) => ({ ...state, session: { ...state.session, accountId: id } });
+    for (const viewerId of ['elder-margaret', 'family-alex', VOL]) expect(visibleJob(asViewer(viewerId), jobId, viewerId)?.address).toBe('Oak Hollow Ct area (fictional)');
+    for (const viewerId of ['volunteer-marcus', 'elder-rosa', 'volunteer-priya']) expect(visibleJob(asViewer(viewerId), jobId, viewerId)).toBeNull();
+    expect(visibleJob(asViewer(VOL), 'job-open-soonja-bulb', VOL)?.address).toBeNull();
+    expect(visibleJob(state, jobId, 'missing')).toBeNull(); expect(visibleJob(asViewer(VOL), 'missing', VOL)).toBeNull();
+    const revoked = { ...asViewer('family-alex'), families: [{ accountId: 'family-alex', elderIds: [] }] };
+    expect(visibleJob(revoked, jobId, 'family-alex')).toBeNull();
+    expect(jobsForElder(state, 'elder-margaret')).toEqual([]);
   });
   it('counts confirmed jobs only and emits an English service log with confirmation dates', () => {
     const state = createSeedState(NOW), jordan = volunteerStats(state, VOL), marcus = volunteerStats(state, 'volunteer-marcus');

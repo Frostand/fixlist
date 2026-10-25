@@ -5,8 +5,9 @@ import { useT } from '../../i18n';
 import type { Draft } from './Elder';
 import { DraftEditor, JobCard } from './JobCard';
 import { Button, Heading } from './UI';
-export function DraftScreen({ draft, onChange, onPost, embedded = false }: {
+export function DraftScreen({ draft, onChange, onPost, embedded = false, isCurrent = () => true }: {
     draft: Draft;
+    isCurrent?(): boolean;
     embedded?: boolean;
     onChange(d: Draft): void;
     onPost(slots: readonly AvailabilitySlot[], analysis: JobAnalysis): boolean;
@@ -18,8 +19,10 @@ export function DraftScreen({ draft, onChange, onPost, embedded = false }: {
     const [posting, setPosting] = useState(false);
     const initial = useRef(draft.analysis), alive = useRef(true), postingRef = useRef(false);
     useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+    const authorization = useRef(isCurrent);
+    authorization.current = isCurrent;
     async function post() {
-        if (postingRef.current) return;
+        if (postingRef.current || !alive.current || !authorization.current()) return;
         postingRef.current = true;
         setPosting(true);
         let accepted = false;
@@ -36,7 +39,7 @@ export function DraftScreen({ draft, onChange, onPost, embedded = false }: {
                 // Keep the person's actual words when translation is unavailable, never stale draft wording.
                 analysis = { ...analysis, titleEnglish: title ?? analysis.title, summaryEnglish: summary ?? analysis.summary };
             }
-            if (!alive.current) return;
+            if (!alive.current || !authorization.current()) return;
             accepted = onPost(submitted.slots, analysis);
         } finally {
             if (!accepted) {
@@ -47,9 +50,9 @@ export function DraftScreen({ draft, onChange, onPost, embedded = false }: {
     }
     return <div className="c-stack">
         {embedded ? <header className="c-heading"><h2 ref={previewHeading} tabIndex={-1}>{t('c.job.preview')}</h2><p>{t('c.job.previewBody')}</p></header> : <Heading intro={t('c.job.previewBody')}>{t('c.job.preview')}</Heading>}
-        {editing ? <DraftEditor disabled={posting} analysis={draft.analysis} slots={slots} onChange={(analysis) => { if (!postingRef.current) onChange({ ...draft, analysis }); }} onSlots={(next) => { if (!postingRef.current) setSlots(next); }}/>
+        {editing ? <DraftEditor disabled={posting} analysis={draft.analysis} slots={slots} onChange={(analysis) => { if (!postingRef.current && alive.current && authorization.current()) onChange({ ...draft, analysis }); }} onSlots={(next) => { if (!postingRef.current && alive.current && authorization.current()) setSlots(next); }}/>
             : <JobCard analysis={draft.analysis} evidence={draft.evidence} slots={slots}/>}
         <Button disabled={posting || !draft.analysis.title.trim() || !draft.analysis.summary.trim() || !Number.isFinite(draft.analysis.estimatedMinutes) || draft.analysis.estimatedMinutes < 1} onClick={() => void post()}>{t(posting ? 'c.loading' : 'c.job.post')}</Button>
-        <Button disabled={posting} kind="secondary" onClick={() => { if (!postingRef.current) setEditing(!editing); }}>{t(editing ? 'c.save' : 'c.job.change')}</Button>
+        <Button disabled={posting} kind="secondary" onClick={() => { if (!postingRef.current && alive.current && authorization.current()) setEditing(!editing); }}>{t(editing ? 'c.save' : 'c.job.change')}</Button>
     </div>;
 }

@@ -23,6 +23,11 @@ vi.mock('react', async original => {
             const i = d.cursor++; if (!(i in d.values)) d.values[i] = typeof initial === 'function' ? initial() : initial;
             return [d.values[i], (v: unknown) => { d.values[i] = typeof v === 'function' ? v(d.values[i]) : v; }];
         },
+        useRef(initial: unknown) {
+            const d = runtime.active; if (!d) return actual.useRef(initial);
+            const i = d.cursor++; if (!(i in d.values)) d.values[i] = { current: initial };
+            return d.values[i];
+        },
         useMemo<T>(factory: () => T, deps: readonly unknown[]) {
             const d = runtime.active; if (!d) return actual.useMemo(factory, deps);
             const i = d.cursor++, prior = d.values[i] as { value: T; deps: readonly unknown[] } | undefined;
@@ -61,6 +66,23 @@ const profile = (userId: string, role: 'elder' | 'volunteer', language: Language
 afterEach(() => { vi.restoreAllMocks(); runtime.language = 'en'; });
 
 describe('live React controls using injected async port', () => {
+    it('collects phone help through the real live controls and posts the actual resolved outcome', async () => {
+        const f = liveFixture(), c = new LiveCommunityController(f.port(ELDER, 'elder')); await c.start();
+        const view = driver(() => LiveRequestDraft({ controller: c, language: 'en', locked: !!c.state.pending }));
+        change(view.render(), 'textarea', 0, 'Help with my phone');
+        change(view.render(), 'textarea', 1, 'Private address');
+        press(view.render(), 'Review task and address'); await settle();
+        expect(nodes(view.render(), 'input')).toHaveLength(0);
+        expect(content(view.render())).toContain('What would you like to do with it?');
+        change(view.render(), 'textarea', 0, 'make text larger');
+        press(view.render(), 'Review task and address'); await settle();
+        expect(content(view.render())).toContain('make text larger');
+        change(view.render(), 'input', 0, true);
+        press(view.render(), 'Post reviewed request'); await settle();
+        expect(f.calls).toHaveLength(1);
+        expect(f.calls[0]?.payload).toMatchObject({ originalText: 'Help with my phone\nmake text larger', analysis: { summaryEnglish: expect.stringContaining('make text larger') } });
+        view.unmount(); c.dispose();
+    });
     it('mounts only ready+profile+non-recovery verified session, keys by workspace, and routes the bound port to the shell', () => {
         const p = liveFixture().port(ELDER, 'elder'), factory = vi.fn(() => p);
         const c = { gateway: { createLiveCommunity: factory }, refresh: vi.fn(), signOut: vi.fn(async () => false) } as unknown as AuthController;
@@ -93,7 +115,7 @@ describe('live React controls using injected async port', () => {
         const ec = (elder.state.values[0] as { value: LiveCommunityController }).value, vc = (volunteer.state.values[0] as { value: LiveCommunityController }).value;
         const draft = driver(() => LiveRequestDraft({ controller: ec, language: 'en', locked: !!ec.state.pending }));
         change(draft.render(), 'textarea', 0, 'Please water my plants'); change(draft.render(), 'textarea', 1, 'Private test street');
-        expect(f.calls).toHaveLength(0); press(draft.render(), 'Review task and address');
+        expect(f.calls).toHaveLength(0); press(draft.render(), 'Review task and address'); await settle();
         expect(button(draft.render(), 'Post reviewed request').props.disabled).toBe(true);
         change(draft.render(), 'input', 0, true); press(draft.render(), 'Post reviewed request'); await settle();
         expect(f.calls[0]?.payload).toMatchObject({ originalText: 'Please water my plants', address: 'Private test street', source: 'typed' });
@@ -116,18 +138,18 @@ describe('live React controls using injected async port', () => {
         const f = liveFixture(), c = new LiveCommunityController(f.port(ELDER, 'elder')); await c.start();
         const view = driver(() => LiveRequestDraft({ controller: c, language: 'en', locked: !!c.state.pending }));
         expect(nodes(view.render(), 'textarea')[0]?.props.maxLength).toBe(4000);
-        change(view.render(), 'textarea', 0, 'Move the heavy sofa'); change(view.render(), 'textarea', 1, 'Private address'); press(view.render(), 'Review task and address'); change(view.render(), 'input', 0, true);
+        change(view.render(), 'textarea', 0, 'Move the heavy sofa to the kitchen'); change(view.render(), 'textarea', 1, 'Private address'); press(view.render(), 'Review task and address'); await settle(); change(view.render(), 'input', 0, true);
         expect(content(view.render())).toContain('more than one helper'); expect(button(view.render(), 'Post reviewed request').props.disabled).toBe(true);
         call(button(view.render(), 'Post reviewed request'), 'onClick'); await settle(); expect(f.calls).toHaveLength(0);
         change(view.render(), 'textarea', 0, 'Water plants blob:private-capture'); expect(button(view.render(), 'Review task and address').props.disabled).toBe(true);
-        change(view.render(), 'textarea', 0, 'Water plants'); press(view.render(), 'Review task and address'); change(view.render(), 'input', 0, true);
+        change(view.render(), 'textarea', 0, 'Water plants'); press(view.render(), 'Review task and address'); await settle(); change(view.render(), 'input', 0, true);
         change(view.render(), 'textarea', 1, 'Updated address'); expect(nodes(view.render(), 'input')).toHaveLength(0); expect(f.calls).toHaveLength(0);
     });
     it('locks duplicate clicks and edited draft while uncertain; retry uses the original UUID/input and refresh alone never posts', async () => {
         const f = liveFixture(), p = f.port(ELDER, 'elder'); f.loseResponse();
         const shell = driver(() => LiveWorkspace({ port: p, profile: profile(ELDER, 'elder'), onSignOut() {}, onRecheckSession() {} })); shell.render(); await settle();
         const c = (shell.state.values[0] as { value: LiveCommunityController }).value, draft = driver(() => LiveRequestDraft({ controller: c, language: 'en', locked: !!c.state.pending }));
-        change(draft.render(), 'textarea', 0, 'Water plants'); change(draft.render(), 'textarea', 1, 'PRIVATE address'); press(draft.render(), 'Review task and address'); change(draft.render(), 'input', 0, true);
+        change(draft.render(), 'textarea', 0, 'Water plants'); change(draft.render(), 'textarea', 1, 'PRIVATE address'); press(draft.render(), 'Review task and address'); await settle(); change(draft.render(), 'input', 0, true);
         const post = button(draft.render(), 'Post reviewed request'); call(post, 'onClick'); call(post, 'onClick'); await settle();
         expect(f.calls).toHaveLength(1); expect(nodes(draft.render(), 'fieldset')[0]?.props.disabled).toBe(true);
         expect(content(shell.render())).toContain('It may already have saved'); expect(nodes(shell.render(), 'p').some(n => n.props.role === 'alert')).toBe(true);

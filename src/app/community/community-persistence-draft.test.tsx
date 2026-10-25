@@ -112,7 +112,7 @@ describe('community durable command boundary', () => {
         expect(storage.getItem(domain.COMMUNITY_STORAGE_KEY)).not.toContain('custom-photo');
         expect(b.render().issue).toBeTruthy();
     });
-    it('preserves a newer completion and hours, refreshes immediately, and never retries the stale language edit', () => {
+    it('preserves a newer completion without inventing hours, refreshes immediately, and never retries the stale language edit', () => {
         const storage = new MemoryStorage(), { state, jobId } = pendingJob(); domain.saveCommunity(storage, state);
         const a = client(storage), b = client(new MemoryStorage(storage.values));
         const current = a.render(), stale = b.render();
@@ -121,7 +121,7 @@ describe('community durable command boundary', () => {
         // Reuse the same callback before a React rerender to check immediate ref refresh.
         let observed: CommunityState | undefined;
         stale.run(s => { observed = s; return domain.updateLanguage(s, ELDER, 'ko'); });
-        expect(observed!.jobs.find(job => job.id === jobId)).toMatchObject({ status: 'completed', hoursCredited: expect.any(Number) });
+        expect(observed!.jobs.find(job => job.id === jobId)).toMatchObject({ status: 'completed', hoursCredited: null });
         expect(domain.loadCommunity(storage, NOW).state.accounts.find(a => a.id === ELDER)!.language).toBe('ko');
     });
     it('rechecks after a command before writing or publishing its candidate success', () => {

@@ -12,6 +12,7 @@ import { validateCaptureSuggestions } from '../../lib/capture-suggestions';
 import * as photoStorage from '../../lib/photo-storage';
 import { RoomCapture } from './RoomCapture';
 import { CommunityBody } from './CommunityApp';
+import { FamilyWorkspace } from './FamilyWorkspace';
 import type { CommunityController } from './useCommunity';
 import { CaptureFlow, GuidedPhotoTour } from '../CaptureScreens';
 import { PhotoInputActions } from '../Photos';
@@ -488,6 +489,24 @@ describe('community RoomCapture store and operation identity', () => {
         finish({ status: 'cancelled' }); await settle(); view.unmount();
     });
 });
+describe('family capture permission revision guard', () => {
+    it('rejects a pending photo save after unlink/relink without deleting the elder’s prior capture', async () => {
+        const { manifest, photos } = await fixture(), store = runtime.stores.get('reset-1:elder-margaret')!;
+        await store.writeCapture(manifest, photos, false);
+        let revision = 1;
+        const view = driver(() => RoomCapture({ ownerId: 'elder-margaret', resetEpoch: 'reset-1', isCurrent: () => revision === 1, onDraft() {}, onType() {} }));
+        press(view.render(), 'Living room'); await ready(view);
+        press(view.render(), 'Take room photos');
+        const sheet = nodes(view.render(), Sheet)[0]!;
+        await press(sheet.props.children as ReactNode, translate('en', 'c.scan.replaceYes'));
+        await settle();
+        const oldTour = tour(view.render()); revision = 2;
+        await oldTour.onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos);
+        oldTour.onCancel();
+        expect((await store.read(manifest.roomId))?.manifest.captureId).toBe(manifest.captureId);
+        expect(runtime.analyze).not.toHaveBeenCalled(); view.unmount();
+    });
+});
 describe('community capture invocation authorization', () => {
     const NOW = '2026-10-23T12:00:00.000Z';
     function invocation(actor: string, revoke = false, mismatch = false) {
@@ -497,10 +516,19 @@ describe('community capture invocation authorization', () => {
         vi.stubGlobal('window', { location: { hash: '#/c/rooms' }, addEventListener() {}, removeEventListener() {}, scrollTo() {} });
         vi.stubGlobal('document', { documentElement: { style: { fontSize: '' }, dataset: {} }, querySelector: () => null });
         const view = driver(() => CommunityBody({ controller, language: 'en', onGuestLanguage() {} }));
-        const tree = view.render();
+        let tree = view.render();
+        const family = nodes(tree, FamilyWorkspace)[0];
+        let workspace: ReturnType<typeof driver> | undefined;
+        if (family) {
+            workspace = driver(() => FamilyWorkspace({ ...(family.props as unknown as Parameters<typeof FamilyWorkspace>[0]), onNavigate() {} }));
+            tree = workspace.render();
+            expect(nodes(tree, Symbol.for('react.suspense'))).toHaveLength(0);
+            const picker = nodes(tree, 'select')[0];
+            if (picker && !revoke) { (picker.props.onChange as (event: unknown) => void)({ target: { value: 'elder-margaret' } }); tree = workspace.render(); }
+        }
         const suspense = nodes(tree, Symbol.for('react.suspense'))[0];
         const child = suspense?.props.children as ReactElement<Record<string, unknown>> | undefined;
-        view.unmount(); return child;
+        workspace?.unmount(); view.unmount(); return child;
     }
     it('elder and linked family use the elder namespace but retain distinct actor keys and reset epoch', () => {
         const elder = invocation('elder-margaret')!, family = invocation('family-alex')!;

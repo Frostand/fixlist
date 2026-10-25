@@ -53,8 +53,8 @@ describe('elder request UI and persistence', () => {
 });
 describe('volunteer matching, privacy and the trust loop', () => {
     it('renders the query order with explainable reasons and gaps', () => { const state = stateOf(d.updateVolunteerProfile(stateOf(d.signIn(d.createSeedState(NOW), VOL)), VOL, { maxMiles: 50 })), matches = d.matchesForVolunteer(state, VOL, NOW); expect(matches.length).toBeGreaterThan(2); const view = capture(() => NearbyList({ state, matches, onOpen: noop })); const scores = elements(view.tree, 'article').map((node) => node.props['data-score'] as number); expect(scores).toEqual(matches.map((m) => m.score)); expect(scores).toEqual([...scores].sort((a, b) => b - a)); expect(view.html).toContain('% match'); expect(view.html).toContain('Has a ladder'); expect(view.html).toContain('Free Sat morning'); expect(view.html).toContain('mi away'); expect(view.html).toContain('Still needed:'); expect(renderToStaticMarkup(<MatchChips reasons={[{ kind: 'language', language: 'ko' }]}/>)).toContain('Speaks 한국어'); });
-    it('hides the exact address before accepting and reveals it only to the assigned volunteer', () => { let { state, jobId } = posted(); state = stateOf(d.signIn(state, VOL)); const before = d.visibleJob(state, jobId, VOL)!; const hint = (state.elders.find((e) => e.accountId === ELDER)!).addressHint; const profile = state.volunteers.find((v) => v.accountId === VOL)!; const html = renderToStaticMarkup(<VolunteerJob {...before} profile={profile} match={null} onAccept={() => true} onStep={() => true} onMessages={noop}/>); expect(html).toContain('Exact address shared after you accept.'); expect(html).not.toContain(hint); state = stateOf(d.acceptJob(state, { jobId, volunteerId: VOL, scheduledFor: LATER }, NOW)); const after = d.visibleJob(state, jobId, VOL)!; expect(after.address).toBe(hint); expect((d.visibleJob(state, jobId, 'volunteer-marcus')!).address).toBeNull(); const active = renderToStaticMarkup(<VolunteerJob {...after} profile={profile} match={null} onAccept={() => true} onStep={() => true} onMessages={noop}/>); expect(active).toContain(hint); expect(active).toContain('https://www.google.com/maps/dir/'); });
-    it('accepts a selected shared slot, checks in, waits for elder confirmation, rates and updates the service log', () => {
+    it('hides the exact address before accepting and reveals it only to the assigned volunteer', () => { let { state, jobId } = posted(); state = stateOf(d.signIn(state, VOL)); const before = d.visibleJob(state, jobId, VOL)!; const hint = (state.elders.find((e) => e.accountId === ELDER)!).addressHint; const profile = state.volunteers.find((v) => v.accountId === VOL)!; const html = renderToStaticMarkup(<VolunteerJob {...before} profile={profile} match={null} onAccept={() => true} onStep={() => true} onMessages={noop}/>); expect(html).toContain('Exact address shared after you accept.'); expect(html).not.toContain(hint); state = stateOf(d.acceptJob(state, { jobId, volunteerId: VOL, scheduledFor: LATER }, NOW)); const after = d.visibleJob(state, jobId, VOL)!; expect(after.address).toBe(hint); expect(d.visibleJob({ ...state, session: { ...state.session, accountId: 'volunteer-marcus' } }, jobId, 'volunteer-marcus')).toBeNull(); const active = renderToStaticMarkup(<VolunteerJob {...after} profile={profile} match={null} onAccept={() => true} onStep={() => true} onMessages={noop}/>); expect(active).toContain(hint); expect(active).toContain('https://www.google.com/maps/dir/'); });
+    it('accepts a selected shared slot, checks in, waits for elder confirmation, rates without inventing credited hours', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date(NOW));
         let { state, jobId } = posted();
@@ -92,14 +92,14 @@ describe('volunteer matching, privacy and the trust loop', () => {
         }) => void)({ preventDefault: noop });
         const stats = d.volunteerStats(state, VOL);
         expect(stats.jobsDone).toBe(baseline.jobsDone + 1);
-        expect(stats.hours).toBeGreaterThan(baseline.hours);
+        expect(stats.hours).toBe(baseline.hours);
         expect(stats.ratingCount).toBe(baseline.ratingCount + 1);
         const volunteer = state.accounts.find((a) => a.id === VOL)!;
-        expect(renderToStaticMarkup(<VolunteerProfileScreen state={state} account={volunteer} onEdit={noop} onLog={noop}/>)).toContain('Verified hours');
+        expect(renderToStaticMarkup(<VolunteerProfileScreen state={state} account={volunteer} onEdit={noop} onLog={noop}/>)).toContain('Demo service hours');
         expect(renderToStaticMarkup(<ServiceHours state={state} account={volunteer}/>)).toContain('Confirmed for Margaret');
-        expect(d.serviceLog(state, VOL).some((row) => row.jobId === jobId)).toBe(true);
+        expect(d.serviceLog(state, VOL).some((row) => row.jobId === jobId)).toBe(false);
     });
-    it('shows all six progress stages, with resident confirmation distinct from done', () => { const html = renderToStaticMarkup(<ProgressTracker status="reported-done"/>); expect(html).toContain('Done — please confirm'); expect(html).toContain('You confirmed'); expect(html).toContain('aria-current="step"'); });
+    it('shows all six progress stages, with resident confirmation distinct from done', () => { const html = renderToStaticMarkup(<ProgressTracker status="reported-done"/>); expect(html).toContain('Done — please confirm'); expect(html).toContain('Completion confirmed'); expect(html).toContain('aria-current="step"'); });
 });
 
 

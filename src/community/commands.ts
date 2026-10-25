@@ -1,3 +1,4 @@
+import { canChangeElder, familyReceipt, historicallyAuthorized } from './family';
 import { isLanguage } from '../domain/roles';
 import { locationForArea } from './geo';
 import * as valid from './validation';
@@ -11,12 +12,7 @@ const nextId = (prefix: string, ids: readonly string[]): string => {
   while (ids.includes(`${prefix}-${number}`)) number++;
   return `${prefix}-${number}`;
 };
-/** Both sides of a family link must agree; a lone stale profile never grants access. */
-export function canManageElder(state: CommunityState, actorId: string, elderId: string): boolean {
-  const actor = state.accounts.find((a) => a.id === actorId), elder = state.elders.find((e) => e.accountId === elderId);
-  return !!elder && (actor?.role === 'elder' && actor.id === elderId || actor?.role === 'family'
-    && elder.familyIds.includes(actorId) && state.families.some((f) => f.accountId === actorId && f.elderIds.includes(elderId)));
-}
+export { canManageElder } from './family';
 export function signIn(state: CommunityState, accountId: string): CommunityResult {
   return state.accounts.some((a) => a.id === accountId) ? success({ ...state, session: { ...state.session, accountId } }) : fail('not_found', 'Demo profile not found.');
 }
@@ -24,6 +20,7 @@ export function signOut(state: CommunityState): CommunityResult { return success
 export function completeOnboarding(state: CommunityState, accountId: string): CommunityResult {
   if (!state.accounts.some((a) => a.id === accountId)) return fail('not_found', 'Demo profile not found.');
   if (!active(state, accountId)) return fail('permission_denied', 'Choose your own demo profile first.');
+  if (state.accounts.find(a => a.id === accountId)?.area === 'Not set (demo)') return fail('invalid_state', 'Finish your own name and area before completing setup.');
   return success({ ...state, session: { ...state.session, onboarded: [...new Set([...state.session.onboarded, accountId])] } });
 }
 export function createAccount(state: CommunityState, input: { role: AccountRole; name: string; language: Language; provider: SignInProvider; area: string }, now: string): ({ ok: true; state: CommunityState; accountId: string } | CommunityFailure) {
@@ -54,21 +51,22 @@ export function updateVolunteerProfile(state: CommunityState, accountId: string,
   if (patch.badges && (patch.badges.idChecked !== profile.badges.idChecked || patch.badges.backgroundCheck !== profile.badges.backgroundCheck)) return fail('permission_denied', 'Verification badges cannot be self-awarded.');
   return success({ ...state, volunteers: state.volunteers.map((v) => v.accountId === accountId ? structuredClone(next) : v) });
 }
-export function postJob(state: CommunityState, input: { actorId: string; elderId: string; source: JobSource; originalText: string; analysis: JobAnalysis; evidence?: readonly ScanEvidence[]; preferredSlots?: readonly AvailabilitySlot[]; repeatEveryDays?: number | null }, now: string): ({ ok: true; state: CommunityState; jobId: string } | CommunityFailure) {
+export function postJob(state: CommunityState, input: { actorId: string; elderId: string; source: JobSource; originalText: string; analysis: JobAnalysis; evidence?: readonly ScanEvidence[]; preferredSlots?: readonly AvailabilitySlot[]; repeatEveryDays?: number | null; familyRevision?: number }, now: string): ({ ok: true; state: CommunityState; jobId: string } | CommunityFailure) {
   if (!state.elders.some((e) => e.accountId === input.elderId)) return fail('not_found', 'Elder profile not found.');
-  if (!active(state, input.actorId) || !canManageElder(state, input.actorId, input.elderId)) return fail('permission_denied', 'Only the elder or a linked family member can post this request.');
+  if (!active(state, input.actorId) || !canChangeElder(state, input.actorId, input.elderId, input.source === 'scan' ? 'capture' : 'requests', input.familyRevision)) return fail('permission_denied', 'Only the elder or a linked family member can post this request.');
   const jobId = nextId('job', state.jobs.map((j) => j.id));
   const job: Job = { id: jobId, elderId: input.elderId, createdById: input.actorId, createdAt: now, source: input.source, originalText: input.originalText.trim(), analysis: input.analysis,
     evidence: input.evidence ?? [], preferredSlots: input.preferredSlots ?? [], repeatEveryDays: input.repeatEveryDays ?? null,
-    status: 'open', volunteerId: null, scheduledFor: null, timeline: [{ at: now, actorId: input.actorId, type: 'posted' }], rating: null, hoursCredited: null };
-  if (!valid.job(job)) return fail('invalid_input', 'Check the request text, analysis, evidence and dates.');
+    status: 'open', volunteerId: null, scheduledFor: null, timeline: [{ at: now, actorId: input.actorId, type: 'posted', ...familyReceipt(state, input.actorId, input.elderId) }], rating: null, hoursCredited: null };
+  if (!valid.job(job) || !historicallyAuthorized(state, input.actorId, input.elderId, now, job.timeline[0]!.familyGrantRevision, input.source === 'scan' ? 'capture' : 'requests')) return fail('invalid_input', 'Check the request text, analysis, evidence and dates.');
   return { ok: true, state: { ...state, jobs: [...state.jobs, structuredClone(job)] }, jobId };
 }
 function changed(state: CommunityState, job: Job, actorId: string, type: JobEventType, now: string, patch: Partial<Job> = {}, note?: string): CommunityResult {
   const latest = job.timeline.at(-1)!;
   if (!valid.iso(now) || Date.parse(now) < Date.parse(latest.at)) return fail('invalid_input', 'The update time must follow the request history.');
   if (note !== undefined && !valid.text(note, 2000, true)) return fail('invalid_input', 'The note is too long or contains invalid characters.');
-  const event = { at: now, actorId, type, ...(note?.trim() ? { note: note.trim() } : {}) };
+  const event = { at: now, actorId, type, ...familyReceipt(state, actorId, job.elderId), ...(note?.trim() ? { note: note.trim() } : {}) };
+  if (state.accounts.some(a => a.id === actorId && a.role === 'family') && !historicallyAuthorized(state, actorId, job.elderId, now, event.familyGrantRevision)) return fail('invalid_input', 'The update must follow consent.');
   const next = { ...job, ...patch, timeline: [...job.timeline, event] };
   return success({ ...state, jobs: state.jobs.map((j) => j.id === job.id ? next : j) });
 }
@@ -90,36 +88,38 @@ function volunteerStep(state: CommunityState, input: { jobId: string; volunteerI
 export function startTrip(state: CommunityState, input: { jobId: string; volunteerId: string }, now: string): CommunityResult { return volunteerStep(state, input, now, ['accepted'], 'on-the-way'); }
 export function arrive(state: CommunityState, input: { jobId: string; volunteerId: string }, now: string): CommunityResult { return volunteerStep(state, input, now, ['on-the-way'], 'arrived'); }
 export function reportDone(state: CommunityState, input: { jobId: string; volunteerId: string; note?: string }, now: string): CommunityResult { return volunteerStep(state, input, now, ['accepted', 'on-the-way', 'arrived'], 'reported-done'); }
-function elderJob(state: CommunityState, jobId: string, actorId: string): Job | CommunityFailure {
+function elderJob(state: CommunityState, jobId: string, actorId: string, revision?: number): Job | CommunityFailure {
   const job = state.jobs.find((j) => j.id === jobId);
   if (!job) return fail('not_found', 'Request not found.');
-  return active(state, actorId) && canManageElder(state, actorId, job.elderId) ? job : fail('permission_denied', 'Only the elder or a linked family member can make this update.');
+  return active(state, actorId) && canChangeElder(state, actorId, job.elderId, 'requests', revision) ? job : fail('permission_denied', 'Only the elder or a linked family member can make this update.');
 }
 export function confirmDone(state: CommunityState, input: { jobId: string; actorId: string }, now: string): CommunityResult {
   const job = elderJob(state, input.jobId, input.actorId);
   if ('ok' in job) return job;
+  if (input.actorId !== job.elderId) return fail('permission_denied', 'Only the elder receiving help can confirm completion.');
   if (job.status !== 'reported-done') return fail('invalid_state', 'The volunteer must report completion first.');
-  return changed(state, job, input.actorId, 'confirmed', now, { status: 'completed', hoursCredited: valid.creditHours(job.analysis.estimatedMinutes) });
+  return changed(state, job, input.actorId, 'confirmed', now, { status: 'completed', hoursCredited: null });
 }
-export function rateJob(state: CommunityState, input: { jobId: string; actorId: string; stars: number; note?: string }, now: string): CommunityResult {
-  const job = elderJob(state, input.jobId, input.actorId);
+export function rateJob(state: CommunityState, input: { jobId: string; actorId: string; familyRevision?: number; stars: number; note?: string }, now: string): CommunityResult {
+  const job = elderJob(state, input.jobId, input.actorId, input.familyRevision);
   if ('ok' in job) return job;
   if (job.status !== 'completed' || job.rating !== null) return fail('invalid_state', 'Only a completed, unrated request can be rated.');
   if (!Number.isInteger(input.stars) || input.stars < 1 || input.stars > 5) return fail('invalid_input', 'Choose one to five stars.');
   return changed(state, job, input.actorId, 'rated', now, { rating: { stars: input.stars as 1 | 2 | 3 | 4 | 5, byId: input.actorId, at: now, ...(input.note?.trim() ? { note: input.note.trim() } : {}) } }, input.note);
 }
-export function cancelJob(state: CommunityState, input: { jobId: string; actorId: string }, now: string): CommunityResult {
-  const job = elderJob(state, input.jobId, input.actorId);
+export function cancelJob(state: CommunityState, input: { jobId: string; actorId: string; familyRevision?: number }, now: string): CommunityResult {
+  const job = elderJob(state, input.jobId, input.actorId, input.familyRevision);
   if ('ok' in job) return job;
   if (job.status === 'completed' || job.status === 'cancelled') return fail('invalid_state', 'This request is already closed.');
   return changed(state, job, input.actorId, 'cancelled', now, { status: 'cancelled' });
 }
-export function sendMessage(state: CommunityState, input: { jobId: string; fromId: string; text: string; language: Language; translations?: Partial<Record<Language, string>> }, now: string): CommunityResult {
+export function sendMessage(state: CommunityState, input: { jobId: string; fromId: string; text: string; language: Language; translations?: Partial<Record<Language, string>>; familyRevision?: number }, now: string): CommunityResult {
   const job = state.jobs.find((j) => j.id === input.jobId);
   if (!job) return fail('not_found', 'Request not found.');
-  if (!active(state, input.fromId) || !(canManageElder(state, input.fromId, job.elderId) || job.volunteerId === input.fromId)) return fail('permission_denied', 'Only request participants can send a message.');
+  if (!active(state, input.fromId) || !(canChangeElder(state, input.fromId, job.elderId, 'messages', input.familyRevision) || job.volunteerId === input.fromId)) return fail('permission_denied', 'Only request participants can send a message.');
   if (!valid.text(input.text) || !isLanguage(input.language) || !valid.iso(now) || Date.parse(now) < Date.parse(job.createdAt)
     || (input.translations !== undefined && (!valid.shape(input.translations, [], ['en', 'es', 'zh', 'vi', 'ko', 'tl', 'ru', 'fr', 'ar']) || !Object.values(input.translations).every((t) => valid.text(t))))) return fail('invalid_input', 'Enter a message in a supported language.');
-  const message = { id: nextId('message', state.messages.map((m) => m.id)), jobId: job.id, fromId: input.fromId, at: now, text: input.text.trim(), language: input.language, translations: { ...input.translations } };
+  const message = { id: nextId('message', state.messages.map((m) => m.id)), jobId: job.id, fromId: input.fromId, at: now, text: input.text.trim(), language: input.language, translations: { ...input.translations }, ...familyReceipt(state, input.fromId, job.elderId) };
+  if (state.accounts.some(a => a.id === input.fromId && a.role === 'family') && !historicallyAuthorized(state, input.fromId, job.elderId, now, message.familyGrantRevision, 'messages')) return fail('invalid_input', 'The message must follow consent.');
   return success({ ...state, messages: [...state.messages, message] });
 }

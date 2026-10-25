@@ -1,5 +1,5 @@
 import { isLanguage, LANGUAGE_CODES } from '../domain/roles';
-import { canManageElder } from './commands';
+import { FAMILY_SCOPES, LEGACY_FAMILY_SCOPES, historicallyAuthorized, migrateFamilyHistory, reciprocalFamilyLink } from './family';
 import { createSeedState } from './seed';
 import * as valid from './validation';
 import type { ChatMessage, CommunityFailure, CommunityResult, CommunityState, Job, JobStatus } from './types';
@@ -7,11 +7,11 @@ import type { ChatMessage, CommunityFailure, CommunityResult, CommunityState, Jo
 export const COMMUNITY_STORAGE_KEY = 'fixlist.community.v1';
 function validHistory(state: CommunityState, job: Job): boolean {
   const first = job.timeline[0]!;
-  if (first.type !== 'posted' || first.actorId !== job.createdById || first.at !== job.createdAt || !canManageElder(state, job.createdById, job.elderId)) return false;
+  if (first.type !== 'posted' || first.actorId !== job.createdById || first.at !== job.createdAt || !historicallyAuthorized(state, job.createdById, job.elderId, first.at, first.familyGrantRevision)) return false;
   let status: JobStatus = 'open', rated = false, lastTime = Date.parse(job.createdAt), accepted = false;
   for (const event of job.timeline.slice(1)) {
     const time = Date.parse(event.at);
-    if (time < lastTime || !state.accounts.some((a) => a.id === event.actorId)) return false;
+    if (time < lastTime || !state.accounts.some((a) => a.id === event.actorId) || event.familyGrantRevision !== undefined && !state.accounts.some(a => a.id === event.actorId && a.role === 'family')) return false;
     lastTime = time;
     const assigned = event.actorId === job.volunteerId && state.volunteers.some((v) => v.accountId === event.actorId);
     switch (event.type) {
@@ -21,28 +21,61 @@ function validHistory(state: CommunityState, job: Job): boolean {
       case 'on-the-way': if (status !== 'accepted' || !assigned) return false; status = 'on-the-way'; break;
       case 'arrived': if (status !== 'on-the-way' || !assigned) return false; status = 'arrived'; break;
       case 'reported-done': if (!['accepted', 'on-the-way', 'arrived'].includes(status) || !assigned) return false; status = 'reported-done'; break;
-      case 'confirmed': if (status !== 'reported-done' || !canManageElder(state, event.actorId, job.elderId)) return false; status = 'completed'; break;
+      case 'confirmed': {
+        const legacy = !state.familyHistory || state.familyHistory.legacyConfirmations.some(r => r.jobId === job.id && r.familyId === event.actorId && r.at === event.at);
+        if (status !== 'reported-done' || event.actorId !== job.elderId && !legacy || !historicallyAuthorized(state, event.actorId, job.elderId, event.at, event.familyGrantRevision)) return false;
+        status = 'completed'; break;
+      }
       case 'rated':
-        if (status !== 'completed' || rated || !canManageElder(state, event.actorId, job.elderId) || !job.rating
+        if (status !== 'completed' || rated || !historicallyAuthorized(state, event.actorId, job.elderId, event.at, event.familyGrantRevision) || !job.rating
           || job.rating.byId !== event.actorId || job.rating.at !== event.at) return false;
         rated = true; break;
-      case 'cancelled': if (status === 'completed' || status === 'cancelled' || !canManageElder(state, event.actorId, job.elderId)) return false; status = 'cancelled'; break;
+      case 'cancelled': if (status === 'completed' || status === 'cancelled' || !historicallyAuthorized(state, event.actorId, job.elderId, event.at, event.familyGrantRevision)) return false; status = 'cancelled'; break;
       default: return false;
     }
   }
   return status === job.status && (accepted ? job.volunteerId !== null && job.scheduledFor !== null : job.volunteerId === null && job.scheduledFor === null)
-    && (status === 'completed' ? job.hoursCredited === valid.creditHours(job.analysis.estimatedMinutes) : job.hoursCredited === null)
+    && (status === 'completed' ? job.hoursCredited === null || job.hoursCredited === valid.creditHours(job.analysis.estimatedMinutes) : job.hoursCredited === null)
     && rated === (job.rating !== null);
 }
+function validFamilyHistory(state: CommunityState): boolean {
+  const h = state.familyHistory;
+  if (h === undefined) return true;
+  if (!valid.shape(h, ['grants', 'legacyConfirmations']) || !valid.list(h.grants, (g): g is import('./types').FamilyGrant =>
+    valid.shape(g, ['familyId', 'elderId', 'revision', 'scopes', 'approvedById', 'approvedAt', 'revokedAt', 'revokedById', 'origin'])
+    && valid.id(g.familyId) && valid.id(g.elderId) && g.approvedById === g.elderId && Number.isSafeInteger(g.revision) && (g.revision as number) > 0
+    && valid.list(g.scopes, (s): s is import('./types').FamilyScope => valid.oneOf(s, FAMILY_SCOPES), 4) && valid.unique(g.scopes)
+    && LEGACY_FAMILY_SCOPES.every(s => (g.scopes as string[]).includes(s)) && valid.iso(g.approvedAt)
+    && valid.oneOf(g.origin, ['elder-approved', 'legacy-link', 'fictional-demo']) && (g.origin !== 'legacy-link' || !(g.scopes as string[]).includes('profile'))
+    && (g.revokedAt === null ? g.revokedById === null : valid.iso(g.revokedAt) && Date.parse(g.revokedAt) >= Date.parse(g.approvedAt)
+      && (g.revokedById === g.elderId || g.revokedById === g.familyId)))
+    || !valid.unique(h.grants.map(g => g.revision)) || !valid.list(h.legacyConfirmations, (r): r is import('./types').FamilyHistory['legacyConfirmations'][number] =>
+      valid.shape(r, ['jobId', 'familyId', 'at']) && valid.id(r.jobId) && valid.id(r.familyId) && valid.iso(r.at))) return false;
+  if (!h.grants.every((g, i) => i === 0 || g.revision > h.grants[i - 1]!.revision)) return false;
+  if (!valid.unique(h.legacyConfirmations.map(r => r.jobId))) return false;
+  for (const g of h.grants) {
+    if (!state.accounts.some(a => a.id === g.familyId && a.role === 'family') || !state.elders.some(e => e.accountId === g.elderId)) return false;
+    const later = h.grants.filter(other => other.familyId === g.familyId && other.elderId === g.elderId && other.revision > g.revision);
+    if (later.some(other => g.revokedAt === null || Date.parse(g.revokedAt) > Date.parse(other.approvedAt))) return false;
+    if (g.revokedAt === null && !reciprocalFamilyLink(state, g.familyId, g.elderId)) return false;
+  }
+  if (!state.families.every(f => f.elderIds.every(elderId => h.grants.some(g => g.familyId === f.accountId && g.elderId === elderId && g.revokedAt === null)))) return false;
+  return h.legacyConfirmations.every(r => {
+    const job = state.jobs.find(j => j.id === r.jobId);
+    return !!job && job.timeline.some(e => e.type === 'confirmed' && e.actorId === r.familyId && e.at === r.at)
+      && h.grants.some(g => g.familyId === r.familyId && g.elderId === job.elderId && g.origin === 'legacy-link');
+  });
+}
 function message(value: unknown): value is ChatMessage {
-  return valid.shape(value, ['id', 'jobId', 'fromId', 'at', 'text', 'language', 'translations']) && valid.id(value.id) && valid.id(value.jobId) && valid.id(value.fromId)
+  return valid.shape(value, ['id', 'jobId', 'fromId', 'at', 'text', 'language', 'translations'], ['familyGrantRevision']) && valid.id(value.id) && valid.id(value.jobId) && valid.id(value.fromId)
     && valid.iso(value.at) && valid.text(value.text) && isLanguage(value.language) && valid.shape(value.translations, [], LANGUAGE_CODES)
+    && (value.familyGrantRevision === undefined || Number.isSafeInteger(value.familyGrantRevision) && (value.familyGrantRevision as number) > 0)
     && Object.values(value.translations).every((translation) => valid.text(translation));
 }
 /** Validate shapes and cross-record permissions; no state is trusted merely because it parsed as JSON. */
 export function validateCommunityState(value: unknown): value is CommunityState {
   try {
-    if (!valid.shape(value, ['version', 'session', 'accounts', 'elders', 'volunteers', 'families', 'jobs', 'messages']) || value.version !== 1
+    if (!valid.shape(value, ['version', 'session', 'accounts', 'elders', 'volunteers', 'families', 'jobs', 'messages'], ['familyHistory']) || value.version !== 1
       || !valid.shape(value.session, ['accountId', 'onboarded']) || !(value.session.accountId === null || valid.id(value.session.accountId)) || !valid.ids(value.session.onboarded)
       || !valid.list(value.accounts, valid.account) || !valid.list(value.elders, valid.elder) || !valid.list(value.volunteers, valid.volunteer) || !valid.list(value.families, valid.family)
       || !valid.list(value.jobs, valid.job) || !valid.list(value.messages, message)) return false;
@@ -59,11 +92,12 @@ export function validateCommunityState(value: unknown): value is CommunityState 
       || !state.volunteers.every((v) => state.accounts.some((a) => a.id === v.accountId && a.role === 'volunteer'))
       || !state.families.every((f) => state.accounts.some((a) => a.id === f.accountId && a.role === 'family')
         && f.elderIds.every((i) => state.elders.some((e) => e.accountId === i && e.familyIds.includes(f.accountId))))) return false;
+    if (!validFamilyHistory(state)) return false;
     if (!state.jobs.every((j) => state.elders.some((e) => e.accountId === j.elderId) && validHistory(state, j))) return false;
     return state.messages.every((m) => {
       const job = state.jobs.find((j) => j.id === m.jobId);
       return !!job && accountIds.includes(m.fromId) && Date.parse(m.at) >= Date.parse(job.createdAt)
-        && (canManageElder(state, m.fromId, job.elderId) || m.fromId === job.volunteerId);
+        && (historicallyAuthorized(state, m.fromId, job.elderId, m.at, m.familyGrantRevision, 'messages') || m.fromId === job.volunteerId && m.familyGrantRevision === undefined);
     });
   } catch { return false; }
 }
@@ -82,10 +116,10 @@ export function loadCommunitySnapshot(storage: Storage | null, now: string): Com
     if (storage) { raw = storage.getItem(COMMUNITY_STORAGE_KEY); readable = true; }
     if (raw === null) return { state: createSeedState(now), status: 'seeded', raw, revision: 0, resetEpoch: 'empty', readable };
     const value: unknown = JSON.parse(raw);
-    if (validateCommunityState(value)) return { state: value, status: 'loaded', raw, revision: 0, resetEpoch: 'legacy', readable };
+    if (validateCommunityState(value)) return { state: migrateFamilyHistory(value), status: 'loaded', raw, revision: 0, resetEpoch: 'legacy', readable };
     if (valid.shape(value, ['revision', 'resetEpoch', 'state']) && Number.isSafeInteger(value.revision) && (value.revision as number) >= 0
       && typeof value.resetEpoch === 'string' && value.resetEpoch.length > 0 && value.resetEpoch.length <= 200 && validateCommunityState(value.state)) {
-      return { state: value.state, status: 'loaded', raw, revision: value.revision as number, resetEpoch: value.resetEpoch, readable };
+      return { state: migrateFamilyHistory(value.state), status: 'loaded', raw, revision: value.revision as number, resetEpoch: value.resetEpoch, readable };
     }
   } catch { /* Preserve corrupt bytes and distinguish inaccessible storage from an absent key. */ }
   return { state: createSeedState(now), status: 'recovered', raw, revision: 0, resetEpoch: 'recovered', readable };

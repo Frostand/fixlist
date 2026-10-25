@@ -263,3 +263,14 @@ html[dir=rtl] .community .c-directional { transform: scaleX(-1); }
 @media(max-width:380px) { .community .c-stat-list dd { font-size:1.35em; } .community .c-profile-identity { align-items:flex-start; } }
 /* Korean wraps at spaces, not mid-syllable-block. */
 :lang(ko) .community { word-break:keep-all; }
+
+.c-family-scope { padding: 1rem; border: 1px solid var(--c-line, #cbcfc5); border-radius: 1rem; background: var(--c-paper, #fffdf8); }
+.c-family-scope h1 { font-size: clamp(1.4rem, 5vw, 2rem); margin-block: 0 .75rem; }
+.c-family-nav { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: .4rem; margin-block: .5rem; }
+.c-family-scope summary { min-block-size: 2.75rem; display: list-item; align-content: center; cursor: pointer; }
+.c-family-check { display: flex; align-items: flex-start; gap: .75rem; line-height: 1.5; }
+.c-family-check input { flex: 0 0 auto; width: 1.4rem; height: 1.4rem; margin-block-start: .2rem; }
+.c-family-permission { border-block-end: 1px solid var(--c-line, #cbcfc5); padding-block: .75rem; }
+.c-family-history { padding-inline-start: 1.4rem; }
+.c-family-history li { padding-block: .5rem; }
+.c-family-history time { display: block; font-size: .9em; }

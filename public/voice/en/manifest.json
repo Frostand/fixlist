@@ -1,0 +1,1371 @@
+{
+  "schemaVersion": 1,
+  "mode": "bundled-english-assistant-prompt-clips",
+  "language": "en",
+  "voice": "af_heart",
+  "model": "Kokoro-82M CoreML v1",
+  "assetLicense": "Project-generated audio assets; model/SDK licenses do not automatically license every generated output. See NOTICES.txt.",
+  "inventorySHA256": "20f45c62d3252cd4c297a369df3ea1a916a4712086a1346d238778948de5c703",
+  "source": "src/lib/assistant-copy.ts English authored exports; whole utterances only",
+  "sourceFileSHA256AtGeneration": "040824b9463bb6090d181be3d3d9b2027abfd78411e9bba35fe25f247fc45f2f",
+  "settings": {
+    "variant": "kokoro_21_15s.mlmodelc",
+    "voiceSpeed": 1,
+    "deEss": true,
+    "computeUnits": "cpuAndGPU requested; actual placement UNVERIFIED",
+    "g2pComputeUnits": "cpuOnly",
+    "normalization": "Fixed linear gain 0.70 on every original PCM16 sample; no trim, stitch, resample, or padding"
+  },
+  "pins": {
+    "sdkRevision": "b10bdcb51dcfeedb8001353b4ba363da1a616d6d",
+    "modelRevision": "e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105",
+    "originalG2PConversionRevision": "UNVERIFIED",
+    "lexiconGeneratingMisakiRevision": "UNVERIFIED",
+    "originalKokoroConversionRevision": "UNVERIFIED"
+  },
+  "regeneration": {
+    "command": "node scripts/voice-pack/regenerate.mjs",
+    "platform": "Apple Silicon macOS 14+ with full Xcode, Swift 6 and Python 3.12+; public pinned downloads only",
+    "toolchain": {
+      "swift": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)\nTarget: arm64-apple-macosx26.0",
+      "xcode": "Xcode 26.6\nBuild version 17F113",
+      "os": "26.5.2"
+    },
+    "reproducibility": "Same pinned recipe and verified inputs; Core ML inference is not asserted bitwise deterministic across OS/hardware versions",
+    "provenanceFiles": {
+      "licenses/FluidAudio-LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "licenses/G2P-LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "licenses/G2P-README.md": "4bcf87ecfbbb8e07a01b21415a970c8b53a5283bf6872b657040d3f45c9241f7",
+      "licenses/G2P-metadata.json": "353727d05fcb268ae663631989c6c13957b2fae82b1c7d5c8894e289e38584d2",
+      "licenses/HF-README.md": "6b0c931d05d9ea7d1b5265225bf264125d884e265502d980de033057f29566b0",
+      "licenses/Kokoro-LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "licenses/Kokoro-README.md": "91dcabced89db6f109b8786642f50402d3ee87450e8189589b6f85520e7f4d78",
+      "licenses/Kokoro-metadata.json": "e5526bb318eea92cff52e17a51a3d5b52689b8edb3b5caacc535e9c4ac131966",
+      "licenses/Misaki-LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "licenses/Misaki-license-metadata.json": "06c6e3810124cc815e3f87c727776e3a287b95303085ce7e9c32d81b90c553fd",
+      "licenses/NOTICES.txt": "ac5c4d5e74ddedd88df32756356b12c60322dbd00eceb5e465027271c1fa2162",
+      "licenses/fastcluster-LICENSE.md": "67594dbe4a7477719c8160373e7767c2c319ef966a6042f76846a18af02cde0a",
+      "licenses/license-manifest.json": "6b4e9d6a9cddcfc450f6e3ee3cfec27d35c6cb07e20539279f1a181353ae79d8",
+      "licenses/vbx-LICENSE.md": "08e57fdb5187c816e937916f1e176aadb400ca76f4b3b493d69730ec8f10dd80",
+      "model-assets.json": "4e35990a4bf7650502263668150f85d1a5c1a8fa3e648c88e2391b14561ce478",
+      "offline-sdk.patch": "330376bc870d4664ec9ef512e302ed81dc8384de756e0de153bd0c294805187d",
+      "sdk-patch-manifest.json": "185da6b4411000fd215539ac1b2095f8d13b1f6e43881e7bd4cc2985a6a94575",
+      "host/Package.swift": "fe7c4f53f862f68efbe8541ba62f5e4f640d45741cec64ab53d17950bace32b2",
+      "host/Sources/ProbeCore/AssetVerifier.swift": "f52cbf2d785d8447a79633e1bff5c35e5e9961713a95dd2730677710c0f3d007",
+      "host/Sources/ProbeCore/ProbeBackend.swift": "700b65d72d60726cc0ffb4465922aba3dc0efe439fa3fa1dc07bf80ab84556f3",
+      "host/Sources/ProbeCore/ProbeLog.swift": "d21d429ff3e0927e4efb2ccf7af806d28b4e303e5ef39eb0cbf5ad73c154c9c6",
+      "host/Sources/VoicePackBatch/Batch.swift": "28c5c8226efc3b10abf952b12a835bc06c0b1d464f55e5c93fb0f61a8722f6c9",
+      "prepare.py": "0653286bbccad5381dfb5321357bde3bfe877804226ef9449797c4633807ef04",
+      "regenerate.mjs": "9d49c2f6cddef1976929e4a5fd4366d9aaa85aa7fbec4f16aa9dce978ff2deab",
+      "inventory.mjs": "b6a54f6e83f8ca633e8f0f6471870b53e78a9420b8250170fe983f6285161503",
+      "wav.mjs": "0290128fbb4d17eedde7de364655152f3eecd53b041b14df2abd797526196687"
+    }
+  },
+  "notices": {
+    "LICENSE.txt": "53b6e23e46b12b3a3d54300dd4737bc1e19562112a5507beffc3a6a26a780455",
+    "NOTICES.txt": "ac5c4d5e74ddedd88df32756356b12c60322dbd00eceb5e465027271c1fa2162"
+  },
+  "totalWavBytes": 4988520,
+  "clips": [
+    {
+      "id": "conversation-question",
+      "text": "What would you like help with at home?",
+      "sources": [
+        "assistantConversationCopy.en.question"
+      ],
+      "textSHA256": "303a2a02a6d56dad43d24cf988b5a3b11198b3906691c37982c3badafa615958",
+      "path": "conversation-question.wav",
+      "sha256": "7370b4896614292d4b2b9dd622581c1c6e2ed473b0047877b1d28bf8c31613ec",
+      "bytes": 102044,
+      "durationSeconds": 2.125,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.07653438317001604,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 336.25,
+        "trailingSilenceMs": 455.79166666666663,
+        "first20msPeak": 3.0517578125e-05,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "426dc1473f72dd5e7e995448a9c5d627e5c379bbdadacfadcd4a7ba4afe5992d",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.1093350872172309,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 305.9583333333333,
+          "trailingSilenceMs": 444.625,
+          "first20msPeak": 3.0517578125e-05,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "conversation-greeting",
+      "text": "Hi, I'm the FixList assistant. What would you like help with at home?",
+      "sources": [
+        "assistantConversationCopy.en.greeting"
+      ],
+      "textSHA256": "d272f20c887842f9ce3c76868ef4b914c919f527dd7b119b66063ccf706d6f26",
+      "path": "conversation-greeting.wav",
+      "sha256": "684ceb36f98e036693d62f0265eb64d4794bac2b52f9537bedda245ae365e170",
+      "bytes": 193244,
+      "durationSeconds": 4.025,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.06834544774329639,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 329.125,
+        "trailingSilenceMs": 448.4166666666667,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "e6b46a6d3740b8f4a30dca8001f7e2d6ee5d9a1b9951722008c06106dedf4f04",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.09763647801230572,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 327.7083333333333,
+          "trailingSilenceMs": 443.5416666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "conversation-thanks",
+      "text": "You're welcome. What would you like help with at home?",
+      "sources": [
+        "assistantConversationCopy.en.thanks"
+      ],
+      "textSHA256": "93c3ac384ede1e0a9a04c83649e3acb03113271e07d1641c6f29abb59c7252e0",
+      "path": "conversation-thanks.wav",
+      "sha256": "8ce8e2cca15c3b687bd21c702008b7e6a0371aa637602d452cda9b7a674fa0bd",
+      "bytes": 146444,
+      "durationSeconds": 3.05,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.06247316071317949,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 318.25,
+        "trailingSilenceMs": 476.9583333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "6993e9beb1cbf8d7edcdf906de03c6b3593b9801568e2799a63c7ccba3039889",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.08924762525137424,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 317.875,
+          "trailingSilenceMs": 469.08333333333337,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "conversation-clarify",
+      "text": "Let's get that right. What would you like help with at home?",
+      "sources": [
+        "assistantConversationCopy.en.clarify"
+      ],
+      "textSHA256": "6a7541d69ccc77dbe1a064a7ff6870e479524a42131c5d505ff609b1e1c8d43b",
+      "path": "conversation-clarify.wav",
+      "sha256": "4c0e945270625e0c6fd301ae7172a2c9b56e2ecd0263efbc81c21e7a501f6a37",
+      "bytes": 162044,
+      "durationSeconds": 3.375,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.06491655227496634,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 318.0833333333333,
+        "trailingSilenceMs": 423.75,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "4b25834d89ddc76075fcf161a6a4a45093dd1da186eaf7249d6f240b5a625f04",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.09273810780590878,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 318.0416666666667,
+          "trailingSilenceMs": 419.2916666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "conversation-ready",
+      "text": "I've drafted that for you. Would you like to review it?",
+      "sources": [
+        "assistantConversationCopy.en.ready"
+      ],
+      "textSHA256": "19565747c535ccd47487e1806634b10590e80b00475b25445eb365f033645bdb",
+      "path": "conversation-ready.wav",
+      "sha256": "a6108416d62241d3aa4c63514660a9aafb4785b4d91dd1354f9004d4a92aea58",
+      "bytes": 151244,
+      "durationSeconds": 3.15,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08621208920146291,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 312.625,
+        "trailingSilenceMs": 418.75,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "aa94dbde9a946119650859e67771d16d9867c1d3e22c7daab95d776d104ca2fc",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.12316033248783878,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 312.5833333333333,
+          "trailingSilenceMs": 412.75,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "conversation-updated",
+      "text": "Got it, I've updated the draft. Would you like to review it?",
+      "sources": [
+        "assistantConversationCopy.en.updated"
+      ],
+      "textSHA256": "10fa8a17acf369b72b6160d163ca2d4965563b3248ec06faccba1da0d2159f88",
+      "path": "conversation-updated.wav",
+      "sha256": "a93c6521c14d83ea31d53dcdf21f22c0d079996c8c0b1ee6d8910e8a1f5d79bc",
+      "bytes": 171644,
+      "durationSeconds": 3.575,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.0864824244960311,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 324.1666666666667,
+        "trailingSilenceMs": 495.4583333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "89159ceaeee5902635e6c714db70dfb013c914bd4762680426cf95cf4e001faa",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.12354651238272925,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 324.125,
+          "trailingSilenceMs": 494.375,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "conversation-timing",
+      "text": "Got it, I've updated the timing. Would you like to review the draft?",
+      "sources": [
+        "assistantConversationCopy.en.timing"
+      ],
+      "textSHA256": "0f001347083324d0de77e559aa8d6be3fae3d459fe4e1e4f5dc49166e8721a36",
+      "path": "conversation-timing.wav",
+      "sha256": "1e2a232c0d1795ec144c359481a3da32097b9bf7607e853d056b32e590c6f075",
+      "bytes": 195644,
+      "durationSeconds": 4.075,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08324877863961971,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 348.08333333333337,
+        "trailingSilenceMs": 452.5833333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "456a1fd01378f51ac49842a8df50ffb2289d5c0d82f8c0ba1407fdfc0aa3ee97",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.11892699607271551,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 347.4583333333333,
+          "trailingSilenceMs": 451.3333333333333,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "conversation-detail",
+      "text": "Got it. Would you like to review the draft?",
+      "sources": [
+        "assistantConversationCopy.en.detail"
+      ],
+      "textSHA256": "dfaf374072d972c7d80c100b762e1087011b31b38ba34e6a195cabecea01dbd4",
+      "path": "conversation-detail.wav",
+      "sha256": "e3080187ccfe3ecdff167b18446a79d3990aa001d4decefb7c4203dbafa66dd1",
+      "bytes": 126044,
+      "durationSeconds": 2.625,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08848434548060484,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 325.2083333333333,
+        "trailingSilenceMs": 428.2916666666667,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "e3ca557a082c5e769be4900f1160a157d483ab6fbe363656d31103200ca32602",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.126406405892638,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 323.375,
+          "trailingSilenceMs": 428,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-object",
+      "text": "What would you like to move?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.object"
+      ],
+      "textSHA256": "d39b89fdcb41733da5d19cc312a542d53411731399585b98a3759dffcf7b7e31",
+      "path": "followup-object.wav",
+      "sha256": "bf9264128729627e8db4dc6f8c358d9a3af261c0830ad72b05de1437a6a6b51c",
+      "bytes": 85244,
+      "durationSeconds": 1.775,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.07928136357312639,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 303.875,
+        "trailingSilenceMs": 402.91666666666663,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "0b604d83f72fbcf743226792ee911de36c29d3d503ffc213f1997d2e5a161674",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.1132593236894947,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 303.5,
+          "trailingSilenceMs": 401.4583333333333,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-outcome",
+      "text": "What would you like to do with it?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.outcome"
+      ],
+      "textSHA256": "40b63bcd4297be625f767b55f2e08ff196858e8569940c046e22273763fbc974",
+      "path": "followup-outcome.wav",
+      "sha256": "e13c0ec097574cb38d9c025e38b598e557cf3dab1392b6cdc575c57df6933800",
+      "bytes": 92444,
+      "durationSeconds": 1.925,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.0672021361322576,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 333.8333333333333,
+        "trailingSilenceMs": 474.4583333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "970b11cd604199fcf68108e908a0d4c52a4c679c98f890794db788ac93e93bb0",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.09600323351714979,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 303.5,
+          "trailingSilenceMs": 472.41666666666663,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-location",
+      "text": "Which room do you mean?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.location"
+      ],
+      "textSHA256": "53732ed7446dd4980360c64bd705fd1a0790ca26f0148478748e6fa2f819ff58",
+      "path": "followup-location.wav",
+      "sha256": "c892a32bad9929915e6eee0631826d9c00056046c3a1293b0fb0b7c8a15373aa",
+      "bytes": 79244,
+      "durationSeconds": 1.65,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.06289920951390658,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 335.29166666666663,
+        "trailingSilenceMs": 434.66666666666663,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "eac3706bf3033d7783be1204f36af8764fc50d32918ecf29d33c6bec1bfa354b",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.08985615028979438,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 334,
+          "trailingSilenceMs": 419.4166666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-destination",
+      "text": "Where should it go?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.destination"
+      ],
+      "textSHA256": "d07e436285f38516101d1f185f281fe6fd2a64be5fdcb838c4c83f04c81ac319",
+      "path": "followup-destination.wav",
+      "sha256": "469aedbc19e57b5e462bb04ceb8e582f419a428a171e17abac91f23a80963cbf",
+      "bytes": 69644,
+      "durationSeconds": 1.45,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.0731242605956953,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 328.5,
+        "trailingSilenceMs": 406.9583333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "e7ac2e11b7543a3f967a707db6a5552efee1615a59094257a17b655d5212a578",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.10446338105233574,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 328.4166666666667,
+          "trailingSilenceMs": 406.8333333333333,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-quantity",
+      "text": "How many do you mean?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.quantity"
+      ],
+      "textSHA256": "b0707ad63f9ec06314b9e5ac00ac33b929f4ef8d745a06a4cd701fd56afb6d34",
+      "path": "followup-quantity.wav",
+      "sha256": "2b043fb431268944e2d91bc14b3784b2ac5f56c70990ac69581a1a739c18dc3f",
+      "bytes": 76844,
+      "durationSeconds": 1.6,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.105289101110261,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 327.7083333333333,
+        "trailingSilenceMs": 411.58333333333337,
+        "first20msPeak": 3.0517578125e-05,
+        "last20msPeak": 3.0517578125e-05
+      },
+      "generation": {
+        "rawWavSHA256": "3f80d3c92f0c3c3d6a79b48741a9b92888f0749161665a3a866a65486f327236",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.15041324144268395,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 327.625,
+          "trailingSilenceMs": 411.375,
+          "first20msPeak": 3.0517578125e-05,
+          "last20msPeak": 3.0517578125e-05
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-timing",
+      "text": "What timing should I include?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.timing"
+      ],
+      "textSHA256": "b8623b3bed82965069fb6d9190046a3aef6ac8362c61d2880c320e519decbd02",
+      "path": "followup-timing.wav",
+      "sha256": "d3e6016389dcd3f559733362c4ffe605d82ae7656589e92a86826f7412627dba",
+      "bytes": 102044,
+      "durationSeconds": 2.125,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08422270644812183,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 328.6666666666667,
+        "trailingSilenceMs": 419.20833333333337,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "96bf2937a7f02e66974d177ce7304a952777122678affb456fee83ac0d0e640c",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.12031829063288813,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 328.5416666666667,
+          "trailingSilenceMs": 419,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-access",
+      "text": "What access instructions should I include?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.access"
+      ],
+      "textSHA256": "c2de53655827de9f629efe407ec50a55af7363ad65c52da7ba358111b8774f12",
+      "path": "followup-access.wav",
+      "sha256": "43b1bc8932bf66709a682edaf9827f0382c7c4eb940cdbb88deda4de5ee03670",
+      "bytes": 140444,
+      "durationSeconds": 2.925,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08201468757278275,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 338.08333333333337,
+        "trailingSilenceMs": 508.79166666666663,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "f438907e5dc7efa4117facd7c3edca3ea5e7cf9c76b6c78269f601dd7fe90e79",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.11716414648518415,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 338,
+          "trailingSilenceMs": 502.625,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-correction",
+      "text": "Which detail would you like to change?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.correction"
+      ],
+      "textSHA256": "0fea7411903389abf5d339c2de03e2bd37491f6fb7139616c011956b745518d4",
+      "path": "followup-correction.wav",
+      "sha256": "ffae0fb9b141c4d7fb8cdce16a4de59ef7d3dae8b17ad09fef06ac726b06631a",
+      "bytes": 118844,
+      "durationSeconds": 2.475,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.09493743954879935,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 333.29166666666663,
+        "trailingSilenceMs": 449.79166666666663,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "15853e9ab068b95ed421ff35fba2f53ce37039c615bf73880b12d43952e8d2a3",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.13562514279279844,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 331.875,
+          "trailingSilenceMs": 431.25,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-review",
+      "text": "Would you like to review the draft?",
+      "sources": [
+        "assistantFollowupCopy.en.questions.review"
+      ],
+      "textSHA256": "37b6c4b6737341391b67351f0d4a63625e34ea41ed0d2a3322aa83f6471648c2",
+      "path": "followup-review.wav",
+      "sha256": "b6b4cb1ba7a3b58737aa127df69324e2fd785aaa8079c3295c8dd94d2c55bf60",
+      "bytes": 105644,
+      "durationSeconds": 2.2,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.10037278485499634,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 328.5,
+        "trailingSilenceMs": 403.2083333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "c7d5d73bb0eb8169779afca677c93d8c0343e3f49f1e9f552eecb6119f02a405",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.14338994897151366,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 328.45833333333337,
+          "trailingSilenceMs": 403,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-task",
+      "text": "I didn't understand that detail. What would you like help with at home?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantConversationCopy.en.question"
+      ],
+      "textSHA256": "b504b46a1d398fcc11de5d48ef44660f8d19f298ba4e7f44f0d75dc305014f64",
+      "path": "unsupported-task.wav",
+      "sha256": "c1ad9b436e8d538ed7ca65b933748f0fd1d2e2632f1c42f9609f7bd3a1a3753c",
+      "bytes": 198044,
+      "durationSeconds": 4.125,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08660785745348608,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 353.58333333333337,
+        "trailingSilenceMs": 449.7083333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "1ef1655dc1810bd452e2b66809c8fcdf604db168759558bd94a3d7b1d204481f",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.12372566642770459,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 337.95833333333337,
+          "trailingSilenceMs": 434.5416666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-object",
+      "text": "I didn't understand that detail. What would you like to move?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.object"
+      ],
+      "textSHA256": "122177acd18934777f23bc8969d3b603713f73a749a6d5231996895e9d8f8593",
+      "path": "unsupported-object.wav",
+      "sha256": "eb86b16c4c63a442d079c5b8b55f0a115bd957977502e89f4b9cba40caed81a2",
+      "bytes": 186044,
+      "durationSeconds": 3.875,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08566242389601934,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 350.375,
+        "trailingSilenceMs": 470.75,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "dfc79751604b6dde4cdaf8a31cb44b44e38854cc8f6ae6ff7f103b7551ddb563",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.1223751559761402,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 350.2916666666667,
+          "trailingSilenceMs": 469.9583333333333,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-outcome",
+      "text": "I didn't understand that detail. What would you like to do with it?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.outcome"
+      ],
+      "textSHA256": "a3f57960b2e50f269f87050d1d4dd46a3d7e2beba88424e5207d457b1983485f",
+      "path": "unsupported-outcome.wav",
+      "sha256": "f08acdfa2be987d6653dc6ba6685b96ba807ba324c1c61f2b5860e160e9e93c6",
+      "bytes": 188444,
+      "durationSeconds": 3.925,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.09039276096472074,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 337.91666666666663,
+        "trailingSilenceMs": 468.91666666666663,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "f4496dfe6ed10a455b8f5eb48d7b7e63e1066f87f80724e468000291948cddb6",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.12913271682852023,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 337.875,
+          "trailingSilenceMs": 468.0416666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-location",
+      "text": "I didn't understand that detail. Which room do you mean?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.location"
+      ],
+      "textSHA256": "263996c36d4ce3b60711b7dbb6e20e613a1ca7ae383cc1bc468f0a18ce03fa82",
+      "path": "unsupported-location.wav",
+      "sha256": "96fd19328ad035ff4b7b8b4d9eeafc1e341d9614fb05e66ff3413cadcd5de0d3",
+      "bytes": 176444,
+      "durationSeconds": 3.675,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.0813856108671849,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 357.5,
+        "trailingSilenceMs": 507.49999999999994,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "073d492bbba346389d05fd9b97b28afdcf442b2c60d13268bb0b806ab136ef6f",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.11626546516693076,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 356.54166666666663,
+          "trailingSilenceMs": 494.2916666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-destination",
+      "text": "I didn't understand that detail. Where should it go?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.destination"
+      ],
+      "textSHA256": "b5ded00ab3dc200a0cb3cfa1a1c834188b506f83b4fa0204396d4a57e0370d5a",
+      "path": "unsupported-destination.wav",
+      "sha256": "4db8ff1c157314fdc6536b34b09e75a43b9d0778dda8851deea82ed41fcd3e00",
+      "bytes": 160844,
+      "durationSeconds": 3.35,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.07817321928889474,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 356.5,
+        "trailingSilenceMs": 488.5,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "09c33da439ff7fae340b0f9925f1f3f7816aa96b02c1cceae44eb1a1ee5f86b7",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.11167630570804907,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 356.4166666666667,
+          "trailingSilenceMs": 482.4583333333333,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-quantity",
+      "text": "I didn't understand that detail. How many do you mean?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.quantity"
+      ],
+      "textSHA256": "b287567e2d4f0e811b6aead8c4fd3004301374aa97784c59617c8bffb36710be",
+      "path": "unsupported-quantity.wav",
+      "sha256": "677efb66518051ce79264b8f94b1e4319fd8b38091b4799378588da7995567dd",
+      "bytes": 174044,
+      "durationSeconds": 3.625,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.0811772822816677,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 357.5833333333333,
+        "trailingSilenceMs": 472.91666666666663,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "6e55ad8b8c85b9838f7e566d3128388ecb2dffb789f94cea72a4f43e5199e65b",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.11596785732105207,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 357.5,
+          "trailingSilenceMs": 463.45833333333337,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-timing",
+      "text": "I didn't understand that detail. What timing should I include?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.timing"
+      ],
+      "textSHA256": "1e2f142a0c76af16b9929229b4c35449f33003548d035dc3b65d8c68acf9232e",
+      "path": "unsupported-timing.wav",
+      "sha256": "e1800598c348e98a43f92cd163cd295f0160b020fa4d40e05ad31443bd209d56",
+      "bytes": 200444,
+      "durationSeconds": 4.175,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08788300100821493,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 351.58333333333337,
+        "trailingSilenceMs": 508.625,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "dc1472371ac86ea9097978265f71d7b94c6f40c30442988b1c2c7569f78b15ce",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.12554736726792134,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 338.0416666666667,
+          "trailingSilenceMs": 500.79166666666663,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-access",
+      "text": "I didn't understand that detail. What access instructions should I include?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.access"
+      ],
+      "textSHA256": "ecceeb5e83f6298d7c766aba70bbaf496cb1d276277090fcca2ceab813ac1dcd",
+      "path": "unsupported-access.wav",
+      "sha256": "398774941a8ab7faaffeb53301eb1f1f0b8dcf9aaacbde81e5acd14bdfa11c3a",
+      "bytes": 229244,
+      "durationSeconds": 4.775,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.07277245327209854,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 357.4166666666667,
+        "trailingSilenceMs": 533.875,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "e37a0c7a59f9342abfd1ecb07f9922672aaf78513c20e116837bc667c649c71a",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.10396084553456388,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 356.4166666666667,
+          "trailingSilenceMs": 524.4583333333334,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-correction",
+      "text": "I didn't understand that detail. Which detail would you like to change?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.correction"
+      ],
+      "textSHA256": "81b1e50ccb473fc5cf01cdffaa39a705d35b2af9dda7d48c9db69fb0a4d88a66",
+      "path": "unsupported-correction.wav",
+      "sha256": "a784fd24f0ba5f414ae54c363adfba8b480e40a830a8560a5babe994d52553d2",
+      "bytes": 214844,
+      "durationSeconds": 4.475,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.07601515117561124,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 358.125,
+        "trailingSilenceMs": 486.9166666666667,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "e0921455afbc4a5b7a13b4cec605a9936eb317bee0f2680623ad5a08c2c784ea",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.10859331429794047,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 357.5833333333333,
+          "trailingSilenceMs": 483.54166666666663,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "unsupported-review",
+      "text": "I didn't understand that detail. Would you like to review the draft?",
+      "sources": [
+        "assistantFollowupCopy.en.unsupported",
+        "assistantFollowupCopy.en.questions.review"
+      ],
+      "textSHA256": "9cbd56a330fd27132d726435b36e828410a2c54764b8b51658342c35d23c447b",
+      "path": "unsupported-review.wav",
+      "sha256": "c06eb8cc9f3eddc6e6550eee54afdae7a9f5f5219512ea5a2dbdb345bb6e212f",
+      "bytes": 201644,
+      "durationSeconds": 4.2,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.09889292417601746,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 351.54166666666663,
+        "trailingSilenceMs": 402.625,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "55242ca60997dd309910fa5e9598729d58af0da255d6c411d2eae1920a408e4d",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.1412758976652638,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 351.41666666666663,
+          "trailingSilenceMs": 399.41666666666663,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-cancelled",
+      "text": "I cancelled this draft. You can start a new request.",
+      "sources": [
+        "assistantFollowupCopy.en.cancelled"
+      ],
+      "textSHA256": "28403d3e9c122d34d8ca1438ec4216f23db3c6612decd62a4ea54f07905d5b81",
+      "path": "followup-cancelled.wav",
+      "sha256": "f109f1e5dfe7670dcdbe7373e447216934315ca98ecb1ae55be441ad4c374612",
+      "bytes": 184844,
+      "durationSeconds": 3.85,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.0799558816452022,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 354.3333333333333,
+        "trailingSilenceMs": 487.2916666666667,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "cb2c1377df0c794e34d9714363043e1be7028e7354acc66ceda4ca45ba9d0a1b",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.11422289894895461,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 354.2916666666667,
+          "trailingSilenceMs": 484.625,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-context",
+      "text": "This conversation is too long to use safely. Please start a new request with the details you want included.",
+      "sources": [
+        "assistantFollowupCopy.en.context"
+      ],
+      "textSHA256": "e4c64c96ff377e41e84d64cad869ebc65df118d00de79f3f6658166cc5f66425",
+      "path": "followup-context.wav",
+      "sha256": "389088e73a1d3a6c869e88b72173ca3123fe4267b958bcb0cd9c77241d565736",
+      "bytes": 302444,
+      "durationSeconds": 6.3,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.0832492492515597,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 326.125,
+        "trailingSilenceMs": 584,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "300257b82f175dbdf6004c9651fa687554c71a9a14057fcb059e4db9c49a80a2",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.11892776345198862,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 324.2083333333333,
+          "trailingSilenceMs": 574.375,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "followup-emergency",
+      "text": "If there is immediate danger or a medical emergency, move to safety if you can and contact local emergency services. FixList cannot provide emergency help.",
+      "sources": [
+        "assistantFollowupCopy.en.emergency"
+      ],
+      "textSHA256": "20d8d00fd4cdf8b5b632905fe94e8cb1bad14368b8e19860bcbb29edfc8d8f70",
+      "path": "followup-emergency.wav",
+      "sha256": "873e00bf79a3e86c722f42b752d4ea5f0918ba3deef5dc55e2b2cbc002be0df2",
+      "bytes": 452444,
+      "durationSeconds": 9.425,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.09197371616967098,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 329.95833333333337,
+        "trailingSilenceMs": 567.0416666666666,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "d79b302d9769196331ac85b38140e706e924d318b8e0f49123f2d03658058513",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.13139128272013106,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 329.875,
+          "trailingSilenceMs": 560.625,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react';
+import { verifyVoicePack } from './scripts/voice-pack/verify.mjs';
 import { createReadStream, existsSync } from 'node:fs';
 import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -281,8 +282,17 @@ export function localScansPlugin(): Plugin {
   };
 }
 
+function voicePackPlugin(): Plugin {
+  let building = false;
+  return {
+    name: 'fixlist-voice-pack',
+    configResolved(config) { building = config.command === 'build'; },
+    async buildStart() { if (building) await verifyVoicePack(); },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), localScansPlugin()],
+  plugins: [react(), localScansPlugin(), voicePackPlugin()],
   ...(mode === 'submission' ? {
     envDir: false,
     // Also reject inherited VITE_* if someone invokes Vite directly.

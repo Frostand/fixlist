@@ -9,7 +9,9 @@ const NOW = '2026-10-23T12:00:00.000Z';
 describe('authored community demo stories', () => {
   it('adds only two empty first-run demos and preserves every original seed record', async () => {
     const state = createSeedState(NOW), newIds = ['elder-new-demo', 'volunteer-new-demo'];
-    const existing = { ...state, accounts: state.accounts.filter(a => !newIds.includes(a.id)), elders: state.elders.filter(e => !newIds.includes(e.accountId)), volunteers: state.volunteers.filter(v => !newIds.includes(v.accountId)) };
+    const { familyHistory, ...original } = state;
+    expect(familyHistory?.grants).toMatchObject([{ elderId: 'elder-margaret', familyId: 'family-alex', origin: 'fictional-demo', scopes: ['requests', 'capture', 'messages', 'profile'] }]);
+    const existing = { ...original, accounts: state.accounts.filter(a => !newIds.includes(a.id)), elders: state.elders.filter(e => !newIds.includes(e.accountId)), volunteers: state.volunteers.filter(v => !newIds.includes(v.accountId)) };
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(existing)));
     expect(Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')).toBe('c0a6138e4dc232f57025c8e77fdbbf08d97481c9abf3bde76bac54709fa6c900');
     expect(state.accounts).toHaveLength(14);

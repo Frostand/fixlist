@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Misaki",
+    "revision": "fba1236595f2d2bf21d414ba6e57d25256afada3",
+    "url": "https://raw.githubusercontent.com/hexgrad/misaki/fba1236595f2d2bf21d414ba6e57d25256afada3/LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "bytes": 11357,
+    "scope": "License reference only; not asserted as source revision of converted assets"
+  },
+  {
+    "name": "FluidAudio",
+    "revision": "b10bdcb51dcfeedb8001353b4ba363da1a616d6d",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "bytes": 11357,
+    "url": "https://github.com/FluidInference/FluidAudio/blob/b10bdcb51dcfeedb8001353b4ba363da1a616d6d/LICENSE"
+  },
+  {
+    "name": "Kokoro",
+    "license": "Apache-2.0 per pinned model card",
+    "revision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+    "modelCardURL": "https://huggingface.co/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/README.md",
+    "modelCardGitBlobID": "d6dc124205ad567631d14cd8700f1af77a861c3f",
+    "modelCardSHA256": "91dcabced89db6f109b8786642f50402d3ee87450e8189589b6f85520e7f4d78",
+    "licenseTextSource": "Unmodified Apache 2.0 text copied from FluidAudio-LICENSE; upstream HF repo has no standalone LICENSE",
+    "scope": "License evidence reference; not asserted as exact upstream revision used for conversion"
+  },
+  {
+    "name": "G2P",
+    "license": "Apache-2.0 per pinned model card",
+    "revision": "a5631b285d18d59483c32c0c3379cb9fac924f4b",
+    "modelCardURL": "https://huggingface.co/PeterReid/graphemes_to_phonemes_en_us/resolve/a5631b285d18d59483c32c0c3379cb9fac924f4b/README.md",
+    "modelCardGitBlobID": "7b95401dc46245ac339fc25059d4a56d90b4cde5",
+    "modelCardSHA256": "4bcf87ecfbbb8e07a01b21415a970c8b53a5283bf6872b657040d3f45c9241f7",
+    "licenseTextSource": "Unmodified Apache 2.0 text copied from FluidAudio-LICENSE; upstream HF repo has no standalone LICENSE",
+    "scope": "License evidence reference; not asserted as exact upstream revision used for conversion"
+  },
+  {
+    "name": "FluidInference CoreML conversion",
+    "revision": "e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105",
+    "license": "Apache-2.0 per pinned model card",
+    "modelCardGitBlobID": "26d4179d87d915e4830762636ab92894e3435148",
+    "modelCardSHA256": "6b0c931d05d9ea7d1b5265225bf264125d884e265502d980de033057f29566b0"
+  }
+]

@@ -7,3 +7,5 @@ export { signIn, signOut, completeOnboarding, createAccount, updateLanguage, upd
 export { scoreMatch } from './matching';
 export { currentAccount, matchesForVolunteer, matchesForJob, jobsForElder, jobsForVolunteer, visibleJob, volunteerStats, serviceLog, accountsByRole } from './queries';
 export { COMMUNITY_STORAGE_KEY, validateCommunityState, loadCommunity, saveCommunity, resetCommunity } from './storage';
+
+export { canManageElder, familyGrant, approveFamilyGrant, revokeFamilyGrant, updateElderInformation } from './family';

@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import type { Account, ChatTurn, CommunityState, Job, JobAnalysis, JobSource, ListeningSession, ScanEvidence } from '../../community/types';
 import { QUICK_PICK_IDS, quickPickAnalysis, volunteerStats } from '../../community';
 import { assistant } from '../../lib/assistant';
+import { sendRequestTurn } from '../../lib/request-conversation';
 import { assistantRulesCopy } from '../../lib/assistant-copy';
 import { localeFor, useLanguage, useT } from '../../i18n';
 import { Avatar, Button, Heading, Icon } from './UI';
@@ -64,15 +65,22 @@ export function RequestList({ state, jobs, onOpen }: {
     onOpen(id: string): void;
 }) { const t = useT(); return <div className="c-stack">{jobs.length ? jobs.map((j) => <RequestSummary key={j.id} job={j} state={state} tracker onOpen={() => onOpen(j.id)}/>) : <p className="c-empty">{t('c.job.empty')}</p>}</div>; }
 type TalkPhase = 'idle' | 'starting' | 'listening' | 'thinking' | 'replied';
-export function AskScreen({ talk, account, onDraft, onPost }: {
+export function AskScreen({ talk, account, onDraft, onPost, isCurrent = () => true }: {
     talk: boolean;
+    isCurrent?(): boolean;
     account: Account;
     onDraft(d: Draft): void;
     onPost?(d: Draft, slots: readonly import('../../community/types').AvailabilitySlot[], analysis: JobAnalysis): boolean;
 }) {
     const t = useT(), language = useLanguage(), alive = useRef(true), listening = useRef<ListeningSession | null>(null), pending = useRef(false);
+    const authorization = useRef(isCurrent);
+    authorization.current = isCurrent;
     const identity = `${account.id}:${language}:${talk}`, scope = useRef({ identity });
     if (scope.current.identity !== identity) scope.current = { identity };
+    const reviewToken = useRef(0), posted = useRef(false);
+    const renderedToken = reviewToken.current;
+    const [viewIdentity, setViewIdentity] = useState(identity), [blocked, setBlocked] = useState(false);
+    const currentView = viewIdentity === identity;
     const partialText = useRef(''), starting = useRef(false), listeningAbort = useRef<AbortController | null>(null);
     const [phase, setPhase] = useState<TalkPhase>('idle');
     const [text, setText] = useState(''), [partial, setPartial] = useState(''), [turns, setTurns] = useState<ChatTurn[]>([]);
@@ -81,45 +89,38 @@ export function AskScreen({ talk, account, onDraft, onPost }: {
     const typingRef = useRef<HTMLTextAreaElement>(null);
     const busy = phase === 'thinking', recording = phase === 'starting' || phase === 'listening';
     useEffect(() => {
-        const owner = { identity }; scope.current = owner;
-        alive.current = true; pending.current = false; starting.current = false;
+        const owner = { identity }; scope.current = owner; setViewIdentity(identity); setBlocked(false);
+        alive.current = true; pending.current = false; starting.current = false; reviewToken.current++; posted.current = false;
         setPhase('idle'); setText(''); setPartial(''); partialText.current = ''; setTurns([]); setDraft(null); setError(''); setVoice(null); setSpeechOutput(false); setRulesOnly(false); setTyping(!talk);
         void assistant.availability(language).then(a => {
-            if (alive.current && scope.current === owner) {
+            if (alive.current && scope.current === owner && authorization.current()) {
                 setVoice(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && a.reason !== 'native-unavailable' && a.speechInput);
                 setSpeechOutput(a.speechOutput); setRulesOnly(!a.onDeviceModel);
             }
-        }).catch(() => { if (alive.current && scope.current === owner) { setVoice(false); setSpeechOutput(false); setRulesOnly(true); } });
+        }).catch(() => { if (alive.current && scope.current === owner && authorization.current()) { setVoice(false); setSpeechOutput(false); setRulesOnly(true); } });
         return () => { alive.current = false; listeningAbort.current?.abort(); listeningAbort.current = null; listening.current?.cancel(); listening.current = null; assistant.stopSpeaking(); };
     }, [account.id, language, talk]);
     useEffect(() => { if (typing) typingRef.current?.focus(); }, [typing]);
-    function speak(words: string) { assistant.stopSpeaking(); if (speechOutput) void assistant.speak(words, language).catch(() => {}); }
+    function speak(words: string) { if (!alive.current || !authorization.current()) return; assistant.stopSpeaking(); if (speechOutput) void assistant.speak(words, language).catch(() => {}); }
     async function submit(words: string, source: JobSource) {
-        if (!words.trim() || pending.current) return;
-        const owner = scope.current, active = () => alive.current && scope.current === owner;
-        pending.current = true; setPhase('thinking'); setError(''); setText(''); setDraft(null); assistant.stopSpeaking();
+        if (!alive.current || !authorization.current() || !currentView || scope.current.identity !== identity || !words.trim() || pending.current) return;
+        const owner = scope.current, active = () => alive.current && scope.current === owner && authorization.current();
+        pending.current = true; reviewToken.current++; posted.current = false; setPhase('thinking'); setError(''); setText(''); setDraft(null); assistant.stopSpeaking();
         try {
-            if (talk) {
-                const next: ChatTurn[] = [...turns, { role: 'user', text: words.trim() }];
-                setTurns(next);
-                const reply = await assistant.chat(next, language, { firstName: account.firstName });
-                if (!active()) return;
-                setTurns([...next, { role: 'assistant', text: reply.text }]);
-                setPhase('replied'); speak(reply.text);
-                if (reply.job) setDraft({ analysis: reply.job, source, text: reply.originalText ?? next.filter(turn => turn.role === 'user').map(turn => turn.text).join('\n'), evidence: [] });
-            } else {
-                const analysis = await assistant.analyzeTask(words.trim(), language);
-                if (active()) onDraft({ analysis, source, text: words.trim(), evidence: [] });
-            }
+            const result = await sendRequestTurn(turns, words, language, account.firstName);
+            if (!active()) return;
+            setTurns(result.turns); setBlocked(result.reply.conversation?.status === 'blocked'); setRulesOnly(result.reply.engine === 'rules' || result.reply.job?.engine === 'rules');
+            setPhase('replied'); if (talk) speak(result.reply.text);
+            if (result.reply.job) setDraft({ analysis: result.reply.job, source, text: result.originalText, evidence: [] });
         } catch {
             if (active()) { setError(t('c.error')); setText(words); setPhase(turns.length ? 'replied' : 'idle'); }
-        } finally { if (active()) { pending.current = false; if (!talk) setPhase('idle'); } }
+        } finally { if (active()) { pending.current = false; } }
     }
     async function start() {
-        if (pending.current || voice !== true || recording || starting.current || listening.current) return;
-        const owner = scope.current, active = () => alive.current && scope.current === owner;
+        if (!alive.current || !authorization.current() || !currentView || scope.current.identity !== identity || pending.current || voice !== true || recording || starting.current || listening.current) return;
+        const owner = scope.current, active = () => alive.current && scope.current === owner && authorization.current();
         const controller = new AbortController(); listeningAbort.current = controller;
-        starting.current = true;
+        starting.current = true; reviewToken.current++; setDraft(null);
         setError(''); setPartial(''); partialText.current = ''; setPhase('starting'); assistant.stopSpeaking();
         try {
             const session = await assistant.startListening(language, words => { if (active()) { partialText.current = words; setPartial(words); } }, controller.signal);
@@ -142,31 +143,37 @@ export function AskScreen({ talk, account, onDraft, onPost }: {
     }
     async function stop() {
         const session = listening.current, owner = scope.current;
-        if (!session) return;
+        if (!session || !alive.current || !authorization.current()) return;
         setPhase('thinking');
         try { await session.stop(); }
         catch {
-            if (alive.current && scope.current === owner && listening.current === session) {
+            if (alive.current && scope.current === owner && authorization.current() && listening.current === session) {
                 listening.current = null; session.cancel(); setText(partialText.current); setPartial('');
                 setPhase(turns.length ? 'replied' : 'idle'); setError(t('c.talk.unavailable')); setTyping(true);
             }
         }
     }
-    return <div className="c-stack" data-talk-phase={phase}>
+    if (!currentView) return <p role="status">{t('c.loading')}</p>;
+    return <div className="c-stack" data-talk-phase={phase} lang={language} dir="auto">
         <Heading intro={t(talk ? 'c.talk.prompt' : 'c.type.body')}>{t(talk ? 'c.talk.title' : 'c.type.title')}</Heading>
         {rulesOnly && !draft ? <p className="c-small" role="status">{assistantRulesCopy[language]}</p> : null}
-        {talk ? <>
-            <div className="c-chat" aria-live="polite">{turns.map((turn, i) => <div className={`c-bubble c-bubble-${turn.role}`} key={i}><span>{t(turn.role === 'user' ? 'c.talk.you' : 'c.talk.assistant')}</span><p>{turn.text}</p>{turn.role === 'assistant' ? <Button kind="quiet" icon="replay" disabled={!speechOutput || recording || busy} onClick={() => speak(turn.text)}>{t('c.talk.replay')}</Button> : null}</div>)}
+        <>
+            <div className="c-chat" aria-live="polite">{turns.map((turn, i) => <div className={`c-bubble c-bubble-${turn.role}`} key={i}><span>{t(turn.role === 'user' ? 'c.talk.you' : 'c.talk.assistant')}</span><p lang={language} dir="auto" role={blocked && i === turns.length - 1 ? 'alert' : undefined}>{turn.text}</p>{talk && turn.role === 'assistant' ? <Button kind="quiet" icon="replay" disabled={!speechOutput || recording || busy} onClick={() => speak(turn.text)}>{t('c.talk.replay')}</Button> : null}</div>)}
                 {phase === 'listening' && partial ? <div className="c-bubble c-bubble-user"><span>{t('c.talk.you')}</span><p>{partial}</p></div> : null}</div>
-            {draft ? <section aria-label={t('c.talk.preview')}><DraftScreen embedded key={turns.length} draft={draft} onChange={setDraft} onPost={(slots, analysis) => { if (onPost) return onPost(draft, slots, analysis); onDraft({ ...draft, analysis }); return true; }}/></section> : null}
-            {!draft ? busy ? <p className="c-thinking c-small" role="status">{t('c.talk.thinking')}</p> : <>
+            {draft ? <section aria-label={t('c.talk.preview')}><DraftScreen embedded key={draft.text} draft={draft} isCurrent={() => alive.current && authorization.current()} onChange={value => { if (alive.current && authorization.current()) setDraft(value); }} onPost={(slots, analysis) => {
+                if (!authorization.current() || scope.current.identity !== identity || !currentView || pending.current || posted.current || reviewToken.current !== renderedToken || !alive.current) return false;
+                const accepted = onPost ? onPost(draft, slots, analysis) : (onDraft({ ...draft, analysis }), true);
+                if (accepted) posted.current = true;
+                return accepted;
+            }}/></section> : null}
+            {talk ? busy ? <p className="c-thinking c-small" role="status">{t('c.talk.thinking')}</p> : <>
                 <div className="c-talk-home"><button className={`c-mic ${phase === 'listening' ? 'c-listening' : ''}`} disabled={voice !== true || phase === 'starting'} onClick={() => phase === 'listening' ? void stop() : void start()}><Icon name="mic" size={42}/><strong>{t(phase === 'starting' ? 'c.talk.starting' : phase === 'listening' ? 'c.talk.stop' : 'c.talk.speak')}</strong></button>
                     {phase === 'listening' ? <p role="status">{t('c.talk.listening')}</p> : null}</div>
-                {!recording ? <Button kind="quiet" onClick={() => { setTyping(true); typingRef.current?.focus(); }}>{t('c.talk.typeInstead')}</Button> : null}
+                {!recording ? <Button kind="quiet" onClick={() => { if (!alive.current || !authorization.current()) return; setTyping(true); typingRef.current?.focus(); }}>{t('c.talk.typeInstead')}</Button> : null}
             </> : null}
-            {voice === false && !draft ? <p className="c-small" role="status">{t('c.talk.unavailable')}</p> : null}
-        </> : null}
-        {(!talk || typing || voice === false) && !recording && !draft ? <form className="c-stack" onSubmit={e => { e.preventDefault(); void submit(text, 'typed'); }}><label className="c-field">{t(talk ? 'c.talk.placeholder' : 'c.type.title')}<textarea ref={typingRef} rows={4} required disabled={busy} maxLength={2000} placeholder={t(talk ? 'c.talk.placeholder' : 'c.type.placeholder')} value={text} onChange={e => setText(e.target.value)}/></label><Button type="submit" disabled={!text.trim() || busy} kind={talk ? 'secondary' : 'primary'}>{t(busy ? 'c.talk.thinking' : talk ? 'c.talk.send' : 'c.type.draft')}</Button></form> : null}
+            {talk && voice === false && !draft ? <p className="c-small" role="status">{t('c.talk.unavailable')}</p> : null}
+        </>
+        {(!talk || typing || voice === false) && !recording ? <form className="c-stack" onSubmit={e => { e.preventDefault(); void submit(text, 'typed'); }}><label className="c-field">{t(talk ? 'c.talk.placeholder' : 'c.type.title')}<textarea ref={typingRef} rows={4} required disabled={busy} maxLength={2000} placeholder={t(talk ? 'c.talk.placeholder' : 'c.type.placeholder')} value={text} onChange={e => { if (!alive.current || !authorization.current()) return; reviewToken.current++; setDraft(null); setText(e.target.value); }}/></label><Button type="submit" disabled={!text.trim() || busy} kind={talk ? 'secondary' : 'primary'}>{t(busy ? 'c.talk.thinking' : talk ? 'c.talk.send' : 'c.type.draft')}</Button></form> : null}
         {error ? <p role="alert">{error}</p> : null}
     </div>;
 }

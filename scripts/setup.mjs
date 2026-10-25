@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { verifyVoicePack } from './voice-pack/verify.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -47,6 +48,7 @@ async function runCommand(command, args) {
 
 export async function setup({ mode = 'web', platform = process.platform, run = runCommand } = {}) {
   checkMode(mode, platform);
+  await verifyVoicePack();
   const step = async (command, args, guidance) => {
     try { return await run(command, args); }
     catch (cause) { throw new Error(`${command} ${args.join(' ')} failed: ${cause.message}\n${guidance}`, { cause }); }

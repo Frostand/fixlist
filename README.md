@@ -59,6 +59,10 @@ npx cap open ios
 
 Choose your signing team and device in Xcode, then run. Capture and voice need a physical iPhone with the right hardware and permissions. A Simulator run doesn't exercise them.
 
+English assistant prompts use bundled audio generated with Kokoro’s `af_heart` voice. Other text and languages use installed system voices. The app needs no voice API, model download, or extra setup.
+
+Run `npm run voice:verify` to check the audio pack. To regenerate it on an Apple Silicon Mac, use `npm run voice:generate`; this downloads pinned tools and model assets to a cache outside the repository. Audio details and licenses are in `public/voice/en/`.
+
 Use `npm run ios:sync` instead to sync the ordinary real-account build.
 
 ## Real accounts (optional)

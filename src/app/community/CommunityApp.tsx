@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import * as domain from '../../community';
 import { canManageElder } from '../../community/commands';
+import { familyScopeFailure } from '../../community/family';
+import { FamilyWorkspace } from './FamilyWorkspace';
 import { completeAccountSetup } from '../../community/setup';
 import type { Account, AccountRole, Language, SignInProvider } from '../../community/types';
 import { authCopy } from '../../i18n/auth';
@@ -74,7 +76,7 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
             setNotice(t('c.setup.unsavedPreferences'));
         goCommunity(roleHome(v.role));
     } }
-    const elderId = account?.role === 'elder' ? account.id : state.families.find((f) => f.accountId === account?.id)?.elderIds[0];
+    const elderId = account?.role === 'elder' && canManageElder(state, account.id, account.id) ? account.id : undefined;
     const elder = state.accounts.find((a) => a.id === elderId);
     const elderJobs = elderId ? domain.jobsForElder(state, elderId) : [];
     let screen = route.screen;
@@ -109,6 +111,8 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     }
     else if (!account)
         content = null;
+    else if (account.role === 'family')
+        content = <FamilyWorkspace key={JSON.stringify([account.id, c.resetEpoch])} controller={c} account={account} route={{ ...route, screen }} onNavigate={goCommunity}/>;
     else if (screen === 'draft')
         content = draft && elder ? <DraftScreen draft={draft} onChange={setDraft} onPost={(preferredSlots, analysis) => { const result = c.run((s) => domain.postJob(s, { actorId: account.id, elderId: elder.id, source: draft.source, originalText: draft.text, analysis, evidence: draft.evidence, preferredSlots }, new Date().toISOString())); if (result.ok) {
             setDraft(null);
@@ -121,9 +125,7 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
             return result.ok;
         }}/> : <Missing onHome={() => goCommunity(mainRoute)}/>;
     else if (screen === 'rooms') {
-        const ownerId = domain.currentAccount(state)?.id === account.id
-            ? (account.role === 'elder' ? [account.id] : state.families.find(f => f.accountId === account.id)?.elderIds ?? []).find(id => canManageElder(state, account.id, id))
-            : undefined;
+        const ownerId = account.role === 'elder' && canManageElder(state, account.id, account.id) ? account.id : undefined;
         content = ownerId && c.resetEpoch ? <Suspense fallback={<p role="status">{t('c.loading')}</p>}><RoomCapture key={JSON.stringify([account.id, c.resetEpoch, ownerId])} ownerId={ownerId} resetEpoch={c.resetEpoch} onDraft={(analysis, evidence) => draftJob({ analysis, source: 'scan', text: evidence.label, evidence: [evidence] })} onType={() => goCommunity('type')}/></Suspense> : <Missing onHome={() => goCommunity(mainRoute)}/>;
     }
     else if (screen === 'home')
@@ -146,14 +148,12 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
         content = <JobRoute controller={c} account={account} screen={screen} id={route.id} onHome={() => goCommunity(mainRoute)}/>;
     else
         content = <Missing onHome={() => goCommunity(mainRoute)}/>;
-    return <div className={`community ${account?.role === 'volunteer' ? 'c-volunteer' : 'c-elder'} ${landing ? 'c-is-landing' : ''}`}><a className="c-skip" href="#c-content" onClick={(e) => { e.preventDefault(); document.getElementById('c-content')?.focus(); }}>{t('c.skip')}</a>{account && !firstRun ? <AccountHeader account={account} onSettings={() => setSettings(true)}/> : null}<main id="c-content" tabIndex={-1} className={landing ? 'c-landing-main' : 'c-main'}>{!firstRun && !['home', 'help', 'nearby', 'jobs', 'profile'].includes(screen) ? <Back onClick={() => goCommunity(mainRoute)}/> : null}{c.issue ? <p className="c-notice" role="alert">{t(c.issue === 'storage' ? 'c.storageError' : c.issue === 'recovered' ? 'c.storageRecovered' : 'c.commandError')}</p> : null}{notice ? <p className="c-notice" role="status">{notice}</p> : null}{content}</main>{account && !firstRun ? <Tabs account={account} screen={screen}/> : null}{!account && (switching || screen === 'accounts') ? <Sheet title={t('c.signin.choose')} onClose={() => { setSwitching(false); goCommunity('intro'); }}><DemoAccountChoices groups={{ elder: domain.accountsByRole(state, 'elder'), volunteer: domain.accountsByRole(state, 'volunteer'), family: domain.accountsByRole(state, 'family') }} onSelect={id => signIn(id, provider)} onCreate={() => { setSwitching(false); goCommunity('role'); }}/></Sheet> : null}{settings && account ? <Settings account={account} state={state} textSize={size} onSize={setSize} onLanguage={(l) => { c.run((s) => domain.updateLanguage(s, account.id, l)); }} onClose={() => setSettings(false)} onSwitch={() => { const result = c.run(domain.signOut); if (result.ok) { setNotice(''); setSettings(false); setSwitching(true); goCommunity('accounts'); } }} onSignOut={() => { c.run(domain.signOut); setNotice(''); setSettings(false); goCommunity('intro'); }} onClassic={() => { try {
-        localStorage.setItem('fixlist.mode', 'classic');
-        window.location.hash = '/r/home';
-        window.location.reload();
-    }
-    catch {
-        setNotice(t('c.storageError'));
-    } }} onReset={async () => {
+    return <div className={`community ${account?.role === 'volunteer' ? 'c-volunteer' : 'c-elder'} ${landing ? 'c-is-landing' : ''}`}><a className="c-skip" href="#c-content" onClick={(e) => { e.preventDefault(); document.getElementById('c-content')?.focus(); }}>{t('c.skip')}</a>{account && !firstRun ? <AccountHeader account={account} onSettings={() => setSettings(true)}/> : null}<main id="c-content" tabIndex={-1} className={landing ? 'c-landing-main' : 'c-main'}>{!firstRun && !['home', 'help', 'nearby', 'jobs', 'profile'].includes(screen) ? <Back onClick={() => goCommunity(mainRoute)}/> : null}{c.issue ? <p className="c-notice" role="alert">{t(c.issue === 'storage' ? 'c.storageError' : c.issue === 'recovered' ? 'c.storageRecovered' : 'c.commandError')}</p> : null}{notice ? <p className="c-notice" role="status">{notice}</p> : null}{content}</main>{account && !firstRun ? <Tabs account={account} screen={screen}/> : null}{!account && (switching || screen === 'accounts') ? <Sheet title={t('c.signin.choose')} onClose={() => { setSwitching(false); goCommunity('intro'); }}><DemoAccountChoices groups={{ elder: domain.accountsByRole(state, 'elder'), volunteer: domain.accountsByRole(state, 'volunteer'), family: domain.accountsByRole(state, 'family') }} onSelect={id => signIn(id, provider)} onCreate={() => { setSwitching(false); goCommunity('role'); }}/></Sheet> : null}{settings && account ? <Settings account={account} state={state} textSize={size} onFamilyCommand={command => {
+        if (!mounted.current || latestState.current.session !== state.session) return false;
+        const result = c.run(s => s.session === state.session ? command(s) : familyScopeFailure());
+        if (result.ok) latestState.current = result.state;
+        return result.ok;
+    }} onSize={setSize} onLanguage={(l) => { c.run((s) => domain.updateLanguage(s, account.id, l)); }} onClose={() => setSettings(false)} onSwitch={() => { const result = c.run(domain.signOut); if (result.ok) { setNotice(''); setSettings(false); setSwitching(true); goCommunity('accounts'); } }} onSignOut={() => { c.run(domain.signOut); setNotice(''); setSettings(false); goCommunity('intro'); }} onReset={async () => {
         if (!mounted.current || latestState.current !== state) return false;
         const reset = c.reset();
         if (reset?.ok === false) return false;
@@ -185,7 +185,7 @@ function JobRoute({ controller: c, account, screen, id, onHome }: {
     const t = useT(), [cancelling, setCancelling] = useState(false);
     const { state } = c;
     const visible = domain.visibleJob(state, id, account.id);
-    const allowed = visible && (account.role === 'volunteer' ? (visible.job.status === 'open' || visible.job.volunteerId === account.id) : domain.jobsForElder(state, visible.elder.id).some((j) => j.id === id) && (account.id === visible.elder.id || state.families.some((f) => f.accountId === account.id && f.elderIds.includes(visible.elder.id))));
+    const allowed = visible && (account.role === 'volunteer' ? visible.job.status === 'open' || visible.job.volunteerId === account.id : canManageElder(state, account.id, visible.elder.id));
     if (!visible || !allowed)
         return <Missing onHome={onHome}/>;
     const { job, elder, address } = visible;
@@ -194,7 +194,7 @@ function JobRoute({ controller: c, account, screen, id, onHome }: {
     if (screen === 'messages')
         return participant ? <Messages key={`${account.id}-${id}`} state={state} account={account} job={job} run={c.run}/> : <Missing onHome={onHome}/>;
     if (screen === 'confirm')
-        return account.role !== 'volunteer' && (job.status === 'reported-done' || job.status === 'completed') ? <Confirmation job={job} volunteerName={volunteer?.firstName ?? ''} onConfirm={() => c.run((s) => domain.confirmDone(s, { jobId: id, actorId: account.id }, new Date().toISOString())).ok} onRate={(stars, note) => c.run((s) => domain.rateJob(s, { jobId: id, actorId: account.id, stars, note }, new Date().toISOString())).ok} onBack={() => goCommunity('help')}/> : <Missing onHome={onHome}/>;
+        return account.id === job.elderId && (job.status === 'reported-done' || job.status === 'completed') ? <Confirmation job={job} volunteerName={volunteer?.firstName ?? ''} onConfirm={() => c.run((s) => domain.confirmDone(s, { jobId: id, actorId: account.id }, new Date().toISOString())).ok} onRate={(stars, note) => c.run((s) => domain.rateJob(s, { jobId: id, actorId: account.id, stars, note }, new Date().toISOString())).ok} onBack={() => goCommunity('help')}/> : <Missing onHome={onHome}/>;
     if (account.role === 'volunteer') {
         const profile = state.volunteers.find((v) => v.accountId === account.id);
         if (!profile)

@@ -95,6 +95,35 @@ function stateOf(result: CommunityResult) { if (!result.ok) throw new Error(resu
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); runtime.language = 'en'; });
 
 describe('community polish interactions', () => {
+    it('keeps typed AskScreen collecting until real followup details form an accurate draft', async () => {
+        vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(false);
+        const onDraft = vi.fn(), account = domain.createSeedState(NOW).accounts[0]!;
+        const view = driver(() => AskScreen({ talk: false, account, onDraft }));
+        view.render(); await settle();
+        async function send(value: string) {
+            const input = nodes(view.render(), 'textarea')[0]!;
+            (input.props.onChange as (e: unknown) => void)({ target: { value } });
+            (nodes(view.render(), 'form')[0]!.props.onSubmit as (e: unknown) => void)({ preventDefault() {} });
+            await settle();
+        }
+        await send('I need help moving something');
+        expect(onDraft).not.toHaveBeenCalled();
+        expect(renderToStaticMarkup(<>{view.render()}</>)).toContain('What would you like to move?');
+        await send('chair');
+        expect(renderToStaticMarkup(<>{view.render()}</>)).toContain('Where should it go?');
+        await send('bedroom to kitchen');
+        const draft = nodes(view.render(), DraftScreen)[0]!.props.draft as import('./Elder').Draft;
+        expect(draft.analysis.summaryEnglish).toMatch(/chair/);
+        expect(draft.analysis.summaryEnglish).toMatch(/bedroom/);
+        expect(draft.analysis.summaryEnglish).toMatch(/kitchen/);
+        expect(nodes(view.render(), 'form')).toHaveLength(1);
+        await send('actually living room');
+        const corrected = nodes(view.render(), DraftScreen)[0]!.props.draft as import('./Elder').Draft;
+        expect(corrected.analysis.summaryEnglish).toContain('living room');
+        expect(corrected.analysis.summaryEnglish).not.toContain('kitchen');
+        expect(corrected.text).toBe('I need help moving something\nchair\nbedroom to kitchen\nactually living room');
+        view.unmount();
+    });
     it('moves idle → listening → thinking → replied, speaks and replays, and keeps the draft visible', async () => {
         vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true); vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('ios');
         vi.spyOn(assistant, 'availability').mockResolvedValue({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });

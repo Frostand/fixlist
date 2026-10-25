@@ -102,13 +102,16 @@ async function thumbnail(blob: Blob): Promise<string> { const image = await crea
 finally {
     image.close();
 } }
-export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
+export function RoomCapture({ ownerId, resetEpoch, onDraft, onType, isCurrent = () => true }: {
+    isCurrent?(): boolean;
     ownerId: string;
     resetEpoch: string;
     onDraft(a: JobAnalysis, e: ScanEvidence): void;
     onType(): void;
 }) {
     const t = useT(), language = useLanguage(), alive = useRef(true), epoch = useRef(0);
+    const authorization = useRef(isCurrent);
+    authorization.current = isCurrent;
     const store = useMemo(() => getCommunityCaptureStore(ownerId, resetEpoch), [ownerId, resetEpoch]);
     const scope = useMemo(() => ({ ownerId, resetEpoch, store }), [ownerId, resetEpoch, store]);
     const latestScope = useRef(scope), pendingNative = useRef<AbortController | null>(null), photoOperation = useRef<(() => boolean) | null>(null);
@@ -124,9 +127,9 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
         return () => { alive.current = false; invalidate(); };
     }, [scope]);
     function guard() {
-        if (!alive.current || scope !== latestScope.current) return () => false;
+        if (!alive.current || scope !== latestScope.current || !authorization.current()) return () => false;
         invalidate(); const version = epoch.current;
-        return () => alive.current && scope === latestScope.current && version === epoch.current;
+        return () => alive.current && scope === latestScope.current && version === epoch.current && authorization.current();
     }
     async function readAreas(saved: StoredCapture, current: () => boolean) { const next: ReviewArea[] = []; for (const flag of saved.flags?.items ?? []) {
         if (flag.status !== 'suggested' || !flag.bestPhotoId)
@@ -220,7 +223,7 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
         }
     } }
     function useSample() {
-        if (!roomId || !alive.current || scope !== latestScope.current) return;
+        if (!roomId || !alive.current || scope !== latestScope.current || !authorization.current()) return;
         invalidate();
         setError('');
         try {
@@ -248,5 +251,5 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType }: {
             setError(t('c.scan.captureFailed'));
             setPhase('ready');
         }
-    } }}/> : null}{phase === 'review' ? <><h2>{t('c.scan.review')}</h2><p className="c-small">{t(sample ? 'c.scan.sampleNote' : 'c.scan.unverified')}</p>{areas.length ? areas.map((area) => <article className="c-review-area" key={area.evidence.flagId}><EvidencePhoto evidence={area.evidence} caption={false}/><p>{t('c.scan.question', { question: area.question })}</p><Button kind={areas.length === 1 ? 'primary' : 'secondary'} onClick={() => { if (alive.current && scope === latestScope.current) onDraft(scanFlagAnalysis(area.checklistItemId, area.evidence.label, language), area.evidence); }}>{t('c.scan.ask')}</Button></article>) : <><p>{t('c.scan.empty')}</p><Button onClick={onType}>{t('c.home.type')}</Button></>}</> : null}{canStart ? <><Button icon="room" onClick={() => record ? setReplace('native') : void start()}>{t('c.scan.start')}</Button><Button kind="secondary" onClick={() => record ? setReplace('photos') : void start('photos')}>{t('room.startPhotos')}</Button></> : null}{phase !== 'busy' ? <Button kind="secondary" onClick={useSample}>{t('c.scan.sample')}</Button> : null}<Button kind="quiet" onClick={() => { invalidate(); setRoomId(null); setPhase('choose'); setError(''); setReplace(null); }}>{t('c.scan.restart')}</Button></>}<p className="c-small">{t('c.scan.privacy')}</p>{replace ? <Sheet title={t(replace === 'photos' ? 'room.startPhotos' : 'c.scan.start')} onClose={() => setReplace(null)}><p>{t('c.scan.replace')}</p><Button onClick={() => { setReplace(null); void start(replace); }}>{t('c.scan.replaceYes')}</Button></Sheet> : null}</div>;
+    } }}/> : null}{phase === 'review' ? <><h2>{t('c.scan.review')}</h2><p className="c-small">{t(sample ? 'c.scan.sampleNote' : 'c.scan.unverified')}</p>{areas.length ? areas.map((area) => <article className="c-review-area" key={area.evidence.flagId}><EvidencePhoto evidence={area.evidence} caption={false}/><p>{t('c.scan.question', { question: area.question })}</p><Button kind={areas.length === 1 ? 'primary' : 'secondary'} onClick={() => { if (alive.current && scope === latestScope.current && authorization.current()) onDraft(scanFlagAnalysis(area.checklistItemId, area.evidence.label, language), area.evidence); }}>{t('c.scan.ask')}</Button></article>) : <><p>{t('c.scan.empty')}</p><Button onClick={() => { if (alive.current && authorization.current()) onType(); }}>{t('c.home.type')}</Button></>}</> : null}{canStart ? <><Button icon="room" onClick={() => record ? setReplace('native') : void start()}>{t('c.scan.start')}</Button><Button kind="secondary" onClick={() => record ? setReplace('photos') : void start('photos')}>{t('room.startPhotos')}</Button></> : null}{phase !== 'busy' ? <Button kind="secondary" onClick={useSample}>{t('c.scan.sample')}</Button> : null}<Button kind="quiet" onClick={() => { invalidate(); setRoomId(null); setPhase('choose'); setError(''); setReplace(null); }}>{t('c.scan.restart')}</Button></>}<p className="c-small">{t('c.scan.privacy')}</p>{replace ? <Sheet title={t(replace === 'photos' ? 'room.startPhotos' : 'c.scan.start')} onClose={() => setReplace(null)}><p>{t('c.scan.replace')}</p><Button onClick={() => { setReplace(null); void start(replace); }}>{t('c.scan.replaceYes')}</Button></Sheet> : null}</div>;
 }
