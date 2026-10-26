@@ -11,8 +11,8 @@
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) map tiles | Map data, © OpenStreetMap contributors | ODbL |
 | [three.js](https://threejs.org), [Spark](https://github.com/sparkjsdev/spark) | 3D scan viewer | MIT |
 | [Atkinson Hyperlegible Next](https://www.brailleinstitute.org/freefont/) (Braille Institute), [Zilla Slab](https://github.com/mozilla/zilla-slab) (Mozilla) | Fonts | SIL OFL 1.1 |
-| Apple Foundation Models, Speech, AVSpeechSynthesizer, ARKit, Core ML | On-device AI, voice, room capture | Apple SDK terms |
-| [OpenCLIP](https://github.com/mlfoundations/open_clip) ViT-B-32 ([laion2b weights](https://huggingface.co/laion/CLIP-ViT-B-32-laion2B-s34B-b79K)) | On-device photo relevance model | MIT (see `ios/App/App/HazardModel/NOTICE.txt`) |
+| Apple Foundation Models, Speech, AVSpeechSynthesizer, ARKit, Core ML | On-device writing and photo review, voice, room capture | Apple SDK terms |
+| [OpenCLIP](https://github.com/mlfoundations/open_clip) ViT-B-32 ([laion2b weights](https://huggingface.co/laion/CLIP-ViT-B-32-laion2B-s34B-b79K)) | On-device photo relevance scoring | MIT (see `ios/App/App/HazardModel/NOTICE.txt`) |
 | [COLMAP](https://colmap.github.io)/pycolmap, [Brush](https://github.com/ArthurBrussee/brush), NumPy, Pillow, ffmpeg | Mac scan tools (not shipped in the app) | BSD-3 / Apache-2.0 / BSD / MIT-CMU / GPL v3 build |
 | StartLux-Decision 9B (MLX) | Optional Mac photo review (not shipped) | Weights CC BY-NC 4.0 |
 

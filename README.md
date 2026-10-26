@@ -7,8 +7,8 @@ FixList is a prototype for older adults and their families who want help with ho
 - **Two roles.** An older adult/requester posts and tracks jobs. A volunteer browses nearby jobs, accepts one, updates progress, and messages the requester. After the requester confirms, the volunteer earns service credit.
 - **Demo profiles.** The demo has filled elder and volunteer profiles with sample jobs, plus a blank elder profile and a blank volunteer profile to start from scratch. All people, homes, and addresses are fictional, and all data stays on the device.
 - **Writing help.** In a browser, a rules-and-templates helper turns a typed description into a draft request (voice input needs the iPhone app). The person reviews it before posting.
-- **Room capture (compatible iPhone only).** ARKit guides room photos and an outline. You can add a silent video of up to 30 seconds. Photos and outlines are exported or shared only when you choose to. Video stays on the device, and AI suggestions use the photos only.
-- **On-device AI (iPhone only).** Apple's native FoundationModels writing helper needs a supported iOS 26+ device with the model and language available. A rules helper supports other configurations; failed native requests never switch to a cloud service.
+- **Room capture (compatible iPhone only).** ARKit guides room photos and an outline. You can add a silent video of up to 30 seconds. Photos and outlines are exported or shared only when you choose to. Video stays on the device, and optional photo suggestions use the photos only.
+- **On-device writing help (iPhone only).** Apple's native FoundationModels writing helper needs a supported iOS 26+ device with the model and language available. A rules helper supports other configurations; failed requests never switch to a cloud service.
 - **Map.** Volunteers see jobs on an OpenStreetMap map.
 
 ## Stack
@@ -74,7 +74,7 @@ The ordinary build can use Supabase Auth with a small closed-pilot workflow. A r
 - This is a prototype, not a production service. It performs no identity or background screening, and it doesn't support family delegation, teams, or account editing and deletion.
 - Real accounts have not been tested end to end. Email sign-up, password recovery, Google and Apple sign-in, and a signed iPhone build are unverified. The backend schema and its database tests have run; the sign-in flows have not.
 - Service credit is an owner-set policy value, not measured work time or official school verification.
-- The AI helpers' output is a suggestion for a person to review. It isn't a safety assessment.
+- Helper output is a suggestion for a person to review. It isn't a safety assessment.
 - Only the English interface has live real-account screens. The app includes nine languages, but the fluency of the non-English text isn't claimed or verified.
 - `npm run ios:demo` and the Mac scan scripts need private data and extra model setup that aren't in the repository.
 
