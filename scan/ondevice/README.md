@@ -7,7 +7,7 @@ The iPhone uses a bundled Core ML image encoder to suggest photos for human revi
 - `verify_native.py`: compiles the Swift helpers on the Mac and checks that the phone's resizing and scoring match Python.
 - `report.py`: writes summary numbers. Private photos and embeddings stay in the ignored `.cache/`.
 
-Historical pilot metrics used AI labels and a different item set; they do not establish accuracy for the current eight categories or real homes. The app keeps human review: flags are "possible, you decide", never findings.
+Historical pilot metrics used machine-generated labels and a different item set; they do not establish accuracy for the current eight categories or real homes. The app keeps human review: flags are "possible, you decide", never findings.
 
 `floor_objects.py` is a separate **offline research/dev experiment**, not a deployed category. Its target is visible portable loose objects on indoor floors. Furniture, flat rugs alone, and table/shelf clutter alone are negative; ambiguous images have null labels and are excluded from fitting/metrics. Search queries and collection intents are never labels. No floor-object accuracy or learning gain has been established by its synthetic tests.
 
@@ -20,8 +20,8 @@ RUN="$HOME/.local/share/fixlist-scan/floor-objects-combined-20261024"
 "$PY" scan/ondevice/floor_objects.py prepare --dataset "$DATA" --run "$RUN"
 # After reviewing and formatting the annotations:
 "$PY" scan/ondevice/floor_objects.py features --run "$RUN"
-"$PY" scan/ondevice/floor_objects.py select --run "$RUN" --labels "$DATA/labels-ai.jsonl"
-"$PY" scan/ondevice/floor_objects.py evaluate --run "$RUN" --labels "$DATA/labels-ai.jsonl"
+"$PY" scan/ondevice/floor_objects.py select --run "$RUN" --labels "$DATA/labels-reviewed.jsonl"
+"$PY" scan/ondevice/floor_objects.py evaluate --run "$RUN" --labels "$DATA/labels-reviewed.jsonl"
 "$PY" -m unittest discover -s scan/tests -p test_floor_objects.py -v
 ```
 
@@ -29,7 +29,7 @@ Default `scan/venv-python -m unittest discover -s scan/tests` still runs groupin
 
 Prepare freezes seed 7, the input protocol, fixed prompts, 25% grouped test split and three dev folds without reading labels or decoding pixels. Creator/source/room/duplicate links and supplied 64-bit perceptual hashes (distance <=8) form connected groups; exact hash duplicates are rejected. Manifest license issues and summary license/provenance review flags are excluded, including pilot IDs 006/007. The frozen 34-image pilot has **24 dev images / 23 groups, 8 test images / 8 groups, 2 exclusions**. Metadata/perceptual checks cannot guarantee that all scene or creator aliases were found; old protected images are never opened.
 
-Annotations are flat JSONL rows, for example `{"id":"001","target":"floor-objects-visible","label":true,"manifestSHA256":"<exact manifest bytes SHA256>","reviewer":"AI reviewer identity","uncertainty":false}`. Use JSON booleans or null. All dev/test images need rows, including nulls. Selection decodes dev outcomes only; test rows are scanned for IDs and hashed as opaque bytes until evaluation. AI labels are not expert ground truth.
+Annotations are flat JSONL rows, for example `{"id":"001","target":"floor-objects-visible","label":true,"manifestSHA256":"<exact manifest bytes SHA256>","reviewer":"reviewer identity","uncertainty":false}`. Use JSON booleans or null. All dev/test images need rows, including nulls. Selection decodes dev outcomes only; test rows are scanned for IDs and hashed as opaque bytes until evaluation. Machine-generated labels are not expert ground truth.
 
 Features use cached original ViT-B-32 weights on host CPU, ten fixed `pilot.views` and normalized **N x 10 x 512** embeddings. Cache identity includes weights, preprocessing/package versions, code, protocol, manifest and image hashes; old caches are never overwritten. Compare fixed paired-prompt full-image and max-ten-view contrasts against sklearn L2 logistic heads on full or normalized mean-ten features, C in {0.01, 0.1, 1}. Choose by dev grouped OOF Brier across all candidates; ties favor the simpler baseline, then lower C and full features. Retain the best linear comparison even if it loses. Fold thresholds use training groups only (precision >=0.8, >=2 true positives, then maximum recall); the final threshold uses all dev groups. Unsupported thresholds explicitly abstain.
 
@@ -39,7 +39,7 @@ For a **new, unevaluated** combined dataset, additional disjoint rows may set `d
 
 All candidate artifacts must stay outside Git. `productionPromotion` is always false; independent empirical acceptance is required. This workflow never exports Core ML, changes the eight app categories/resources/thresholds/catalog, or removes native human review.
 
-Latest local pilot (2026-10-24): 53 public images, including a development-only supplement. After excluding unresolved provenance and ambiguous labels, training used 31 images (21 positive, 10 negative); the untouched test had seven usable images (four positive, three negative). The fixed max-ten-view contrast beat the best trained linear head on development Brier loss (0.096 vs 0.168) and test Brier loss (0.158 vs 0.196; lower is better). Both produced four true positives and one false positive on the small test. These AI-labeled results do not establish a reliable deployed classifier, so the shipped app model remains unchanged.
+Latest local pilot (2026-10-24): 53 public images, including a development-only supplement. After excluding unresolved provenance and ambiguous labels, training used 31 images (21 positive, 10 negative); the untouched test had seven usable images (four positive, three negative). The fixed max-ten-view contrast beat the best trained linear head on development Brier loss (0.096 vs 0.168) and test Brier loss (0.158 vs 0.196; lower is better). Both produced four true positives and one false positive on the small test. These machine-labeled results do not establish a reliable deployed classifier, so the shipped app model remains unchanged.
 
 `annotation_packet.py` provides **private DEVELOPMENT annotation tooling only**. It exports all eligible dev images from a verified prepared run, with no test-export option. Only explicit `CC0`/`CC0-1.0` or `PDM`/`PDM-1.0` declarations (also their canonical Creative Commons URLs) are supported; conflicting license URLs or declared attribution/redistribution conditions are refused. Resolve rights and provenance privately before preparation; the tool does not verify rights. Other licenses require a separately reviewed workflow that preserves required attribution. Existing exclusions and exact grouping/splits remain bound in the private map. No freshness, independence, holdout recovery, expert verification, or production acceptance follows from annotation; existing/exposed test images never become fresh through relabeling.
 
