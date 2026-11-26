@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "purpose": "Dev-only prompt, floor-negative, aggregation and threshold selection for rug and bedroom-path relevance; unchanged ViT-B-32 encoder",
+  "split": "Exact split and five CV group lists from scan/calibration.json, seed 7",
+  "labelAccess": "Selection parses labels only for development image IDs; held-out labels are parsed only after a hash-bound selection lock is written",
+  "thresholdRule": "At least two true positives. Maximize recall then precision then threshold, requiring recall >= 0.7 and precision >= 0.8. If infeasible, use precision >= 0.6 at recall >= 0.7. If still infeasible, abstain. Thresholds use midpoints between adjacent development scores to avoid a cut exactly on a training example.",
+  "selectionRule": "Five-fold grouped development CV. Prefer candidates with pooled out-of-fold recall >= 0.7 and precision >= 0.8; otherwise require recall >= 0.7 and precision >= 0.6. Rank eligible candidates by F2, then AUROC, then precision, then declared order. Refit only the selected threshold on all development groups. If no candidate is eligible, retain the original item.",
+  "shipRule": "For each selected item independently: held-out AUROC must not decrease (tolerance 1e-12), and recall must increase by at least 0.20 absolute compared with the shipped baseline. No alternate candidate may be chosen after held-out evaluation. Native parity must have zero threshold-decision mismatches. Otherwise retain the original item.",
+  "calibration": null,
+  "aggregations": ["max", "full"],
+  "positiveSets": {
+    "rug-check": {
+      "original": ["A photo of a rug on a room floor.", "A photo of a floor mat on a walking path.", "A photo of a carpet rug and its edges."],
+      "rug-types": ["A photo of an area rug on the floor.", "A photo of a runner rug on the floor.", "A photo of a throw rug on the floor.", "A photo of a rug edge or corner on the floor.", "A photo of a bath mat on the floor.", "A photo of a doormat on the floor."],
+      "separate-rug": ["A photo of a separate area rug laid on a room floor.", "A photo of a rug with its border visible against the floor.", "A photo of a runner on a hallway floor.", "A photo of a floor mat lying on tile."],
+      "rug-objects": ["A photo of an area rug.", "A photo of a floor runner rug.", "A photo of a throw rug.", "A photo of a floor mat."]
+    },
+    "night-lighting-check": {
+      "original": ["A photo of a bed with floor space beside it.", "A photo of a bedroom doorway and walking path.", "A photo of a walking route next to a bed."],
+      "bedroom-path": ["A photo of a bedroom with a bed and the floor beside it.", "A photo of a walking path alongside a bed.", "A photo of the floor through a bedroom doorway.", "A photo of open floor space between a bed and a bedroom door."]
+    }
+  },
+  "negativeSets": {
+    "generic": ["A close-up photo of a blank wall.", "A close-up photo of furniture upholstery.", "A photo of a ceiling.", "A close-up photo of objects on a table.", "A photo looking out of a window.", "A close-up photo of a kitchen counter."],
+    "bare-floors": ["A photo of a bare hardwood floor.", "A photo of a bare tile floor.", "A photo of wall-to-wall carpet."],
+    "floor-and-room": ["A photo of a bare hardwood floor without a rug.", "A photo of a bare tile floor without a mat.", "A photo of fitted wall-to-wall carpeting covering the room floor.", "A close-up photo of furniture upholstery.", "A photo of a blank wall."],
+    "other-rooms": ["A photo of a living room floor without a bed.", "A photo of a kitchen floor.", "A photo of a bathroom floor.", "A photo of an empty hallway.", "A photo of indoor stairs."]
+  },
+  "itemNegativeSets": {
+    "rug-check": ["generic", "bare-floors", "floor-and-room"],
+    "night-lighting-check": ["generic", "other-rooms"]
+  }
+}

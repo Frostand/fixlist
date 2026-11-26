@@ -1,0 +1,554 @@
+{
+  "protocolSHA256": "74cb26659c7cb17f37249066978b18f74ec02ab90e08941b3535c194bce26e3e",
+  "selectionScriptSHA256": "95b90057c85f53358452b4f7b35616f941115c2c76785d5be4dbc1638631fb14",
+  "manifestSHA256": "a2e290a23fe793d0fec8b3644ba2332fb09e2f59c8064a3f9b0d957b847f666f",
+  "candidateScoresSHA256": "6be592aeaea8f9f4a2e551b023aa2d6f29a07b3c6865ea369e3528abd7591934",
+  "baselineResourceSHA256": "936a76ebbd16c6b13c7e13920ddd9b6f7d38ac9702c010fb39d7e847512cb130",
+  "split": {
+    "seed": 7,
+    "devGroups": [
+      "artist:barbara-spengler",
+      "artist:bart-everson",
+      "artist:busterd",
+      "artist:emmonz2000",
+      "artist:fingerwiki",
+      "artist:globetrotter19",
+      "artist:godber-albert-percy-1875-1949",
+      "artist:infrogmation-of-new-orleans",
+      "artist:joanna-wawrzyniak",
+      "artist:kinna2",
+      "artist:marc-lautenbacher",
+      "artist:marsh-davis-indiana-landmarks",
+      "artist:nps",
+      "artist:nps-photo",
+      "artist:stilfehler",
+      "ov:army-arch",
+      "ov:athomenetwork",
+      "ov:barelyfitz",
+      "ov:christopher-barson",
+      "ov:danxoneil",
+      "ov:hotelkursaal-ausonia",
+      "ov:intenteffect",
+      "ov:jeremy-levine-design",
+      "ov:juhansonin",
+      "ov:just-learn",
+      "ov:kb-collection-hotels-resorts",
+      "ov:peapod-labs",
+      "ov:theslowlane",
+      "ov:torrebarolo",
+      "ov:trailers-of-the-east-coast",
+      "playroom",
+      "uploader:slqbot",
+      "viennese-render"
+    ],
+    "heldOutGroups": [
+      "artist:aismallard",
+      "artist:category-government-of-the-united-states-virgin-islands",
+      "artist:federal-bureau-of-investigation",
+      "artist:happy-j",
+      "artist:j-b-van-sciver-co-mbj-collection",
+      "artist:pattayapatrol",
+      "artist:schweinfurth-charles-frederick-1856-1919",
+      "ov:andrechinn",
+      "ov:editor-b",
+      "ov:ken-doerr",
+      "ov:lorda",
+      "ov:mescon",
+      "ov:personalcreations-com",
+      "ov:thelivingroominkenmore",
+      "ov:witches-falls-cottages"
+    ],
+    "cvValidationGroups": [
+      [
+        "artist:globetrotter19",
+        "artist:stilfehler",
+        "ov:army-arch",
+        "ov:barelyfitz",
+        "ov:intenteffect",
+        "ov:theslowlane",
+        "uploader:slqbot"
+      ],
+      [
+        "artist:godber-albert-percy-1875-1949",
+        "artist:kinna2",
+        "artist:marc-lautenbacher",
+        "artist:nps",
+        "ov:kb-collection-hotels-resorts",
+        "playroom",
+        "viennese-render"
+      ],
+      [
+        "artist:joanna-wawrzyniak",
+        "artist:marsh-davis-indiana-landmarks",
+        "artist:nps-photo",
+        "ov:athomenetwork",
+        "ov:danxoneil",
+        "ov:jeremy-levine-design",
+        "ov:trailers-of-the-east-coast"
+      ],
+      [
+        "artist:busterd",
+        "artist:fingerwiki",
+        "artist:infrogmation-of-new-orleans",
+        "ov:christopher-barson",
+        "ov:juhansonin",
+        "ov:just-learn"
+      ],
+      [
+        "artist:barbara-spengler",
+        "artist:bart-everson",
+        "artist:emmonz2000",
+        "ov:hotelkursaal-ausonia",
+        "ov:peapod-labs",
+        "ov:torrebarolo"
+      ]
+    ]
+  },
+  "selection": {
+    "rug-check": {
+      "candidateIndex": 2,
+      "item": "rug-check",
+      "positiveSet": "original",
+      "negativeSet": "bare-floors",
+      "aggregation": "max",
+      "positive": [
+        "A photo of a rug on a room floor.",
+        "A photo of a floor mat on a walking path.",
+        "A photo of a carpet rug and its edges."
+      ],
+      "negative": [
+        "A photo of a bare hardwood floor.",
+        "A photo of a bare tile floor.",
+        "A photo of wall-to-wall carpet."
+      ],
+      "devMetrics": {
+        "n": 102,
+        "positives": 49,
+        "brier": 0.165563054529669,
+        "ece": 0.14166107036669395,
+        "auroc": 0.8941085868309588,
+        "auprc": 0.9067298816071767
+      },
+      "devOOF": {
+        "tp": 38,
+        "fp": 9,
+        "fn": 11,
+        "precision": 0.8085106382978723,
+        "recall": 0.7755102040816326
+      },
+      "devOOFF2": 0.7818930041152263,
+      "foldThresholds": [
+        {
+          "threshold": 0.7208034018803738,
+          "tp": 41,
+          "fp": 7,
+          "fn": 6,
+          "precision": 0.8541666666666666,
+          "recall": 0.8723404255319149,
+          "precisionTarget": 0.8
+        },
+        {
+          "threshold": 0.7842414477827544,
+          "tp": 10,
+          "fp": 1,
+          "fn": 2,
+          "precision": 0.9090909090909091,
+          "recall": 0.8333333333333334,
+          "precisionTarget": 0.8
+        },
+        {
+          "threshold": 0.7298022094462173,
+          "tp": 39,
+          "fp": 9,
+          "fn": 6,
+          "precision": 0.8125,
+          "recall": 0.8666666666666667,
+          "precisionTarget": 0.8
+        },
+        {
+          "threshold": 0.7298022094462173,
+          "tp": 39,
+          "fp": 9,
+          "fn": 7,
+          "precision": 0.8125,
+          "recall": 0.8478260869565217,
+          "precisionTarget": 0.8
+        },
+        {
+          "threshold": 0.7298022094462173,
+          "tp": 39,
+          "fp": 9,
+          "fn": 7,
+          "precision": 0.8125,
+          "recall": 0.8478260869565217,
+          "precisionTarget": 0.8
+        }
+      ],
+      "allDevThreshold": {
+        "threshold": 0.7298022094462173,
+        "tp": 42,
+        "fp": 9,
+        "fn": 7,
+        "precision": 0.8235294117647058,
+        "recall": 0.8571428571428571,
+        "precisionTarget": 0.8
+      }
+    },
+    "night-lighting-check": {
+      "candidateIndex": 30,
+      "item": "night-lighting-check",
+      "positiveSet": "bedroom-path",
+      "negativeSet": "other-rooms",
+      "aggregation": "max",
+      "positive": [
+        "A photo of a bedroom with a bed and the floor beside it.",
+        "A photo of a walking path alongside a bed.",
+        "A photo of the floor through a bedroom doorway.",
+        "A photo of open floor space between a bed and a bedroom door."
+      ],
+      "negative": [
+        "A photo of a living room floor without a bed.",
+        "A photo of a kitchen floor.",
+        "A photo of a bathroom floor.",
+        "A photo of an empty hallway.",
+        "A photo of indoor stairs."
+      ],
+      "devMetrics": {
+        "n": 102,
+        "positives": 13,
+        "brier": 0.6424739355296247,
+        "ece": 0.7082779651541691,
+        "auroc": 0.9369057908383752,
+        "auprc": 0.9124487145125044
+      },
+      "devOOF": {
+        "tp": 12,
+        "fp": 3,
+        "fn": 1,
+        "precision": 0.8,
+        "recall": 0.9230769230769231
+      },
+      "devOOFF2": 0.8955223880597015,
+      "foldThresholds": [
+        {
+          "threshold": 0.9996630432788525,
+          "tp": 11,
+          "fp": 2,
+          "fn": 1,
+          "precision": 0.8461538461538461,
+          "recall": 0.9166666666666666,
+          "precisionTarget": 0.8
+        },
+        {
+          "threshold": 0.9996630432788525,
+          "tp": 4,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "precisionTarget": 0.8
+        },
+        {
+          "threshold": 0.9996630432788525,
+          "tp": 12,
+          "fp": 2,
+          "fn": 1,
+          "precision": 0.8571428571428571,
+          "recall": 0.9230769230769231,
+          "precisionTarget": 0.8
+        },
+        {
+          "threshold": 0.9996483333362263,
+          "tp": 11,
+          "fp": 2,
+          "fn": 1,
+          "precision": 0.8461538461538461,
+          "recall": 0.9166666666666666,
+          "precisionTarget": 0.8
+        },
+        {
+          "threshold": 0.9996630432788525,
+          "tp": 10,
+          "fp": 2,
+          "fn": 1,
+          "precision": 0.8333333333333334,
+          "recall": 0.9090909090909091,
+          "precisionTarget": 0.8
+        }
+      ],
+      "allDevThreshold": {
+        "threshold": 0.9996630432788525,
+        "tp": 12,
+        "fp": 2,
+        "fn": 1,
+        "precision": 0.8571428571428571,
+        "recall": 0.9230769230769231,
+        "precisionTarget": 0.8
+      }
+    }
+  },
+  "heldOutLabelsParsed": false,
+  "selectionLockSHA256": "eecea4a6a6d5062c7e176c3f1e26c166fa9f606d30b38c8ac839f2193ea6092f",
+  "heldOutEvaluation": {
+    "rug-check": {
+      "before": {
+        "metrics": {
+          "n": 21,
+          "positives": 4,
+          "brier": 0.6033833133984965,
+          "ece": 0.6683937617482572,
+          "auroc": 0.7205882352941176,
+          "auprc": 0.3380952380952381
+        },
+        "operating": {
+          "threshold": 0.9938404822097884,
+          "tp": 3,
+          "fp": 6,
+          "fn": 1,
+          "precision": 0.3333333333333333,
+          "recall": 0.75
+        }
+      },
+      "selectedAfter": {
+        "metrics": {
+          "n": 21,
+          "positives": 4,
+          "brier": 0.149707569424108,
+          "ece": 0.2916667945445993,
+          "auroc": 0.9558823529411765,
+          "auprc": 0.8928571428571428
+        },
+        "operating": {
+          "threshold": 0.7298022094462173,
+          "tp": 3,
+          "fp": 3,
+          "fn": 1,
+          "precision": 0.5,
+          "recall": 0.75
+        }
+      },
+      "passesHeldOutRule": false,
+      "selectedCandidate": {
+        "candidateIndex": 2,
+        "item": "rug-check",
+        "positiveSet": "original",
+        "negativeSet": "bare-floors",
+        "aggregation": "max",
+        "positive": [
+          "A photo of a rug on a room floor.",
+          "A photo of a floor mat on a walking path.",
+          "A photo of a carpet rug and its edges."
+        ],
+        "negative": [
+          "A photo of a bare hardwood floor.",
+          "A photo of a bare tile floor.",
+          "A photo of wall-to-wall carpet."
+        ],
+        "devMetrics": {
+          "n": 102,
+          "positives": 49,
+          "brier": 0.165563054529669,
+          "ece": 0.14166107036669395,
+          "auroc": 0.8941085868309588,
+          "auprc": 0.9067298816071767
+        },
+        "devOOF": {
+          "tp": 38,
+          "fp": 9,
+          "fn": 11,
+          "precision": 0.8085106382978723,
+          "recall": 0.7755102040816326
+        },
+        "devOOFF2": 0.7818930041152263,
+        "foldThresholds": [
+          {
+            "threshold": 0.7208034018803738,
+            "tp": 41,
+            "fp": 7,
+            "fn": 6,
+            "precision": 0.8541666666666666,
+            "recall": 0.8723404255319149,
+            "precisionTarget": 0.8
+          },
+          {
+            "threshold": 0.7842414477827544,
+            "tp": 10,
+            "fp": 1,
+            "fn": 2,
+            "precision": 0.9090909090909091,
+            "recall": 0.8333333333333334,
+            "precisionTarget": 0.8
+          },
+          {
+            "threshold": 0.7298022094462173,
+            "tp": 39,
+            "fp": 9,
+            "fn": 6,
+            "precision": 0.8125,
+            "recall": 0.8666666666666667,
+            "precisionTarget": 0.8
+          },
+          {
+            "threshold": 0.7298022094462173,
+            "tp": 39,
+            "fp": 9,
+            "fn": 7,
+            "precision": 0.8125,
+            "recall": 0.8478260869565217,
+            "precisionTarget": 0.8
+          },
+          {
+            "threshold": 0.7298022094462173,
+            "tp": 39,
+            "fp": 9,
+            "fn": 7,
+            "precision": 0.8125,
+            "recall": 0.8478260869565217,
+            "precisionTarget": 0.8
+          }
+        ],
+        "allDevThreshold": {
+          "threshold": 0.7298022094462173,
+          "tp": 42,
+          "fp": 9,
+          "fn": 7,
+          "precision": 0.8235294117647058,
+          "recall": 0.8571428571428571,
+          "precisionTarget": 0.8
+        }
+      }
+    },
+    "night-lighting-check": {
+      "before": {
+        "metrics": {
+          "n": 23,
+          "positives": 3,
+          "brier": 0.7253838595296576,
+          "ece": 0.770239672779868,
+          "auroc": 0.9666666666666667,
+          "auprc": 0.8666666666666667
+        },
+        "operating": {
+          "threshold": 0.9999775689999146,
+          "tp": 2,
+          "fp": 1,
+          "fn": 1,
+          "precision": 0.6666666666666666,
+          "recall": 0.6666666666666666
+        }
+      },
+      "selectedAfter": {
+        "metrics": {
+          "n": 23,
+          "positives": 3,
+          "brier": 0.6717304777215223,
+          "ece": 0.7527818161161153,
+          "auroc": 0.9,
+          "auprc": 0.7777777777777777
+        },
+        "operating": {
+          "threshold": 0.9996630432788525,
+          "tp": 2,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1.0,
+          "recall": 0.6666666666666666
+        }
+      },
+      "passesHeldOutRule": false,
+      "selectedCandidate": {
+        "candidateIndex": 30,
+        "item": "night-lighting-check",
+        "positiveSet": "bedroom-path",
+        "negativeSet": "other-rooms",
+        "aggregation": "max",
+        "positive": [
+          "A photo of a bedroom with a bed and the floor beside it.",
+          "A photo of a walking path alongside a bed.",
+          "A photo of the floor through a bedroom doorway.",
+          "A photo of open floor space between a bed and a bedroom door."
+        ],
+        "negative": [
+          "A photo of a living room floor without a bed.",
+          "A photo of a kitchen floor.",
+          "A photo of a bathroom floor.",
+          "A photo of an empty hallway.",
+          "A photo of indoor stairs."
+        ],
+        "devMetrics": {
+          "n": 102,
+          "positives": 13,
+          "brier": 0.6424739355296247,
+          "ece": 0.7082779651541691,
+          "auroc": 0.9369057908383752,
+          "auprc": 0.9124487145125044
+        },
+        "devOOF": {
+          "tp": 12,
+          "fp": 3,
+          "fn": 1,
+          "precision": 0.8,
+          "recall": 0.9230769230769231
+        },
+        "devOOFF2": 0.8955223880597015,
+        "foldThresholds": [
+          {
+            "threshold": 0.9996630432788525,
+            "tp": 11,
+            "fp": 2,
+            "fn": 1,
+            "precision": 0.8461538461538461,
+            "recall": 0.9166666666666666,
+            "precisionTarget": 0.8
+          },
+          {
+            "threshold": 0.9996630432788525,
+            "tp": 4,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "precisionTarget": 0.8
+          },
+          {
+            "threshold": 0.9996630432788525,
+            "tp": 12,
+            "fp": 2,
+            "fn": 1,
+            "precision": 0.8571428571428571,
+            "recall": 0.9230769230769231,
+            "precisionTarget": 0.8
+          },
+          {
+            "threshold": 0.9996483333362263,
+            "tp": 11,
+            "fp": 2,
+            "fn": 1,
+            "precision": 0.8461538461538461,
+            "recall": 0.9166666666666666,
+            "precisionTarget": 0.8
+          },
+          {
+            "threshold": 0.9996630432788525,
+            "tp": 10,
+            "fp": 2,
+            "fn": 1,
+            "precision": 0.8333333333333334,
+            "recall": 0.9090909090909091,
+            "precisionTarget": 0.8
+          }
+        ],
+        "allDevThreshold": {
+          "threshold": 0.9996630432788525,
+          "tp": 12,
+          "fp": 2,
+          "fn": 1,
+          "precision": 0.8571428571428571,
+          "recall": 0.9230769230769231,
+          "precisionTarget": 0.8
+        }
+      }
+    }
+  },
+  "decision": "no-ship; baseline artifacts retained"
+}
