@@ -4,7 +4,7 @@ import { CAPTURE_FLAG_EXCLUDED, type CaptureManifest, type CaptureSuggestionItem
 import { captureDate, captureFail, exactKeys, plainRecord, sha256String, unitProbability, type CaptureResult } from './capture-model';
 import { createSuggestionCatalog, plattProbability, TRUSTED_MODEL_LICENSE, TRUSTED_SUGGESTION_NOTICE, validateSuggestionCalibration, type SuggestionCatalog } from './scan-suggestions';
 import { isTrustedOndeviceModel, ondeviceFlagCopy } from './ondevice-contract';
-import { ONDEVICE_MODEL, ONDEVICE_THRESHOLDS } from './ondevice-model';
+import { ONDEVICE_LOCATION_THRESHOLD, ONDEVICE_MODEL, ONDEVICE_THRESHOLDS } from './ondevice-model';
 
 export const MAX_CAPTURE_FLAGS_BYTES = 4 * 1024 * 1024;
 export const CAPTURE_MISMATCH_MESSAGE = 'These flags belong to a different capture.';
@@ -24,9 +24,9 @@ export function validateCaptureSuggestions(value: unknown, capture: CaptureManif
     || !sha256String(model.identity.weightsSHA256) || !sha256String(model.identity.runtimeSHA256))) return captureFail('Invalid model content identity.');
   if (!plainRecord(thresholds) || !exactKeys(thresholds, coreml ? ['suggestion', 'relevance', 'location', 'perItem'] : ['suggestion', 'relevance', 'location'])
     || ![thresholds.suggestion, thresholds.relevance, thresholds.location].every(unitProbability)) return captureFail('Invalid flags thresholds.');
-  if (coreml && (thresholds.suggestion !== 1 || thresholds.relevance !== 0 || thresholds.location !== 0.7 || value.calibration !== null
+  if (coreml && (thresholds.suggestion !== 1 || thresholds.relevance !== 0 || thresholds.location !== ONDEVICE_LOCATION_THRESHOLD || value.calibration !== null
     || !plainRecord(thresholds.perItem) || !exactKeys(thresholds.perItem, photoQuestions.items.map((q) => q.checklistItemId))
-    || photoQuestions.items.some((q) => (thresholds.perItem as Record<string, unknown>)[q.checklistItemId] !== ONDEVICE_THRESHOLDS[q.checklistItemId]))) return captureFail('Invalid pinned on-device relevance thresholds.');
+    || photoQuestions.items.some((q) => (thresholds.perItem as Record<string, unknown>)[q.checklistItemId] !== ONDEVICE_THRESHOLDS[q.checklistItemId]))) return captureFail('Invalid pinned on-device object thresholds.');
   const fitted = validateSuggestionCalibration(value.calibration);
   if (fitted === false) return captureFail('Invalid calibration provenance or Platt parameters.');
   if (!Array.isArray(value.items) || value.items.length !== photoQuestions.items.length) return captureFail('Flags require every photo question in catalog order.');
@@ -41,7 +41,7 @@ export function validateCaptureSuggestions(value: unknown, capture: CaptureManif
     for (const [j, row] of item.perPhoto.entries()) {
       if (!plainRecord(row) || !exactKeys(row, ['photoId', 'rawProbability', 'probability', 'relevanceProbability']) || row.photoId !== capture.photos[j]!.photoId
         || !unitProbability(row.rawProbability) || !unitProbability(row.probability) || !unitProbability(row.relevanceProbability)) return captureFail('Invalid flags photo evidence.');
-      if (coreml && (row.rawProbability !== row.relevanceProbability || row.rawProbability === 1)) return captureFail('On-device scores must represent raw relevance, not a condition probability.');
+      if (coreml && (row.rawProbability !== row.relevanceProbability || row.rawProbability === 1)) return captureFail('On-device scores must preserve raw detector confidence.');
       const param = fitted?.parameters[trusted.checklistItemId], expected = param ? plattProbability(row.rawProbability, param.a, param.b) : row.rawProbability;
       if (fitted ? Math.abs(row.probability - expected) > 1e-9 : row.probability !== expected) return captureFail('Flags probability disagrees with raw evidence/calibration.');
       rows.push({ photoId: row.photoId as string, rawProbability: row.rawProbability, probability: row.probability, relevanceProbability: row.relevanceProbability });
@@ -56,10 +56,10 @@ export function validateCaptureSuggestions(value: unknown, capture: CaptureManif
       if (!plainRecord(item.point) || !exactKeys(item.point, ['u', 'v']) || !photo || status !== 'suggested' || score === null || score < (thresholds.location as number)
         || typeof item.point.u !== 'number' || !Number.isFinite(item.point.u) || item.point.u < 0 || item.point.u >= photo.width
         || typeof item.point.v !== 'number' || !Number.isFinite(item.point.v) || item.point.v < 0 || item.point.v >= photo.height) return captureFail('Flag point is outside its photo or unsupported by the location threshold.');
-      // The producer chooses one of the conservative 3 x 3 grid's cell centres.
-      // Its confidence/mass/margin/none evidence is not present in the v1 file.
+      // Legacy Mac imports use coarse grid points. The pinned native detector
+      // supplies actual box centres; the bounds/status checks above still apply.
       const centre = (pixel: number, edge: number) => [0, 1, 2].some((i) => Math.abs(pixel - (i + .5) * edge / 3) <= 1e-6);
-      if (!centre(item.point.u, photo.width) || !centre(item.point.v, photo.height)) return captureFail('Flag point is not a review-grid cell centre.');
+      if (!coreml && (!centre(item.point.u, photo.width) || !centre(item.point.v, photo.height))) return captureFail('Flag point is not a review-grid cell centre.');
     }
     items.push({ checklistItemId: trusted.checklistItemId, concernId: trusted.concernId, question: copy.question, relevanceQuestion: copy.relevanceQuestion, limitation: copy.limitation,
       status, score, bestPhotoId: best?.photoId ?? null, perPhoto: rows, point: item.point === null ? null : { u: item.point.u as number, v: item.point.v as number } });

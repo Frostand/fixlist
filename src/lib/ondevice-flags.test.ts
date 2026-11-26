@@ -8,6 +8,11 @@ import { CAPTURE_FLAG_EXCLUDED } from './capture-types';
 import { analyzeAndSaveFlags, analyzeCaptureOnDevice, ondeviceFlagCopy, ondeviceFlagsAvailable } from './ondevice-flags';
 import { ONDEVICE_MODEL, ONDEVICE_THRESHOLDS } from './ondevice-model';
 import { trustedPhotoQuestions } from './scan-suggestions';
+import { scanFlagAnalysis } from '../community/task-rules';
+import { analysis as validAnalysis } from '../community/validation';
+import { demoScenario } from '../data/demo-scenario';
+import { catalogText } from '../i18n/catalog';
+import { translate, type Translator } from '../i18n';
 
 const mock = vi.hoisted(() => ({ native: true, platform: 'ios', availability: vi.fn(), analyze: vi.fn() }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => mock.native, getPlatform: () => mock.platform }, registerPlugin: () => mock }));
@@ -29,7 +34,32 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe('on-device relevance flags (mocked bridge; no device claim)', () => {
+describe('on-device object review flags (mocked bridge; no device claim)', () => {
+  it('carries floor clutter through validation, durable storage, catalog copy and a reviewable help draft', async () => {
+    const saved = record(), store = createMemoryCaptureStore();
+    await store.writeCapture(saved.manifest, saved.photos);
+    mock.analyze.mockImplementation(async ({ photos }) => {
+      const value = response(photos[0].photoId, 0);
+      value.photos[0]!.items['floor-clutter-check'] = { relevance: 0.4, point: { u: 7, v: 12 } };
+      return value;
+    });
+    const flags = await analyzeAndSaveFlags(saved.manifest.roomId, { store, isCurrent: () => true });
+    const item = displayFlags(flags).find((q) => q.checklistItemId === 'floor-clutter-check')!;
+    expect(item).toMatchObject({ concernId: 'clutter-concern', status: 'suggested', point: { u: 7, v: 12 } });
+    expect(item.question).toContain('Possible loose object');
+    expect((await store.read(saved.manifest.roomId))?.flags).toEqual(flags);
+    expect(demoScenario.checklist.find((q) => q.id === item.checklistItemId)?.referenceActionId).toBe('review-floor-clutter');
+    for (const language of ['en', 'es', 'fr'] as const) {
+      const t = Object.assign((...args: Parameters<Translator>) => translate(language, ...args), { language });
+      expect(catalogText(t, 'check', item.checklistItemId)).not.toBe(t('common.unavailable'));
+      expect(catalogText(t, 'action', 'review-floor-clutter', 'nextStep')).not.toBe(t('common.unavailable'));
+      const draft = scanFlagAnalysis(item.checklistItemId, item.question, language);
+      expect(validAnalysis(draft)).toBe(true);
+      expect(draft.titleEnglish).toBe('Clear a walkway');
+      expect(draft.summaryEnglish).toContain('resident’s permission');
+      expect(draft.safetyNotes.join(' ')).toContain('unverified room flag');
+    }
+  });
   it.each([[false, 'web'], [true, 'android']] as const)('has no network/native fallback for native=%s platform=%s', async (native, platform) => {
     mock.native = native; mock.platform = platform;
     expect(await ondeviceFlagsAvailable()).toBe(false); expect(mock.availability).not.toHaveBeenCalled();
@@ -51,14 +81,15 @@ describe('on-device relevance flags (mocked bridge; no device claim)', () => {
     expect(mock.analyze).toHaveBeenCalledTimes(saved.manifest.photos.length);
     expect(mock.analyze.mock.calls[0]![0].photos).toEqual([{ photoId: 'p01', jpegBase64: bundle.photos[0]!.jpeg }]);
   });
-  it('uses the relevance question as English fallback and explicitly says no hazard was established', async () => {
+  it('uses honest object review copy as English fallback, never an area relevance question', async () => {
     const flags = await analyzeCaptureOnDevice(record());
     for (const item of flags.items) {
       const question = trustedPhotoQuestions.find((q) => q.checklistItemId === item.checklistItemId)!;
-      expect(item.question).toBe(question.relevanceQuestion); expect(item.limitation).toContain('Unverified AI output');
-      expect(item.limitation).toContain('not whether there is a hazard'); expect(item.limitation).toContain(question.limitation);
+      expect(item.question).not.toBe(question.relevanceQuestion); expect(item.limitation).toContain('Unverified AI output');
+      expect(item.limitation).toContain('not a safety verdict'); expect(item.limitation).toContain(question.limitation);
     }
-    expect(ondeviceFlagCopy('cord-check').question).toBe('Is an open floor walking path visible in this photo?');
+    expect(ondeviceFlagCopy('cord-check').question).toContain('Possible cord');
+    expect(ondeviceFlagCopy('bathroom-support-check').question).toContain('no grab bar detected');
     expect(() => ondeviceFlagCopy('unknown')).toThrow();
   });
   it('applies exact per-item thresholds without converting relevance into a condition answer', async () => {
@@ -103,15 +134,15 @@ describe('on-device relevance flags (mocked bridge; no device claim)', () => {
     });
     await expect(analyzeCaptureOnDevice(record())).rejects.toBeInstanceOf(CaptureError);
   });
-  it('keeps points only for threshold-passing best photos and enforces grid centres', async () => {
+  it('preserves actual detector centres below the old 0.7 CLIP location gate', async () => {
     mock.analyze.mockImplementation(async ({ photos }) => {
-      const value = response(photos[0].photoId); value.photos[0]!.items[scoredId]!.point = { u: 8, v: 8 }; return value;
+      const value = response(photos[0].photoId, ONDEVICE_THRESHOLDS[scoredId]); value.photos[0]!.items[scoredId]!.point = { u: 3.25, v: 11.75 }; return value;
     });
-    expect((await analyzeCaptureOnDevice(record())).items.find((q) => q.checklistItemId === scoredId)?.point).toEqual({ u: 8, v: 8 });
+    expect((await analyzeCaptureOnDevice(record())).items.find((q) => q.checklistItemId === scoredId)?.point).toEqual({ u: 3.25, v: 11.75 });
     mock.analyze.mockImplementation(async ({ photos }) => {
-      const value = response(photos[0].photoId); value.photos[0]!.items[scoredId]!.point = { u: 1, v: 1 }; return value;
+      const value = response(photos[0].photoId, ONDEVICE_THRESHOLDS[scoredId]! - 1e-8); value.photos[0]!.items[scoredId]!.point = { u: 1, v: 1 }; return value;
     });
-    await expect(analyzeCaptureOnDevice(record())).rejects.toThrow('grid cell centre');
+    expect((await analyzeCaptureOnDevice(record())).items.find((q) => q.checklistItemId === scoredId)?.point).toBeNull();
   });
   it('preserves strict Mac imports and rejects Core ML threshold/copy/calibration/identity substitution', async () => {
     const saved = record(), flags = await analyzeCaptureOnDevice(saved);

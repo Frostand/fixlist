@@ -1416,5 +1416,16 @@
   "capture.video.title": "Vidéo de la pièce",
   "capture.video.privacy": "La vidéo reste sur ce téléphone. L'IA analyse les photos. Les exports de capture ne contiennent que des photos.",
   "capture.video.playbackFailed": "Cette vidéo n'a pas pu être lue. Essayez de rouvrir la pièce.",
-  "c.volunteer.helped": "Aidé par {name}"
+  "c.volunteer.helped": "Aidé par {name}",
+  "c.messages.unread": "Nouveaux messages : {count}",
+  "c.photos.title": "Photos",
+  "c.photos.add": "Ajouter une photo",
+  "c.photos.hint": "Ajoutez jusqu’à 3 photos pour montrer le problème. Les données de localisation sont supprimées des photos.",
+  "c.photos.count": "{count} photos sur 3",
+  "c.photos.alt": "Photo {number} de la demande",
+  "c.photos.remove": "Supprimer",
+  "c.photos.removeLabel": "Supprimer la photo {number}",
+  "c.photos.preparing": "Préparation de votre photo…",
+  "c.photos.limit": "Vous pouvez ajouter jusqu’à 3 photos. Supprimez-en une pour en ajouter une autre.",
+  "c.photos.error": "Impossible d’ouvrir cette photo. Veuillez en choisir une autre."
 }

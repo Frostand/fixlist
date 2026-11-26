@@ -69,6 +69,24 @@ expect(CapturePortraitMath.make(width: 0, height: 1080, intrinsics: k, cameraToW
        "Empty sensor dimensions rejected")
 CapturePortraitMath.selfTest()
 
+// Regression: ImageIO always writes a pixel-dimension Exif IFD, which once
+// rejected every ARKit photo as "photo-write-failed". Encode with real ImageIO.
+let pixels = CGContext(data: nil, width: 120, height: 160, bitsPerComponent: 8, bytesPerRow: 0,
+                       space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+pixels.setFillColor(CGColor(red: 0.4, green: 0.5, blue: 0.6, alpha: 1)); pixels.fill(CGRect(x: 0, y: 0, width: 120, height: 160))
+let jpeg = try? CaptureJPEG.encode(pixels.makeImage()!)
+expect(jpeg?.prefix(2) == Data([0xFF, 0xD8]), "A real ImageIO JPEG passes the photo privacy check")
+let jpegProperties = jpeg.flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
+    .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] } ?? [:]
+expect(jpegProperties[kCGImagePropertyGPSDictionary] == nil && jpegProperties[kCGImagePropertyTIFFDictionary] == nil,
+       "Saved photo JPEG carries no GPS or device TIFF fields")
+let pixelExif: [String: Any] = [kCGImagePropertyExifPixelXDimension as String: 120, kCGImagePropertyExifPixelYDimension as String: 160]
+expect(CaptureJPEG.isPrivate([kCGImagePropertyExifDictionary: pixelExif]), "Pixel-dimension Exif is allowed")
+var datedExif = pixelExif; datedExif[kCGImagePropertyExifDateTimeOriginal as String] = "2026:10:25 12:00:00"
+expect(!CaptureJPEG.isPrivate([kCGImagePropertyExifDictionary: datedExif]), "Capture time in Exif is refused")
+expect(!CaptureJPEG.isPrivate([kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude as String: 33.7]]), "GPS is refused")
+expect(!CaptureJPEG.isPrivate([kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFModel as String: "iPhone"]]), "Device model is refused")
+
 // Full camera framing, not a separately stretched image: cover 3:4, 9:16,
 // nonstandard/odd sensors, nonzero parent origins and changed layout shapes.
 for resolution in [CGSize(width: 1920, height: 1440), CGSize(width: 1920, height: 1080),
@@ -199,10 +217,10 @@ expect(samePoints(notch.doors, [doorPoint]) && samePoints(notch.corners, notchPo
 notch.undoTapped()
 expect(notch.doors.isEmpty && samePoints(notch.corners, notchPoints), "Undo removes a door independently of corners")
 notch.closeTapped()
-expect(notch.closed && notch.step == .photos && notch.photoTransitions == 1 && samePoints(notch.corners, notchPoints),
+expect(notch.closed && notch.step == .tour && notch.photoTransitions == 1 && samePoints(notch.corners, notchPoints),
        "Only explicit Done closes a complete concave outline")
 notch.closeTapped()
-expect(notch.photoTransitions == 1, "A stale Done event cannot reenter photos")
+expect(notch.photoTransitions == 1, "A stale Done event cannot reenter tour")
 let twoCorners = CaptureOutlineHarness()
 twoCorners.corners.removeLast(); twoCorners.history.removeLast()
 twoCorners.closeTapped()

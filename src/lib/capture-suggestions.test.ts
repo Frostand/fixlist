@@ -46,7 +46,7 @@ describe('capture flags evidence and disclosures', () => {
     const f = structuredClone(fixture);
     for (const item of f.items) { item.perPhoto.forEach((r) => { r.rawProbability = r.probability = .77; }); item.score = .77; item.status = 'suggested'; }
     const parsed = validateCaptureSuggestions(f, capture()); if (!parsed.ok) throw new Error(parsed.error);
-    expect(displayFlags(parsed.value)).toHaveLength(6); expect(displayFlags(parsed.value).some((i) => ['handrail-check', 'stair-lighting-check'].includes(i.checklistItemId))).toBe(false);
+    expect(displayFlags(parsed.value)).toHaveLength(7); expect(displayFlags(parsed.value).some((i) => ['handrail-check', 'stair-lighting-check'].includes(i.checklistItemId))).toBe(false);
     expect(displayFlags(null)).toEqual([]);
   });
   it('bounds parsing and reports malformed JSON', () => { expect(parseCaptureSuggestions('{', capture()).ok).toBe(false); expect(parseCaptureSuggestions(' '.repeat(4 * 1024 * 1024 + 1), capture()).ok).toBe(false); });

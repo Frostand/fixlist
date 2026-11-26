@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JobAnalysis } from '../community/types';
 import { assistant, createAssistant, type AssistantBrowser, type BrowserRecognition } from './assistant';
 
-const mock = vi.hoisted(() => ({ native: true, availability: vi.fn(), analyzeTask: vi.fn(), chat: vi.fn(), startListening: vi.fn(), stopListening: vi.fn(), cancelListening: vi.fn(), speak: vi.fn(), stopSpeaking: vi.fn(), translate: vi.fn(), addListener: vi.fn() }));
+const mock = vi.hoisted(() => ({ native: true, availability: vi.fn(), analyzeTask: vi.fn(), chat: vi.fn(), converse: vi.fn(), startListening: vi.fn(), stopListening: vi.fn(), cancelListening: vi.fn(), speak: vi.fn(), stopSpeaking: vi.fn(), translate: vi.fn(), addListener: vi.fn() }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => mock.native }, registerPlugin: () => mock }));
 
 const job: JobAnalysis = { title: 'Move a chair', titleEnglish: 'Move a chair', summary: 'Move a chair in the living room.', summaryEnglish: 'Move a chair in the living room.', category: 'moving', skills: ['lifting'], tools: ['gloves'], estimatedMinutes: 20, peopleNeeded: 2, urgency: 'flexible', safetyNotes: [], language: 'en', engine: 'apple-on-device' };
@@ -10,6 +10,7 @@ beforeEach(() => {
   vi.resetAllMocks(); mock.native = true;
   mock.availability.mockResolvedValue({ language: 'en', onDeviceModel: true, speechInput: true, speechOutput: true });
   mock.analyzeTask.mockResolvedValue(job); mock.chat.mockResolvedValue({ text: 'Shall I post this?', job });
+  mock.converse.mockRejectedValue(Object.assign(new Error('On-device conversation is unavailable.'), { code: 'UNAVAILABLE' }));
   mock.startListening.mockResolvedValue({}); mock.stopListening.mockResolvedValue({ text: 'Move a chair' });
   mock.cancelListening.mockResolvedValue({}); mock.speak.mockResolvedValue({}); mock.stopSpeaking.mockResolvedValue({});
   mock.translate.mockResolvedValue({ text: 'Mover una silla' }); mock.addListener.mockResolvedValue({ remove: vi.fn() });
@@ -203,7 +204,7 @@ describe('assistant bridge (mocked native model and audio)', () => {
     expect(await assistant.analyzeTask('Move a chair', 'en')).toEqual(job);
     expect(mock.analyzeTask).toHaveBeenCalledWith({ text: 'Move a chair', language: 'en' });
     mock.chat.mockRejectedValue(new Error('UNAVAILABLE'));
-    expect(await assistant.chat([{ role: 'user', text: 'Move a chair to the kitchen' }], 'en', { firstName: 'Margaret' })).toMatchObject({ job: { category: 'moving', summaryEnglish: expect.stringContaining('Destination: kitchen'), engine: 'rules' }, engine: 'rules', originalText: 'Move a chair to the kitchen' });
+    expect(await assistant.chat([{ role: 'user', text: 'Move a chair to the kitchen' }], 'en', { firstName: 'Margaret' })).toMatchObject({ job: null, engine: 'rules', retryable: true, originalText: 'Move a chair to the kitchen' });
     expect(await assistant.translate('Move a chair', 'en', 'es')).toBe('Mover una silla');
     const bridge = audioBridge();
     mock.speak.mockImplementation(async ({ sessionId }) => { bridge.emit('speechEnded', { sessionId, reason: 'completed' }); return { sessionId }; });
@@ -225,12 +226,12 @@ describe('assistant bridge (mocked native model and audio)', () => {
     expect(result.job).toMatchObject({ engine: 'rules', language }); expect(result.text).not.toContain('I wrote');
     expect(mock.chat).not.toHaveBeenCalled();
   });
-  it('uses the latest user message and recovers native chat errors', async () => {
+  it('retains the latest user message and offers explicit recovery after a native error', async () => {
     mock.chat.mockRejectedValue(new Error('UNAVAILABLE'));
     const result = await assistant.chat([{ role: 'user', text: 'Help me move this chair' }, { role: 'assistant', text: 'Where?' }, { role: 'user', text: 'Hello' }], 'en', { firstName: 'M' });
-    expect(result).toMatchObject({ text: 'Where should it go?', job: null, engine: 'rules', conversation: { facts: { object: { value: 'chair' } }, pending: { field: 'destination' } } });
+    expect(result).toMatchObject({ text: expect.stringContaining('On-device conversation could not finish'), job: null, engine: 'rules', retryable: true });
   });
-  it('falls back if native chat ignores the short-reply or single-question contract', async () => {
+  it('offers recovery if native chat violates the dialogue contract', async () => {
     mock.chat.mockResolvedValueOnce({ text: 'Hello. I can help. Tell me more.', job: null });
     expect(await assistant.chat([{ role: 'user', text: 'Hello' }], 'en', { firstName: 'M' })).toMatchObject({ engine: 'rules' });
     mock.chat.mockResolvedValueOnce({ text: 'What task? Which room?', job: null });
@@ -408,5 +409,73 @@ describe('selected-language capability contract', () => {
     mock.availability.mockRejectedValue(new Error('Missing plugin'));
     const api = createAssistant({ browser: () => ({ SpeechRecognition: class {} } as unknown as AssistantBrowser) });
     expect(await api.availability('ar')).toMatchObject({ language: 'ar', speechInput: false, speechOutput: false, reason: 'native-unavailable' });
+  });
+});
+
+describe('on-device back-and-forth conversation', () => {
+  const u1 = { role: 'user' as const, text: 'My light is out', id: 'u1' }, a1 = { role: 'assistant' as const, text: 'Where in your home is it?' };
+  const u2 = { role: 'user' as const, text: 'The hallway', id: 'u2' }, a2 = { role: 'assistant' as const, text: 'Got it. When would you like someone to come by?' };
+  const u3 = { role: 'user' as const, text: 'Saturday morning', id: 'u3' };
+  it('asks the step the model chooses in authored words, then drafts from every user turn', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'askWhere', preferredTime: '' });
+    expect(await assistant.chat([u1], 'en', { firstName: 'M' })).toMatchObject({ text: 'Where in your home is it?', job: null, engine: 'apple-on-device' });
+    mock.converse.mockResolvedValueOnce({ next: 'askWhen', preferredTime: '' });
+    expect(await assistant.chat([u1, a1, u2], 'en', { firstName: 'M' })).toMatchObject({ text: 'Got it. When would you like someone to come by?', job: null });
+    expect(mock.analyzeTask).not.toHaveBeenCalled();
+    mock.converse.mockResolvedValueOnce({ next: 'readyToDraft', preferredTime: 'Saturday morning' });
+    const done = await assistant.chat([u1, a1, u2, a2, u3], 'en', { firstName: 'M' });
+    expect(mock.analyzeTask).toHaveBeenLastCalledWith({ text: 'My light is out\nThe hallway\nSaturday morning', language: 'en' });
+    expect(done).toMatchObject({ engine: 'apple-on-device', job: { engine: 'apple-on-device' } });
+    expect(done.job?.summary).toContain('Timing: Saturday morning.');
+  });
+  it('answers a vague opener by asking what they need', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'askWhere', preferredTime: '' });
+    expect((await assistant.chat([{ role: 'user', text: 'Hi, can you help me with something?', id: 'u1' }], 'en', { firstName: 'M' })).text).toBe('What would you like a hand with?');
+  });
+  it('does not ask where when the room was already named', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'askWhere', preferredTime: '' });
+    expect((await assistant.chat([{ role: 'user', text: "The light in my hallway is out and I can't reach it.", id: 'u1' }], 'en', { firstName: 'D' })).text).toBe('When would you like someone to come by?');
+  });
+  it('does not ask what is needed when the opener already describes a job', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'askWhatNeedsDoing', preferredTime: '' });
+    expect((await assistant.chat([{ role: 'user', text: "The light in my hallway is out and I can't reach it.", id: 'u1' }], 'en', { firstName: 'D' })).text).toBe('When would you like someone to come by?');
+    mock.converse.mockResolvedValueOnce({ next: 'askWhatNeedsDoing', preferredTime: '' });
+    expect((await assistant.chat([{ role: 'user', text: 'My smoke alarm keeps chirping every few minutes.', id: 'u1' }], 'en', { firstName: 'D' })).text).toBe('Where in your home is it?');
+    mock.converse.mockResolvedValueOnce({ next: 'askWhatNeedsDoing', preferredTime: '' });
+    expect((await assistant.chat([{ role: 'user', text: 'I have a problem', id: 'u1' }], 'en', { firstName: 'D' })).text).toBe('What would you like a hand with?');
+  });
+  it('asks Spanish questions in authored Spanish', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'askWhen', preferredTime: '' });
+    expect((await assistant.chat([{ role: 'user', text: 'El grifo gotea', id: 'u1' }], 'es', { firstName: 'R' })).text).toBe('¿Cuándo le gustaría que alguien viniera?');
+  });
+  it('keeps the answer to its own when-question as the timing, even if the model misses it', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'readyToDraft', preferredTime: '' });
+    const done = await assistant.chat([u1, a1, u2, a2, u3], 'en', { firstName: 'M' });
+    expect(done.job?.summary).toContain('Timing: Saturday morning.');
+  });
+  it('does not ask what is needed after the opening turn, and ignores invented times', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'askWhatNeedsDoing', preferredTime: 'tomorrow' });
+    expect((await assistant.chat([u1, a1, u2], 'en', { firstName: 'M' })).text).toBe('Got it. When would you like someone to come by?');
+  });
+  it('asks when help would suit them if the model is ready but no time was given', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'readyToDraft', preferredTime: '' });
+    expect((await assistant.chat([u1, a1, u2], 'en', { firstName: 'M' })).text).toBe('Got it. When would you like someone to come by?');
+  });
+  it('never repeats a question and drafts after two questions', async () => {
+    mock.converse.mockResolvedValueOnce({ next: 'askWhere', preferredTime: '' });
+    expect((await assistant.chat([u1, a1, u2], 'en', { firstName: 'M' })).text).toBe('Got it. When would you like someone to come by?');
+    mock.converse.mockResolvedValueOnce({ next: 'askMoreDetail', preferredTime: '' });
+    expect((await assistant.chat([u1, a1, u2, a2, u3], 'en', { firstName: 'M' })).job).toMatchObject({ engine: 'apple-on-device' });
+  });
+  it('drops an invented ladder but keeps one for overhead jobs', async () => {
+    mock.analyzeTask.mockResolvedValue({ ...job, tools: ['ladder'] });
+    mock.converse.mockResolvedValue({ next: 'readyToDraft', preferredTime: 'today' });
+    expect((await assistant.chat([{ role: 'user', text: 'Boxes block my basement stairs today', id: 'u1' }], 'en', { firstName: 'M' })).job?.tools).toEqual([]);
+    expect((await assistant.chat([{ role: 'user', text: 'The ceiling light bulb is out today', id: 'u1' }], 'en', { firstName: 'M' })).job?.tools).toEqual(['ladder']);
+  });
+  it('keeps the rules path when on-device conversation is unavailable', async () => {
+    const result = await assistant.chat([{ role: 'user', text: 'Please move a chair to the living room', id: 'u1' }], 'en', { firstName: 'M' });
+    expect(mock.converse).toHaveBeenCalledTimes(1);
+    expect(result.text).toBeTruthy();
   });
 });

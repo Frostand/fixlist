@@ -1,3 +1,4 @@
+import { JobRoomTours } from './RoomTour';
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import * as domain from '../../community';
 import { canManageElder } from '../../community/commands';
@@ -17,7 +18,8 @@ export { DraftScreen } from './DraftScreen';
 import { Messages } from './Messages';
 import { Nearby, ServiceHours, VolunteerEditor, VolunteerJob, VolunteerProfileScreen } from './Volunteer';
 import { Settings, type TextSize } from './Settings';
-import { Avatar, Back, Button, Heading, Icon, Sheet, type IconName } from './UI';
+import { Avatar, Back, BrandMark, Button, Heading, Icon, Sheet, type IconName } from './UI';
+import { unreadMessages } from './unread';
 import { useCommunity, type CommunityController } from './useCommunity';
 const RoomCapture = lazy(() => import('./RoomCapture').then((m) => ({ default: m.RoomCapture })));
 export interface CommunityRoute {
@@ -43,7 +45,7 @@ function DemoCommunityApp() { const controller = useCommunity(), [guestLanguage,
 export function AccountHeader({ account, onSettings }: {
     account: Account;
     onSettings(): void;
-}) { const t = useT(); return <header className="c-app-header"><a className="c-wordmark" href="#/c/intro"><Icon name="leaf"/>{t('c.brand')}</a><button className="c-avatar-button" onClick={onSettings}><Avatar name={account.name} tone={account.avatarTone}/><span>{t('c.settings')}</span></button></header>; }
+}) { const t = useT(); return <header className="c-app-header"><a className="c-wordmark" href="#/c/intro"><BrandMark/>{t('c.brand')}</a><button className="c-avatar-button" onClick={onSettings}><Avatar name={account.name} tone={account.avatarTone}/><span>{t('c.settings')}</span></button></header>; }
 export function Tabs({ account, screen }: {
     account: Account;
     screen: string;
@@ -114,13 +116,13 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     else if (account.role === 'family')
         content = <FamilyWorkspace key={JSON.stringify([account.id, c.resetEpoch])} controller={c} account={account} route={{ ...route, screen }} onNavigate={goCommunity}/>;
     else if (screen === 'draft')
-        content = draft && elder ? <DraftScreen draft={draft} onChange={setDraft} onPost={(preferredSlots, analysis) => { const result = c.run((s) => domain.postJob(s, { actorId: account.id, elderId: elder.id, source: draft.source, originalText: draft.text, analysis, evidence: draft.evidence, preferredSlots }, new Date().toISOString())); if (result.ok) {
+        content = draft && elder ? <DraftScreen draft={draft} onChange={setDraft} onPost={(preferredSlots, analysis) => { const result = c.run((s) => domain.postJob(s, { actorId: account.id, elderId: elder.id, source: draft.source, originalText: draft.text, analysis, evidence: draft.evidence, photos: draft.photos ?? [], preferredSlots }, new Date().toISOString())); if (result.ok) {
             setDraft(null);
             goCommunity('help');
         } return result.ok; }}/> : <Missing onHome={() => goCommunity(mainRoute)}/>;
     else if (screen === 'type' || screen === 'talk')
         content = elder ? <AskScreen key={`${account.id}-${c.resetEpoch}-${screen}`} talk={screen === 'talk'} account={account} onDraft={draftJob} onPost={(nextDraft, preferredSlots, analysis) => {
-            const result = c.run(s => domain.postJob(s, { actorId: account.id, elderId: elder.id, source: nextDraft.source, originalText: nextDraft.text, analysis, evidence: nextDraft.evidence, preferredSlots }, new Date().toISOString()));
+            const result = c.run(s => domain.postJob(s, { actorId: account.id, elderId: elder.id, source: nextDraft.source, originalText: nextDraft.text, analysis, evidence: nextDraft.evidence, photos: nextDraft.photos ?? [], preferredSlots }, new Date().toISOString()));
             if (result.ok) goCommunity('help');
             return result.ok;
         }}/> : <Missing onHome={() => goCommunity(mainRoute)}/>;
@@ -131,11 +133,11 @@ export function CommunityBody({ controller: c, language, onGuestLanguage }: {
     else if (screen === 'home')
         content = elder ? <ElderHome account={account} elder={elder} state={state} jobs={elderJobs} onNavigate={goCommunity} onDraft={draftJob}/> : <><Heading>{t('c.family.title', { name: account.firstName })}</Heading><p>{t('c.family.noLink')}</p><Button onClick={() => { c.run(domain.signOut); setNotice(''); goCommunity('signin'); }}>{t('c.settings.switch')}</Button></>;
     else if (screen === 'help')
-        content = <><Heading>{t('c.myHelp')}</Heading><RequestList state={state} jobs={elderJobs} onOpen={(id) => goCommunity(`job/${id}`)}/></>;
+        content = <><Heading>{t('c.myHelp')}</Heading><RequestList state={state} jobs={elderJobs} onOpen={(id) => goCommunity(`job/${id}`)} viewerId={account.id} onMessage={(id) => goCommunity(`messages/${id}`)}/></>;
     else if (screen === 'nearby' && account.role === 'volunteer')
         content = <Suspense fallback={<p role="status">{t('c.loading')}</p>}><Nearby state={state} account={account} onOpen={(id) => goCommunity(`job/${id}`)}/></Suspense>;
     else if (screen === 'jobs' && account.role === 'volunteer')
-        content = <><Heading>{t('c.myJobs')}</Heading><RequestList state={state} jobs={domain.jobsForVolunteer(state, account.id)} onOpen={(id) => goCommunity(`job/${id}`)}/></>;
+        content = <><Heading>{t('c.myJobs')}</Heading><RequestList state={state} jobs={domain.jobsForVolunteer(state, account.id)} onOpen={(id) => goCommunity(`job/${id}`)} viewerId={account.id} onMessage={(id) => goCommunity(`messages/${id}`)}/></>;
     else if (screen === 'profile' && account.role === 'volunteer')
         content = <VolunteerProfileScreen state={state} account={account} onEdit={() => goCommunity('edit-profile')} onLog={() => goCommunity('log')}/>;
     else if (screen === 'edit-profile' && account.role === 'volunteer') {
@@ -190,6 +192,13 @@ function JobRoute({ controller: c, account, screen, id, onHome }: {
         return <Missing onHome={onHome}/>;
     const { job, elder, address } = visible;
     const volunteer = state.accounts.find((a) => a.id === job.volunteerId);
+    // Re-read current domain authority before each local media publication/action.
+    const captureScope = c.resetEpoch ? { ownerId: job.elderId, resetEpoch: c.resetEpoch, isCurrent: () => {
+        const latest = c.readScope?.() ?? { state: c.state, resetEpoch: c.resetEpoch };
+        const actor = domain.currentAccount(latest.state), view = actor && domain.visibleJob(latest.state, id, actor.id);
+        return latest.resetEpoch === c.resetEpoch && actor?.id === account.id && !!view && view.job.elderId === job.elderId
+            && (actor.role === 'volunteer' ? view.job.status === 'open' || view.job.volunteerId === actor.id : canManageElder(latest.state, actor.id, job.elderId));
+    } } : undefined;
     const participant = account.role !== 'volunteer' || job.volunteerId === account.id;
     if (screen === 'messages')
         return participant ? <Messages key={`${account.id}-${id}`} state={state} account={account} job={job} run={c.run}/> : <Missing onHome={onHome}/>;
@@ -199,8 +208,8 @@ function JobRoute({ controller: c, account, screen, id, onHome }: {
         const profile = state.volunteers.find((v) => v.accountId === account.id);
         if (!profile)
             return <Missing onHome={onHome}/>;
-        return <VolunteerJob key={id} job={job} elder={elder} address={address} profile={profile} needs={state.elders.find(e => e.accountId === elder.id)?.needs ?? []} match={domain.matchesForJob(state, id, new Date().toISOString()).find((m) => m.volunteerId === account.id) ?? null} onAccept={(scheduledFor) => c.run((s) => domain.acceptJob(s, { jobId: id, volunteerId: account.id, scheduledFor }, new Date().toISOString())).ok} onStep={(step, note) => c.run((s) => step === 'trip' ? domain.startTrip(s, { jobId: id, volunteerId: account.id }, new Date().toISOString()) : step === 'arrive' ? domain.arrive(s, { jobId: id, volunteerId: account.id }, new Date().toISOString()) : domain.reportDone(s, { jobId: id, volunteerId: account.id, ...(note ? { note } : {}) }, new Date().toISOString())).ok} onMessages={() => goCommunity(`messages/${id}`)}/>;
+        return <VolunteerJob key={id} captureScope={captureScope} job={job} elder={elder} address={address} profile={profile} unread={unreadMessages(state, account.id, id)} needs={state.elders.find(e => e.accountId === elder.id)?.needs ?? []} match={domain.matchesForJob(state, id, new Date().toISOString()).find((m) => m.volunteerId === account.id) ?? null} onAccept={(scheduledFor) => c.run((s) => domain.acceptJob(s, { jobId: id, volunteerId: account.id, scheduledFor }, new Date().toISOString())).ok} onStep={(step, note) => c.run((s) => step === 'trip' ? domain.startTrip(s, { jobId: id, volunteerId: account.id }, new Date().toISOString()) : step === 'arrive' ? domain.arrive(s, { jobId: id, volunteerId: account.id }, new Date().toISOString()) : domain.reportDone(s, { jobId: id, volunteerId: account.id, ...(note ? { note } : {}) }, new Date().toISOString())).ok} onMessages={() => goCommunity(`messages/${id}`)}/>;
     }
-    return <div className="c-stack"><Heading>{t('c.job.details')}</Heading><ProgressTracker status={job.status}/><JobCard analysis={job.analysis} evidence={job.evidence} slots={job.preferredSlots}/>{volunteer ? <p>{t('c.volunteer.assigned', { name: volunteer.firstName })}</p> : null}{job.status === 'reported-done' || job.status === 'completed' && !job.rating ? <Button onClick={() => goCommunity(`confirm/${id}`)}>{t(job.status === 'reported-done' ? 'c.confirm.title' : 'c.confirm.thanks', { name: volunteer?.firstName })}</Button> : null}{job.volunteerId ? <Button kind="secondary" icon="message" onClick={() => goCommunity(`messages/${id}`)}>{t('c.messages')}</Button> : null}{!['completed', 'cancelled'].includes(job.status) ? <Button kind="quiet" onClick={() => setCancelling(true)}>{t('c.job.cancel')}</Button> : null}{cancelling ? <Sheet title={t('c.job.cancelConfirm')} onClose={() => setCancelling(false)}><Button onClick={() => { if (c.run((s) => domain.cancelJob(s, { jobId: id, actorId: account.id }, new Date().toISOString())).ok)
+    return <div className="c-stack"><Heading>{t('c.job.details')}</Heading><ProgressTracker status={job.status}/><JobRoomTours key={job.id} evidence={job.evidence} ownerId={captureScope?.ownerId} resetEpoch={captureScope?.resetEpoch} isCurrent={captureScope?.isCurrent}/><JobCard analysis={job.analysis} evidence={job.evidence} photos={job.photos} slots={job.preferredSlots}/>{volunteer ? <p>{t('c.volunteer.assigned', { name: volunteer.firstName })}</p> : null}{job.status === 'reported-done' || job.status === 'completed' && !job.rating ? <Button onClick={() => goCommunity(`confirm/${id}`)}>{t(job.status === 'reported-done' ? 'c.confirm.title' : 'c.confirm.thanks', { name: volunteer?.firstName })}</Button> : null}{job.volunteerId ? <Button kind="secondary" icon="message" onClick={() => goCommunity(`messages/${id}`)}>{t('c.messages')}</Button> : null}{!['completed', 'cancelled'].includes(job.status) ? <Button kind="quiet" onClick={() => setCancelling(true)}>{t('c.job.cancel')}</Button> : null}{cancelling ? <Sheet title={t('c.job.cancelConfirm')} onClose={() => setCancelling(false)}><Button onClick={() => { if (c.run((s) => domain.cancelJob(s, { jobId: id, actorId: account.id }, new Date().toISOString())).ok)
         setCancelling(false); }}>{t('c.job.cancel')}</Button><Button kind="quiet" onClick={() => setCancelling(false)}>{t('c.job.keep')}</Button></Sheet> : null}</div>;
 }

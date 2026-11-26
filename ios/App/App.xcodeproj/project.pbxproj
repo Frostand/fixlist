@@ -7,14 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F17A20261024000100000002 /* FixListAuthPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261024000100000001 /* FixListAuthPlugin.swift */; };
-		C47A001020261024B1000002 /* CaptureVideoWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261024B1000001 /* CaptureVideoWriter.swift */; };
-		F17A20261023000200000002 /* FixListAssistantPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000200000001 /* FixListAssistantPlugin.swift */; };
-		F17A20261023000100000002 /* FixListHazardsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000001 /* FixListHazardsPlugin.swift */; };
-		F17A20261023000100000004 /* HazardImageEncoder.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000003 /* HazardImageEncoder.mlpackage */; };
-		F17A20261023000100000006 /* hazard-prompts.json in Resources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000005 /* hazard-prompts.json */; };
-		C47A001020261018A1000004 /* FixListCaptureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261018A1000003 /* FixListCaptureViewController.swift */; };
-		C47A001020261018A1000002 /* FixListCapturePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261018A1000001 /* FixListCapturePlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -24,18 +16,21 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		C47A001020261018A1000002 /* FixListCapturePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261018A1000001 /* FixListCapturePlugin.swift */; };
+		C47A001020261018A1000004 /* FixListCaptureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261018A1000003 /* FixListCaptureViewController.swift */; };
+		C47A001020261024B1000002 /* CaptureVideoWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47A001020261024B1000001 /* CaptureVideoWriter.swift */; };
+		F17A20261023000100000002 /* FixListHazardsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000001 /* FixListHazardsPlugin.swift */; };
+		F17A20261023000100000004 /* HazardImageEncoder.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000003 /* HazardImageEncoder.mlpackage */; };
+		F17A20261023000100000006 /* hazard-prompts.json in Resources */ = {isa = PBXBuildFile; fileRef = F17A20261023000100000005 /* hazard-prompts.json */; };
+		F17A20261023000200000002 /* FixListAssistantPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261023000200000001 /* FixListAssistantPlugin.swift */; };
+		F17A20261024000100000002 /* FixListAuthPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261024000100000001 /* FixListAuthPlugin.swift */; };
+		7A2026102500A10000000001 /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 7A2026102500A1000000000B /* MLX */; };
+		7A2026102500A10000000002 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 7A2026102500A1000000000C /* MLXVLM */; };
+		7A2026102500A10000000003 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 7A2026102500A1000000000D /* MLXLMCommon */; };
+		F17A20261025000200000002 /* FixListVisionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A20261025000200000001 /* FixListVisionPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		F17A20261024000100000001 /* FixListAuthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListAuthPlugin.swift; sourceTree = "<group>"; };
-		F17A20261024000100000003 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
-		C47A001020261024B1000001 /* CaptureVideoWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureVideoWriter.swift; sourceTree = "<group>"; };
-		F17A20261023000200000001 /* FixListAssistantPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListAssistantPlugin.swift; sourceTree = "<group>"; };
-		F17A20261023000100000001 /* FixListHazardsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListHazardsPlugin.swift; sourceTree = "<group>"; };
-		F17A20261023000100000003 /* HazardImageEncoder.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = HazardImageEncoder.mlpackage; sourceTree = "<group>"; };
-		F17A20261023000100000005 /* hazard-prompts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "hazard-prompts.json"; sourceTree = "<group>"; };
-		C47A001020261018A1000003 /* FixListCaptureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListCaptureViewController.swift; sourceTree = "<group>"; };
-		C47A001020261018A1000001 /* FixListCapturePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListCapturePlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -47,6 +42,16 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		C47A001020261018A1000001 /* FixListCapturePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListCapturePlugin.swift; sourceTree = "<group>"; };
+		C47A001020261018A1000003 /* FixListCaptureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListCaptureViewController.swift; sourceTree = "<group>"; };
+		C47A001020261024B1000001 /* CaptureVideoWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureVideoWriter.swift; sourceTree = "<group>"; };
+		F17A20261023000100000001 /* FixListHazardsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListHazardsPlugin.swift; sourceTree = "<group>"; };
+		F17A20261023000100000003 /* HazardImageEncoder.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = HazardImageEncoder.mlpackage; sourceTree = "<group>"; };
+		F17A20261023000100000005 /* hazard-prompts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "hazard-prompts.json"; sourceTree = "<group>"; };
+		F17A20261023000200000001 /* FixListAssistantPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListAssistantPlugin.swift; sourceTree = "<group>"; };
+		F17A20261024000100000001 /* FixListAuthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListAuthPlugin.swift; sourceTree = "<group>"; };
+		F17A20261024000100000003 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		F17A20261025000200000001 /* FixListVisionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixListVisionPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +60,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				7A2026102500A10000000003 /* MLXLMCommon in Frameworks */,
+				7A2026102500A10000000002 /* MLXVLM in Frameworks */,
+				7A2026102500A10000000001 /* MLX in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +92,7 @@
 				F17A20261024000100000001 /* FixListAuthPlugin.swift */,
 				F17A20261024000100000003 /* App.entitlements */,
 				F17A20261023000100000001 /* FixListHazardsPlugin.swift */,
+				F17A20261025000200000001 /* FixListVisionPlugin.swift */,
 				F17A20261023000200000001 /* FixListAssistantPlugin.swift */,
 				F17A20261023000100000007 /* HazardModel */,
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
@@ -131,6 +140,9 @@
 			name = App;
 			packageProductDependencies = (
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+				7A2026102500A1000000000D /* MLXLMCommon */,
+				7A2026102500A1000000000C /* MLXVLM */,
+				7A2026102500A1000000000B /* MLX */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
@@ -162,6 +174,8 @@
 			);
 			mainGroup = 504EC2FB1FED79650016851F;
 			packageReferences = (
+				F17A20261025000100000002 /* mlx-swift-lm */,
+				F17A20261025000100000001 /* mlx-swift */,
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
@@ -216,14 +230,14 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/../../scripts/verify-ios-model.sh",
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/HazardImageEncoder.mlmodelc/weights/weight.bin",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/HazardImageEncoder.mlmodelc/model0/weights/weight.bin",
 			);
 			name = "Verify bundled model";
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$SRCROOT/../../scripts/verify-ios-model.sh\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/HazardImageEncoder.mlmodelc/weights/weight.bin\"\n";
+			shellScript = "/bin/sh \"$SRCROOT/../../scripts/verify-ios-model.sh\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/HazardImageEncoder.mlmodelc/model0/weights/weight.bin\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -234,6 +248,7 @@
 			files = (
 				F17A20261024000100000002 /* FixListAuthPlugin.swift in Sources */,
 				F17A20261023000100000002 /* FixListHazardsPlugin.swift in Sources */,
+				F17A20261025000200000002 /* FixListVisionPlugin.swift in Sources */,
 				F17A20261023000200000002 /* FixListAssistantPlugin.swift in Sources */,
 				F17A20261023000100000004 /* HazardImageEncoder.mlpackage in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
@@ -315,7 +330,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -366,7 +381,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -383,8 +398,9 @@
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5CKR65964C;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -406,8 +422,9 @@
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5CKR65964C;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -444,6 +461,11 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		F17A20261025000100000001 /* mlx-swift */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/ml-explore/mlx-swift"; requirement = {kind = exactVersion; version = 0.29.1; }; };
+		F17A20261025000100000002 /* mlx-swift-lm */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/ml-explore/mlx-swift-lm"; requirement = {kind = exactVersion; version = 2.29.3; }; };
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCLocalSwiftPackageReference section */
 		D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */ = {
 			isa = XCLocalSwiftPackageReference;
@@ -457,6 +479,9 @@
 			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
 			productName = "CapApp-SPM";
 		};
+		7A2026102500A1000000000B /* MLX */ = {isa = XCSwiftPackageProductDependency; package = F17A20261025000100000001; productName = MLX; };
+		7A2026102500A1000000000C /* MLXVLM */ = {isa = XCSwiftPackageProductDependency; package = F17A20261025000100000002; productName = MLXVLM; };
+		7A2026102500A1000000000D /* MLXLMCommon */ = {isa = XCSwiftPackageProductDependency; package = F17A20261025000100000002; productName = MLXLMCommon; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 504EC2FC1FED79650016851F /* Project object */;

@@ -164,3 +164,17 @@ export const assistantFollowupCopy: Record<Language, FollowupCopy> = {
     unsupported: 'لم أفهم هذا التفصيل. ', cancelled: 'ألغيت هذه المسودة. يمكنك بدء طلب جديد.', context: 'المحادثة طويلة جدًا. ابدأ طلبًا جديدًا بالتفاصيل التي تريد إضافتها.', emergency: 'إذا كان هناك خطر فوري أو حالة طبية طارئة، انتقل إلى مكان آمن إن استطعت واتصل بخدمات الطوارئ المحلية. لا يستطيع FixList تقديم مساعدة طارئة.',
   },
 };
+
+/** Authored questions for the on-device conversation. The model chooses the next step; the words are always these. */
+export interface TurnCopy { what: string; where: string; when: string; detail: string; ack: string }
+export const assistantTurnCopy: Record<Language, TurnCopy> = {
+  en: { what: 'What would you like a hand with?', where: 'Where in your home is it?', when: 'When would you like someone to come by?', detail: "Can you tell me a little more about what's wrong?", ack: 'Got it.' },
+  es: { what: '¿Con qué le gustaría recibir ayuda?', where: '¿En qué parte de su casa está?', when: '¿Cuándo le gustaría que alguien viniera?', detail: '¿Me puede contar un poco más sobre el problema?', ack: 'Entendido.' },
+  zh: { what: '您需要什么帮助？', where: '在您家的哪个位置？', when: '您希望什么时候有人来帮忙？', detail: '能再多说一点是什么问题吗？', ack: '好的。' },
+  vi: { what: 'Bạn cần giúp việc gì?', where: 'Việc đó ở chỗ nào trong nhà bạn?', when: 'Bạn muốn người giúp đến lúc nào?', detail: 'Bạn có thể nói thêm một chút về vấn đề không?', ack: 'Tôi hiểu rồi.' },
+  ko: { what: '어떤 도움이 필요하신가요?', where: '집 안 어디에 있나요?', when: '언제 와 주면 좋을까요?', detail: '어떤 문제인지 조금 더 알려 주시겠어요?', ack: '알겠어요.' },
+  tl: { what: 'Ano po ang maitutulong namin?', where: 'Saan po ito sa bahay ninyo?', when: 'Kailan po ninyo gustong may pumunta?', detail: 'Puwede po bang ikuwento nang kaunti pa ang problema?', ack: 'Sige po.' },
+  ru: { what: 'С чем вам помочь?', where: 'Где это у вас дома?', when: 'Когда вам удобно, чтобы кто-то пришёл?', detail: 'Расскажите, пожалуйста, чуть подробнее, в чём проблема?', ack: 'Понятно.' },
+  fr: { what: "Pour quoi aimeriez-vous de l'aide ?", where: 'Où est-ce chez vous ?', when: "Quand aimeriez-vous que quelqu'un passe ?", detail: "Pouvez-vous m'en dire un peu plus sur le problème ?", ack: "D'accord." },
+  ar: { what: 'ما الذي تحتاج المساعدة فيه؟', where: 'في أي مكان من بيتك؟', when: 'متى تفضّل أن يأتي أحد؟', detail: 'هل يمكنك أن تخبرني بالمزيد عن المشكلة؟', ack: 'فهمت.' },
+};

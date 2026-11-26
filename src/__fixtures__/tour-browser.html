@@ -1,0 +1,16 @@
+<!doctype html><html lang="en" data-community><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FixList · synthetic 360 QA</title></head><body><div id="root"></div><script type="module">
+// Standalone QA entry: never imported by the app. Install mocked Capacitor before app modules load.
+window.CapacitorCustomPlatform={name:'ios'};
+const model={id:'synthetic-vision',license:'Synthetic fixture',bytes:1782040921};
+let needsDownload=new URLSearchParams(location.search).has('download'), callback;
+window.Capacitor={PluginHeaders:[{name:'FixListVision',methods:['availability','prepare','describePhoto','describePanorama'].map(name=>({name,rtype:'promise'})).concat([{name:'addListener',rtype:'callback'},{name:'removeListener',rtype:'promise'}])}],
+ nativeCallback(_plugin,method,_args,cb){if(method==='addListener')callback=cb;return Promise.resolve('fixture-listener');},
+ async nativePromise(_plugin,method,args){
+  if(method==='availability')return {available:true,state:needsDownload?'needs-download':'ready',model};
+  if(method==='removeListener')return {};
+  if(method==='prepare'){for(let i=0;i<=10;i++){callback?.({fraction:i/10,phase:'download'});await new Promise(r=>setTimeout(r,500));}needsDownload=false;return {available:true};}
+  if(method==='describePanorama'||method==='describePhoto')return {model:model.id,hazards:[{label:'Cord across the walking path',detail:'A visible cord crosses the route beside the chair.',tip:'Ask someone to route the cord along the wall.',category:'trip',severity:'high',box:null,direction:[0,-0.3,-Math.sqrt(.91)],thumbnail:null}]};
+  throw new Error('Unexpected mocked native call '+method);
+ }};
+await import('./tour-browser.tsx');
+</script></body></html>

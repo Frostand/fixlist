@@ -97,6 +97,10 @@ final class CaptureVideoLifecycleHarness {
     var photos: [LifecyclePhoto] = []
     var pendingPhoto: LifecyclePhoto?
     var saving = false
+    var tourStops: [CaptureTourStop] = []
+    var tourBusy = false
+    var tourClears = 0
+    func clearTourAttempt() { tourBusy = false; tourClears += 1 }
     var finished = false
     var corners: [SIMD2<Float>] = []
     var doors: [SIMD2<Float>] = []
@@ -180,7 +184,7 @@ final class UITapGestureRecognizer {
     }
 }
 final class CaptureOutlineHarness {
-    enum Step { case floor, outline, photos }
+    enum Step { case floor, outline, tour, photos }
     enum Mark { case corner, door }
     var step = Step.outline
     var floorY: Float? = 0
@@ -206,6 +210,27 @@ final class CaptureOutlineHarness {
     var photoTransitions = 0
     func drawOutline() {}
     func refresh() {}
-    func beginPhotos() { step = .photos; photoTransitions += 1 }
+    func beginTour() { step = .tour; photoTransitions += 1 }
     /* PRODUCTION_OUTLINE_METHODS */
+}
+
+// Execute real cancellation/world-invalidation bodies with only UI dots stubbed.
+final class TourDot { var isHidden = false }
+final class CaptureTourAttemptHarness {
+    let options = CaptureOptions(call: CAPPluginCall(nativeOptions("cap-tour-state-01")))!
+    enum TourState { case ready, spinning, building, review }
+    var tourState = TourState.spinning
+    var tourCancellation = CaptureTourCancellation()
+    var tourFrames: [CaptureTourFrame] = []
+    var tourCaptured: Set<Int> = [0, 1]
+    var tourTargets = CaptureTourMath.targets(yaw: 0)
+    var tourFramePending = true
+    var tourPositionSum = SIMD3<Float>(1, 2, 3)
+    var tourPositionCount = 20
+    var tourPreviousPose: (simd_float4x4, TimeInterval)? = (matrix_identity_float4x4, 1)
+    var tourStableSince: TimeInterval? = 1
+    var tourNotice: String? = "note"
+    var tourStops: [CaptureTourStop] = []
+    let tourDots = [TourDot(), TourDot()]
+    /* PRODUCTION_TOUR_CLEAR_METHODS */
 }

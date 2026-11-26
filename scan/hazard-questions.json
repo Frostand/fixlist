@@ -65,6 +65,14 @@
       "question": "Is a bathtub, shower, or toilet and its adjoining wall visible in this photo with no grab bar visible beside that fixture?",
       "relevanceQuestion": "Is a bathtub, shower, or toilet together with its adjoining wall visible in this photo?",
       "limitation": "An out-of-frame bar may exist. A photo cannot determine a person's support needs or whether a bar is properly installed."
+    },
+    {
+      "checklistItemId": "floor-clutter-check",
+      "concernId": "clutter-concern",
+      "originalQuestion": "Are there papers, shoes, books, or other objects on the floor where you walk?",
+      "question": "Are loose objects such as shoes, bags, boxes, clothes, toys, or books visible on an open floor walking area in this photo?",
+      "relevanceQuestion": "Is an open floor area where someone might walk visible in this photo?",
+      "limitation": "Lower-frame position and furniture boxes are only heuristics. A photo cannot establish whether an object is on the floor or whether people walk there."
     }
   ]
 }

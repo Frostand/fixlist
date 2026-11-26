@@ -169,3 +169,12 @@ describe('native capture bridge boundaries (mocked plugin; no device claim)', ()
     expect(mock.discardAll).toHaveBeenCalledOnce(); expect(result.status).toBe('error');
   });
 });
+
+it('imports and hash-checks a native tour with zero close-up photos, before discarding native files', async () => {
+  const { tourFixture } = await import('./__fixtures__/capture-tour'); const r = await tourFixture(), store = createMemoryCaptureStore();
+  mock.start.mockImplementation(async args => ({ status: 'completed', capture: { ...r.manifest, captureId: args.captureId,
+    files: Object.fromEntries(r.manifest.tour!.stops.map(s => [s.panorama.fileId, `file:///var/app/Library/Caches/fixlist-captures/${args.captureId}/${s.panorama.fileId}.jpg`])) } }));
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(await r.panoramaBlobs!.get(url.endsWith('pano-s1.jpg') ? 'pano-s1' : 'pano-s2')!.arrayBuffer())));
+  expect((await runNativeCapture({ ...options, store })).status).toBe('completed');
+  const saved = (await store.read(options.roomId))!; expect(saved.photos.size).toBe(0); expect(saved.panoramaBlobs!.size).toBe(2); expect(mock.discard).toHaveBeenCalledOnce();
+});

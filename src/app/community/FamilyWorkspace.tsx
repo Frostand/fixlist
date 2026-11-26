@@ -56,7 +56,7 @@ export function FamilyWorkspace({ controller: c, account, route, onNavigate }: {
   function post(value: Draft, preferredSlots: readonly import('../../community/types').AvailabilitySlot[], analysis: import('../../community/types').JobAnalysis) {
     if (!elder || !selected) return false;
     const result = run(s => domain.postJob(s, { actorId: account.id, elderId: elder.id, familyRevision: selected.revision,
-      source: value.source, originalText: value.text, analysis, evidence: value.evidence, preferredSlots }, new Date().toISOString()));
+      source: value.source, originalText: value.text, analysis, evidence: value.evidence, photos: value.photos ?? [], preferredSlots }, new Date().toISOString()));
     if (result.ok) { setDraft(null); onNavigate('help'); }
     return result.ok;
   }
@@ -132,7 +132,7 @@ function FamilyJobDetail({ state, job, elder, onMessages, onCancel }: { state: C
   const t = useT(), f = useFamilyCopy(), language = useLanguage(), [confirmCancel, setConfirmCancel] = useState(false);
   const volunteer = state.accounts.find(a => a.id === job.volunteerId), actor = state.accounts.find(a => a.id === job.createdById);
   const date = (at: string) => new Intl.DateTimeFormat(localeFor(language), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(at));
-  return <div className="c-stack"><Heading>{t('c.job.details')}</Heading><p>{f('postedBy', { elder: elder.firstName, actor: actor?.firstName })}</p><ProgressTracker status={job.status}/><JobCard analysis={job.analysis} evidence={job.evidence} slots={job.preferredSlots}/>
+  return <div className="c-stack"><Heading>{t('c.job.details')}</Heading><p>{f('postedBy', { elder: elder.firstName, actor: actor?.firstName })}</p><ProgressTracker status={job.status}/><JobCard analysis={job.analysis} evidence={job.evidence} photos={job.photos} slots={job.preferredSlots}/>
     {volunteer ? <p>{t('c.volunteer.assigned', { name: volunteer.firstName })}</p> : null}{job.scheduledFor ? <p>{f('scheduled', { date: date(job.scheduledFor) })}</p> : null}
     {job.status === 'reported-done' ? <p className="c-notice">{f('awaiting', { elder: elder.firstName })}</p> : null}
     <section><h2>{f('history')}</h2><ol className="c-family-history">{job.timeline.map((event, index) => <li key={index}><strong>{state.accounts.find(a => a.id === event.actorId)?.firstName}</strong> · {event.type === 'posted' ? f('eventPosted') : event.type === 'confirmed' ? f('eventConfirmed') : event.type === 'rated' ? f('eventRated') : t(`c.status.${event.type}`)}<time dateTime={event.at}>{date(event.at)}</time>{event.note ? <p>{event.note}</p> : null}</li>)}</ol></section>

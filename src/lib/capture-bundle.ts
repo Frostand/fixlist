@@ -2,18 +2,19 @@ import type { CaptureManifest } from './capture-types';
 import { CaptureError, captureFail, jpegDimensions, plainRecord, sha256Bytes, validateCaptureManifest, type CaptureResult } from './capture-model';
 
 export const MAX_CAPTURE_BUNDLE_BYTES = 48 * 1024 * 1024;
-export interface CaptureBundleData { manifest: CaptureManifest; photos: ReadonlyMap<string, Blob> }
+export interface CaptureBundleData { manifest: CaptureManifest; photos: ReadonlyMap<string, Blob>; panoramaBlobs?: ReadonlyMap<string, Blob> }
 export function captureBundleName(capture: CaptureManifest): string { return `${capture.captureId}.fixlist-capture.json`; }
 export function bytesToBase64(bytes: Uint8Array): string {
   let text = '';
   for (let i = 0; i < bytes.length; i += 8192) text += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return btoa(text);
 }
-export async function buildCaptureBundle(capture: CaptureManifest, photos: ReadonlyMap<string, Blob>): Promise<{ fileName: string; text: string }> {
+export async function buildCaptureBundle(capture: CaptureManifest, photos: ReadonlyMap<string, Blob>, panoramaBlobs: ReadonlyMap<string, Blob> = new Map()): Promise<{ fileName: string; text: string }> {
   const valid = validateCaptureManifest(capture);
   if (!valid.ok) throw new CaptureError(valid.code, valid.error);
   if (photos.size !== capture.photos.length) throw new CaptureError('INVALID_CAPTURE', 'The room photos are incomplete.');
-  if ([...photos.values()].reduce((s, p) => s + 4 * Math.ceil(p.size / 3), 0) > MAX_CAPTURE_BUNDLE_BYTES) throw new CaptureError('CAPACITY', 'This capture is too large to export (48 MiB limit).');
+  if (panoramaBlobs.size !== (capture.tour?.stops.length ?? 0)) throw new CaptureError('INVALID_CAPTURE', 'The tour panoramas are incomplete.');
+  if ([...photos.values(), ...panoramaBlobs.values()].reduce((s, p) => s + 4 * Math.ceil(p.size / 3), 0) > MAX_CAPTURE_BUNDLE_BYTES) throw new CaptureError('CAPACITY', 'This capture is too large to export (48 MiB limit).');
   const encoded = [];
   for (const photo of capture.photos) {
     const blob = photos.get(photo.photoId);
@@ -23,7 +24,13 @@ export async function buildCaptureBundle(capture: CaptureManifest, photos: Reado
     if (!dimensions || dimensions.width !== photo.width || dimensions.height !== photo.height || await sha256Bytes(bytes) !== photo.sha256) throw new CaptureError('INVALID_CAPTURE', 'A room photo does not match its saved hash or dimensions.');
     encoded.push({ ...photo, jpeg: bytesToBase64(bytes) });
   }
-  const text = JSON.stringify({ ...capture, photos: encoded });
+  const stops = [];
+  for (const stop of capture.tour?.stops ?? []) {
+    const bytes = new Uint8Array(await panoramaBlobs.get(stop.panorama.fileId)!.arrayBuffer()), dimensions = jpegDimensions(bytes, 4096);
+    if (!dimensions || dimensions.width !== stop.panorama.width || dimensions.height !== stop.panorama.height || await sha256Bytes(bytes) !== stop.panorama.sha256) throw new CaptureError('INVALID_CAPTURE', 'A tour panorama does not match its hash or dimensions.');
+    stops.push({ ...stop, panorama: { ...stop.panorama, jpeg: bytesToBase64(bytes) } });
+  }
+  const text = JSON.stringify({ ...capture, photos: encoded, ...(capture.tour ? { tour: { ...capture.tour, stops } } : {}) });
   if (new Blob([text]).size > MAX_CAPTURE_BUNDLE_BYTES) throw new CaptureError('CAPACITY', 'This capture is too large to export (48 MiB limit).');
   return { fileName: captureBundleName(capture), text };
 }
@@ -42,6 +49,23 @@ export async function parseCaptureBundle(text: string): Promise<CaptureResult<Ca
     if (!dimensions || dimensions.width !== photo.width || dimensions.height !== photo.height || bytesToBase64(bytes) !== jpeg || await sha256Bytes(bytes) !== photo.sha256) return captureFail('Capture photo JPEG, dimensions or SHA-256 does not match.');
     photos.set(photo.photoId as string, new Blob([bytes], { type: 'image/jpeg' })); manifestPhotos.push(photo);
   }
-  const valid = validateCaptureManifest({ ...value, photos: manifestPhotos });
-  return valid.ok ? { ok: true, value: { manifest: valid.value, photos } } : valid;
+  const panoramaBlobs = new Map<string, Blob>();
+  let tour = value.tour;
+  if (Object.hasOwn(value, 'tour')) {
+    if (!plainRecord(tour) || !Array.isArray(tour.stops) || tour.stops.length > 6) return captureFail('Invalid bundled room tour.');
+    const stops = [];
+    for (const stop of tour.stops) {
+      if (!plainRecord(stop) || !plainRecord(stop.panorama) || typeof stop.panorama.jpeg !== 'string') return captureFail('Invalid bundled panorama.');
+      const { jpeg, ...panorama } = stop.panorama;
+      try {
+        const bytes = Uint8Array.from(atob(jpeg), c => c.charCodeAt(0)), dimensions = jpegDimensions(bytes, 4096);
+        if (bytesToBase64(bytes) !== jpeg || !dimensions || dimensions.width !== panorama.width || dimensions.height !== panorama.height || await sha256Bytes(bytes) !== panorama.sha256) return captureFail('Invalid tour panorama JPEG, dimensions or SHA-256.');
+        panoramaBlobs.set(panorama.fileId as string, new Blob([bytes], { type: 'image/jpeg' }));
+      } catch { return captureFail('Invalid tour panorama base64.'); }
+      stops.push({ ...stop, panorama });
+    }
+    tour = { ...tour, stops };
+  }
+  const valid = validateCaptureManifest({ ...value, photos: manifestPhotos, ...(Object.hasOwn(value, 'tour') ? { tour } : {}) });
+  return valid.ok ? { ok: true, value: { manifest: valid.value, photos, ...(valid.value.tour ? { panoramaBlobs } : {}) } } : valid;
 }

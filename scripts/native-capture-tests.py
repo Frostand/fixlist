@@ -34,7 +34,7 @@ def declaration(marker: str, source: str = SOURCE) -> str:
 
 
 helpers = "\n\n".join(declaration(marker) for marker in (
-    "struct CapturePrompt", "struct CaptureOptions", "enum CaptureFloorMath", "enum CaptureViewportMath", "enum CapturePortraitMath", "extension SIMD4 where Scalar == Float",
+    "struct CapturePrompt", "struct CaptureOptions", "enum CaptureFloorMath", "enum CaptureViewportMath", "enum CapturePortraitMath", "enum CaptureJPEG", "enum CaptureTourMath", "final class CaptureTourCancellation", "struct CaptureTourStop", "struct CaptureTourFrame", "enum CaptureTourStitcher", "enum CaptureTourRaster", "extension SIMD4 where Scalar == Float",
 ))
 # Run the existing DEBUG self-test body on the host, without pretending to have
 # an ARCamera. The real SDK projection check is compiled by --frameworks below.
@@ -69,9 +69,14 @@ if "private func shouldSnapToFirst(" in CONTROLLER:
 outline_methods = "\n".join(declaration(marker, CONTROLLER).replace("@objc private func", "func").replace("private func", "func")
                             for marker in outline_markers)
 stubs = stubs.replace("/* PRODUCTION_OUTLINE_METHODS */", outline_methods)
+tour_clear_methods = "\n".join(declaration(marker, CONTROLLER).replace("private func", "func")
+                                for marker in ("private func clearTourAttempt()", "private func invalidateTourWorld()"))
+stubs = stubs.replace("/* PRODUCTION_TOUR_CLEAR_METHODS */", tour_clear_methods)
 tests = (ROOT / "scripts/native-capture-tests.swift").read_text()
+tests = tests.replace("if failures.isEmpty", (ROOT / "scripts/native-capture-tests-tour.swift").read_text() + "\nif failures.isEmpty", 1)
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--frameworks", type=Path, help="Built Simulator Capacitor/Cordova frameworks for full SDK typecheck")
+parser.add_argument("--unoptimized", action="store_true", help="Also measure the Debug (-Onone) stitch path")
 args = parser.parse_args()
 with tempfile.TemporaryDirectory(prefix="fixlist-native-tests-") as directory:
     # Compile the actual production SDK boundary for the app's iOS 15 minimum.
@@ -95,6 +100,6 @@ with tempfile.TemporaryDirectory(prefix="fixlist-native-tests-") as directory:
         print("PASS: complete production capture controller/plugin iOS SDK typecheck (including DEBUG projection check)", flush=True)
     source = Path(directory) / "main.swift"
     binary = Path(directory) / "native-capture-tests"
-    source.write_text('import Foundation\nimport CoreGraphics\nimport simd\nimport os.log\nlet captureLog = OSLog(subsystem: "fixlist.test", category: "capture")\n' + helpers + "\n" + stubs + "\n" + tests)
-    subprocess.run(["xcrun", "swiftc", str(source), "-o", str(binary)], check=True)
+    source.write_text('import Foundation\nimport CoreGraphics\nimport ImageIO\nimport UniformTypeIdentifiers\nimport simd\nimport os.log\nlet captureLog = OSLog(subsystem: "fixlist.test", category: "capture")\n' + helpers + "\n" + stubs + "\n" + tests)
+    subprocess.run(["xcrun", "swiftc", "-Onone" if args.unoptimized else "-O", str(source), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

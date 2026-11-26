@@ -1416,5 +1416,16 @@
   "capture.video.title": "방 동영상",
   "capture.video.privacy": "동영상은 이 휴대전화에만 저장됩니다. AI는 사진으로 확인합니다. 내보내기에는 사진만 포함됩니다.",
   "capture.video.playbackFailed": "이 동영상을 재생할 수 없습니다. 방을 다시 열어 보세요.",
-  "c.volunteer.helped": "{name}님이 도와주셨어요"
+  "c.volunteer.helped": "{name}님이 도와주셨어요",
+  "c.messages.unread": "새 메시지: {count}개",
+  "c.photos.title": "사진",
+  "c.photos.add": "사진 추가",
+  "c.photos.hint": "문제를 보여 주는 사진을 최대 3장 추가하세요. 사진의 위치 정보는 삭제됩니다.",
+  "c.photos.count": "사진 {count}/3장",
+  "c.photos.alt": "도움 요청 사진 {number}",
+  "c.photos.remove": "삭제",
+  "c.photos.removeLabel": "사진 {number} 삭제",
+  "c.photos.preparing": "사진을 준비하고 있습니다…",
+  "c.photos.limit": "사진은 최대 3장까지 추가할 수 있습니다. 다른 사진을 추가하려면 한 장을 삭제하세요.",
+  "c.photos.error": "사진을 열 수 없습니다. 다른 사진을 선택해 주세요."
 }

@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "imageSize": 640,
+  "classThresholds": {
+    "rug": 0.30, "floor mat": 0.30, "runner rug": 0.30,
+    "electrical cord": 0.25, "extension cord": 0.25, "power strip": 0.25,
+    "shoe": 0.30, "bag": 0.35, "cardboard box": 0.35,
+    "clothes": 0.30, "toy": 0.30, "book": 0.30,
+    "stairs": 0.25, "bathtub": 0.50, "toilet": 0.45,
+    "shower": 0.50, "grab bar": 0.12
+  },
+  "floorClutterThresholds": {
+    "shoe": 0.30, "bag": 0.40, "cardboard box": 0.35,
+    "clothes": 0.30, "toy": 0.35, "book": 0.40
+  },
+  "items": [
+    {"checklistItemId": "rug-check", "threshold": 0.30},
+    {"checklistItemId": "cord-check", "threshold": 0.25},
+    {"checklistItemId": "stair-clutter-check", "threshold": 0.30},
+    {"checklistItemId": "handrail-check", "threshold": 1.0},
+    {"checklistItemId": "stair-lighting-check", "threshold": 1.0},
+    {"checklistItemId": "night-lighting-check", "threshold": 1.0},
+    {"checklistItemId": "shower-surface-check", "threshold": 1.0},
+    {"checklistItemId": "bathroom-support-check", "threshold": 0.45},
+    {"checklistItemId": "floor-clutter-check", "threshold": 0.30}
+  ],
+  "geometry": {
+    "minimumArea": 0.002,
+    "rugMinCenterY": 0.45, "rugMinBottomY": 0.65,
+    "cordMinCenterY": 0.60, "cordMinBottomY": 0.72,
+    "cordMinWidth": 0.08,
+    "cordMinAspect": 1.4,
+    "stairObjectOverlap": 0.60,
+    "bathCompanionConfidence": 0.15,
+    "floorClutterMinBottomY": 0.72,
+    "furnitureMinConfidence": 0.25,
+    "furnitureObjectOverlap": 0.50
+  }
+}

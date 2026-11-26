@@ -1,23 +1,26 @@
+import { validateAIReview, type AIReview } from './vision-hazards';
 import type { CaptureManifest, CaptureSuggestionsFile, CaptureVideoAssets, CaptureVideos } from './capture-types';
 import { CaptureError, jpegDimensions, sha256Blob, validateCaptureManifest } from './capture-model';
 import { validateCaptureSuggestions } from './capture-suggestions';
+import { isRetiredOndeviceModel } from './ondevice-contract';
 import { validateCaptureVideoBlob, validateCaptureVideos } from './capture-video';
 
 export const CAPTURE_DATABASE = 'fixlist-captures';
 export const MAX_CAPTURE_STORAGE_BYTES = 120 * 1024 * 1024;
 const STORE = 'rooms', GENERATION = '__reset_generation';
-export interface StoredCapture { manifest: CaptureManifest; photos: ReadonlyMap<string, Blob>; flags: CaptureSuggestionsFile | null; videos?: CaptureVideos | null; videoBlobs?: ReadonlyMap<string, Blob> }
+export interface StoredCapture { manifest: CaptureManifest; photos: ReadonlyMap<string, Blob>; flags: CaptureSuggestionsFile | null; panoramaBlobs?: ReadonlyMap<string, Blob>; aiReview?: AIReview | null; videos?: CaptureVideos | null; videoBlobs?: ReadonlyMap<string, Blob> }
 export interface CaptureStore {
   read(roomId: string): Promise<StoredCapture | null>;
   writeCapture(manifest: CaptureManifest, photos: ReadonlyMap<string, Blob>, replaceConfirmed?: boolean, isCurrent?: () => boolean, expectedCaptureId?: string | null, assets?: CaptureVideoAssets): Promise<void>;
   writeFlags(roomId: string, flags: CaptureSuggestionsFile, isCurrent?: () => boolean): Promise<void>;
+  writeAIReview?(roomId: string, review: AIReview, isCurrent?: () => boolean): Promise<void>;
   remove(roomId: string, captureId: string, isCurrent?: () => boolean): Promise<void>;
   clear(): Promise<void>;
   invalidate?(): void;
 }
 const stale = () => new CaptureError('CANCELLED', 'This room view changed. Reload before saving.');
 function assertCurrent(current?: () => boolean): void { if (current && !current()) throw stale(); }
-function size(record: StoredCapture): number { return new Blob([JSON.stringify(record.manifest), JSON.stringify(record.flags), ...(record.videos ? [JSON.stringify(record.videos)] : [])]).size + [...record.photos.values(), ...record.videoBlobs?.values() ?? []].reduce((s, b) => s + b.size, 0); }
+function size(record: StoredCapture): number { return new Blob([JSON.stringify(record.manifest), JSON.stringify(record.flags), ...(record.aiReview ? [JSON.stringify(record.aiReview)] : []), ...(record.videos ? [JSON.stringify(record.videos)] : [])]).size + [...record.photos.values(), ...record.panoramaBlobs?.values() ?? [], ...record.videoBlobs?.values() ?? []].reduce((s, b) => s + b.size, 0); }
 async function checked(record: StoredCapture): Promise<StoredCapture> {
   const result = validateCaptureManifest(record.manifest);
   if (!result.ok) throw new CaptureError(result.code, result.error);
@@ -28,14 +31,29 @@ async function checked(record: StoredCapture): Promise<StoredCapture> {
     const dimensions = jpegDimensions(new Uint8Array(await b.arrayBuffer()));
     if (!dimensions || dimensions.width !== p.width || dimensions.height !== p.height || await sha256Blob(b) !== p.sha256) throw new CaptureError('INVALID_CAPTURE', 'A room photo does not match its saved hash or dimensions.');
   }
-  const flags = record.flags === null ? null : validateCaptureSuggestions(record.flags, result.value);
+  const panoramaBlobs = record.panoramaBlobs ?? new Map<string, Blob>();
+  const stops = result.value.tour?.stops ?? [];
+  if (!(panoramaBlobs instanceof Map) || panoramaBlobs.size !== stops.length) throw new CaptureError('INVALID_CAPTURE', 'Saved tour panoramas are incomplete.');
+  for (const { panorama: p } of stops) {
+    const blob = panoramaBlobs.get(p.fileId);
+    if (!(blob instanceof Blob) || blob.type !== 'image/jpeg' || !blob.size || blob.size > MAX_CAPTURE_STORAGE_BYTES) throw new CaptureError('INVALID_CAPTURE', 'A tour panorama is missing.');
+    const dimensions = jpegDimensions(new Uint8Array(await blob.arrayBuffer()), 4096);
+    if (dimensions?.width !== p.width || dimensions.height !== p.height || await sha256Blob(blob) !== p.sha256) throw new CaptureError('INVALID_CAPTURE', 'A tour panorama does not match its saved hash or dimensions.');
+  }
+  const review = record.aiReview == null ? null : validateAIReview(record.aiReview, result.value);
+  if (review && !review.ok) throw new CaptureError(review.code, review.error);
+  // Preserve saved photos when replacing an exact retired model. Its cached
+  // flags cannot be reinterpreted under the current contract. New/unknown
+  // identities and malformed flags still go through strict validation.
+  const retainedFlags = isRetiredOndeviceModel(record.flags?.model) ? null : record.flags;
+  const flags = retainedFlags === null ? null : validateCaptureSuggestions(retainedFlags, result.value);
   if (flags && !flags.ok) throw new CaptureError(flags.code, flags.error);
   const videos = record.videos === undefined || record.videos === null ? null : validateCaptureVideos(record.videos, result.value);
   if (videos && !videos.ok) throw new CaptureError(videos.code, videos.error);
   const videoBlobs = record.videoBlobs === undefined ? new Map<string, Blob>() : record.videoBlobs;
   if (!(videoBlobs instanceof Map) || videoBlobs.size !== (videos ? 1 : 0) || videos?.ok && !videoBlobs.has('v01')) throw new CaptureError('INVALID_CAPTURE', 'Saved room video files are incomplete.');
   if (videos?.ok) await validateCaptureVideoBlob(videoBlobs.get('v01')!, videos.value.clips[0]);
-  return { manifest: result.value, photos: new Map(record.photos), flags: flags?.ok ? flags.value : null, videos: videos?.ok ? videos.value : null, videoBlobs: new Map(videoBlobs) };
+  return { manifest: result.value, panoramaBlobs: new Map(panoramaBlobs), aiReview: review?.ok ? review.value : null, photos: new Map(record.photos), flags: flags?.ok ? flags.value : null, videos: videos?.ok ? videos.value : null, videoBlobs: new Map(videoBlobs) };
 }
 type Change = (rooms: Map<string, StoredCapture>) => void;
 interface Backend { observeGeneration(): Promise<void>; read(roomId: string): Promise<StoredCapture | null>; change(update: Change, reset?: boolean): Promise<void> }
@@ -64,6 +82,12 @@ function storeFromBackend(backend: Backend, key: (roomId: string) => string = (i
       const valid = validateCaptureSuggestions(snapshot, r.manifest);
       if (!valid.ok) throw new CaptureError(valid.code, valid.error);
       rooms.set(id, { ...r, flags: valid.value });
+    }); },
+    writeAIReview: async (roomId, review, isCurrent) => { const snapshot = structuredClone(review); await backend.change(rooms => {
+      assertCurrent(isCurrent); const id = key(roomId), record = rooms.get(id);
+      if (!record) throw new CaptureError('CAPTURE_MISMATCH', 'This room capture changed before AI review finished.');
+      const valid = validateAIReview(snapshot, record.manifest); if (!valid.ok) throw new CaptureError(valid.code, valid.error);
+      rooms.set(id, { ...record, aiReview: valid.value });
     }); },
     remove: (roomId, captureId, isCurrent) => backend.change((rooms) => {
       assertCurrent(isCurrent);
@@ -151,12 +175,15 @@ export function serializeCaptureStore(store: CaptureStore): CaptureStore {
   return { read: (id) => enqueue(() => store.read(id)), writeCapture: (m, p, c, current, expected, a) => {
     const manifest = structuredClone(m), photos = new Map(p), assets = cloneVideoAssets(a);
     return enqueue(() => store.writeCapture(manifest, photos, c, current, expected, assets), true);
-  }, writeFlags: (id, f, current) => { const flags = structuredClone(f); return enqueue(() => store.writeFlags(id, flags, current), true); }, remove: (id, captureId, current) => enqueue(() => store.remove(id, captureId, current), true), clear: () => enqueue(() => store.clear()), invalidate: () => { invalidated = true; store.invalidate?.(); } };
+  }, writeAIReview: (id, review, current) => { const snapshot = structuredClone(review); return enqueue(() => {
+    if (!store.writeAIReview) throw new CaptureError('STORAGE', 'AI review storage is unavailable.');
+    return store.writeAIReview(id, snapshot, current);
+  }, true); }, writeFlags: (id, f, current) => { const flags = structuredClone(f); return enqueue(() => store.writeFlags(id, flags, current), true); }, remove: (id, captureId, current) => enqueue(() => store.remove(id, captureId, current), true), clear: () => enqueue(() => store.clear()), invalidate: () => { invalidated = true; store.invalidate?.(); } };
 }
 function cloneVideoAssets(assets?: CaptureVideoAssets): CaptureVideoAssets {
   if (assets === undefined) return { videos: null, videoBlobs: new Map() };
   if (!assets || !(assets.videoBlobs instanceof Map) || assets.videos === undefined) throw new CaptureError('INVALID_CAPTURE', 'Invalid room video assets.');
-  return { videos: structuredClone(assets.videos), videoBlobs: new Map(assets.videoBlobs) };
+  return { videos: structuredClone(assets.videos), videoBlobs: new Map(assets.videoBlobs), panoramaBlobs: new Map(assets.panoramaBlobs) };
 }
 let browserStore: CaptureStore | undefined;
 function browserFactory(): IDBFactory | undefined { try { return globalThis.indexedDB; } catch { return undefined; } }

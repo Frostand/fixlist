@@ -51,12 +51,12 @@ export function updateVolunteerProfile(state: CommunityState, accountId: string,
   if (patch.badges && (patch.badges.idChecked !== profile.badges.idChecked || patch.badges.backgroundCheck !== profile.badges.backgroundCheck)) return fail('permission_denied', 'Verification badges cannot be self-awarded.');
   return success({ ...state, volunteers: state.volunteers.map((v) => v.accountId === accountId ? structuredClone(next) : v) });
 }
-export function postJob(state: CommunityState, input: { actorId: string; elderId: string; source: JobSource; originalText: string; analysis: JobAnalysis; evidence?: readonly ScanEvidence[]; preferredSlots?: readonly AvailabilitySlot[]; repeatEveryDays?: number | null; familyRevision?: number }, now: string): ({ ok: true; state: CommunityState; jobId: string } | CommunityFailure) {
+export function postJob(state: CommunityState, input: { actorId: string; elderId: string; source: JobSource; originalText: string; analysis: JobAnalysis; evidence?: readonly ScanEvidence[]; photos?: readonly string[]; preferredSlots?: readonly AvailabilitySlot[]; repeatEveryDays?: number | null; familyRevision?: number }, now: string): ({ ok: true; state: CommunityState; jobId: string } | CommunityFailure) {
   if (!state.elders.some((e) => e.accountId === input.elderId)) return fail('not_found', 'Elder profile not found.');
   if (!active(state, input.actorId) || !canChangeElder(state, input.actorId, input.elderId, input.source === 'scan' ? 'capture' : 'requests', input.familyRevision)) return fail('permission_denied', 'Only the elder or a linked family member can post this request.');
   const jobId = nextId('job', state.jobs.map((j) => j.id));
   const job: Job = { id: jobId, elderId: input.elderId, createdById: input.actorId, createdAt: now, source: input.source, originalText: input.originalText.trim(), analysis: input.analysis,
-    evidence: input.evidence ?? [], preferredSlots: input.preferredSlots ?? [], repeatEveryDays: input.repeatEveryDays ?? null,
+    evidence: input.evidence ?? [], photos: input.photos ?? [], preferredSlots: input.preferredSlots ?? [], repeatEveryDays: input.repeatEveryDays ?? null,
     status: 'open', volunteerId: null, scheduledFor: null, timeline: [{ at: now, actorId: input.actorId, type: 'posted', ...familyReceipt(state, input.actorId, input.elderId) }], rating: null, hoursCredited: null };
   if (!valid.job(job) || !historicallyAuthorized(state, input.actorId, input.elderId, now, job.timeline[0]!.familyGrantRevision, input.source === 'scan' ? 'capture' : 'requests')) return fail('invalid_input', 'Check the request text, analysis, evidence and dates.');
   return { ok: true, state: { ...state, jobs: [...state.jobs, structuredClone(job)] }, jobId };

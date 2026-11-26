@@ -5,9 +5,9 @@
   "voice": "af_heart",
   "model": "Kokoro-82M CoreML v1",
   "assetLicense": "Project-generated audio assets; model/SDK licenses do not automatically license every generated output. See NOTICES.txt.",
-  "inventorySHA256": "20f45c62d3252cd4c297a369df3ea1a916a4712086a1346d238778948de5c703",
+  "inventorySHA256": "cd85c205d0ce4f9b291b5cc74c27223cb0b1c25f3ba5a29bc31d9899a3d2c104",
   "source": "src/lib/assistant-copy.ts English authored exports; whole utterances only",
-  "sourceFileSHA256AtGeneration": "040824b9463bb6090d181be3d3d9b2027abfd78411e9bba35fe25f247fc45f2f",
+  "sourceFileSHA256AtGeneration": "10e09a61fd23a45feb2339731247301d57e8e316e2612ebe3d9ff0ab784f04d8",
   "settings": {
     "variant": "kokoro_21_15s.mlmodelc",
     "voiceSpeed": 1,
@@ -19,9 +19,9 @@
   "pins": {
     "sdkRevision": "b10bdcb51dcfeedb8001353b4ba363da1a616d6d",
     "modelRevision": "e61d9ee79a01ad4ebf6b3d8bcfe2a03f6b8da105",
+    "originalKokoroConversionRevision": "UNVERIFIED",
     "originalG2PConversionRevision": "UNVERIFIED",
-    "lexiconGeneratingMisakiRevision": "UNVERIFIED",
-    "originalKokoroConversionRevision": "UNVERIFIED"
+    "lexiconGeneratingMisakiRevision": "UNVERIFIED"
   },
   "regeneration": {
     "command": "node scripts/voice-pack/regenerate.mjs",
@@ -57,7 +57,7 @@
       "host/Sources/VoicePackBatch/Batch.swift": "28c5c8226efc3b10abf952b12a835bc06c0b1d464f55e5c93fb0f61a8722f6c9",
       "prepare.py": "0653286bbccad5381dfb5321357bde3bfe877804226ef9449797c4633807ef04",
       "regenerate.mjs": "9d49c2f6cddef1976929e4a5fd4366d9aaa85aa7fbec4f16aa9dce978ff2deab",
-      "inventory.mjs": "b6a54f6e83f8ca633e8f0f6471870b53e78a9420b8250170fe983f6285161503",
+      "inventory.mjs": "9c09cb051c6307265881797a4e70034490be81e51c70f8d0465a8956efd69139",
       "wav.mjs": "0290128fbb4d17eedde7de364655152f3eecd53b041b14df2abd797526196687"
     }
   },
@@ -65,7 +65,7 @@
     "LICENSE.txt": "53b6e23e46b12b3a3d54300dd4737bc1e19562112a5507beffc3a6a26a780455",
     "NOTICES.txt": "ac5c4d5e74ddedd88df32756356b12c60322dbd00eceb5e465027271c1fa2162"
   },
-  "totalWavBytes": 4988520,
+  "totalWavBytes": 5773628,
   "clips": [
     {
       "id": "conversation-question",
@@ -91,7 +91,7 @@
         "silenceThresholdDBFS": -45,
         "leadingSilenceMs": 336.25,
         "trailingSilenceMs": 455.79166666666663,
-        "first20msPeak": 3.0517578125e-05,
+        "first20msPeak": 0.000030517578125,
         "last20msPeak": 0
       },
       "generation": {
@@ -104,7 +104,7 @@
           "silenceThresholdDBFS": -45,
           "leadingSilenceMs": 305.9583333333333,
           "trailingSilenceMs": 444.625,
-          "first20msPeak": 3.0517578125e-05,
+          "first20msPeak": 0.000030517578125,
           "last20msPeak": 0
         },
         "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
@@ -607,8 +607,8 @@
         "silenceThresholdDBFS": -45,
         "leadingSilenceMs": 327.7083333333333,
         "trailingSilenceMs": 411.58333333333337,
-        "first20msPeak": 3.0517578125e-05,
-        "last20msPeak": 3.0517578125e-05
+        "first20msPeak": 0.000030517578125,
+        "last20msPeak": 0.000030517578125
       },
       "generation": {
         "rawWavSHA256": "3f80d3c92f0c3c3d6a79b48741a9b92888f0749161665a3a866a65486f327236",
@@ -620,8 +620,8 @@
           "silenceThresholdDBFS": -45,
           "leadingSilenceMs": 327.625,
           "trailingSilenceMs": 411.375,
-          "first20msPeak": 3.0517578125e-05,
-          "last20msPeak": 3.0517578125e-05
+          "first20msPeak": 0.000030517578125,
+          "last20msPeak": 0.000030517578125
         },
         "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
       }
@@ -1361,6 +1361,310 @@
           "silenceThresholdDBFS": -45,
           "leadingSilenceMs": 329.875,
           "trailingSilenceMs": 560.625,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "turn-what",
+      "text": "What would you like a hand with?",
+      "sources": [
+        "assistantTurnCopy.en.what"
+      ],
+      "textSHA256": "74517e55abb1aa897cf850b57685d35abf3a86e6a368c44b21b606bb9973b625",
+      "path": "turn-what.wav",
+      "sha256": "b8be991f6cbb6465bd24b54835d6413e0d983ae6112e9ccb7d4206c6db60b619",
+      "bytes": 85244,
+      "durationSeconds": 1.775,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.06908432445092498,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 306.7916666666667,
+        "trailingSilenceMs": 379.9583333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "3b47b475aae43d265991c9022f4515a1dbd86c0eb1d79b9887aa63a54f5c9788",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.09869211631590984,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 306.5833333333333,
+          "trailingSilenceMs": 378.9166666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "turn-where",
+      "text": "Where in your home is it?",
+      "sources": [
+        "assistantTurnCopy.en.where"
+      ],
+      "textSHA256": "20366f8b7d0b8e3f37b0e1b41d2cb14fd90aab4a1dcb10d5a1e5b7c5aaf7fbe5",
+      "path": "turn-where.wav",
+      "sha256": "fdc118b2768a06adfeaee071fbabfb60169241ff0ce0bd81d1b8ff92c9474a67",
+      "bytes": 84044,
+      "durationSeconds": 1.75,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.0352746755678614,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 362,
+        "trailingSilenceMs": 465.875,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "dbf9043f489a7ce79211bef58597401f8930521de581faeb4337c3ea08c2e5ac",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.05039257020349224,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 361.7916666666667,
+          "trailingSilenceMs": 465.7916666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "turn-when",
+      "text": "When would you like someone to come by?",
+      "sources": [
+        "assistantTurnCopy.en.when"
+      ],
+      "textSHA256": "63e2b01e16e8e8b7ecc705c4c09dec5e4ec0c15724bd34526e335e94d2746e1b",
+      "path": "turn-when.wav",
+      "sha256": "0fd545961e520422b307172e94a040ff62ee4365efa582bd481b3a898c5c28be",
+      "bytes": 111644,
+      "durationSeconds": 2.325,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.07632069821953466,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 328.625,
+        "trailingSilenceMs": 464.625,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "8b8f7211078a67fa0f94b976b72e035dbe35a3c5819203aeda58c043e1ade484",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.10902980192899286,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 321.5416666666667,
+          "trailingSilenceMs": 460.0416666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "turn-detail",
+      "text": "Can you tell me a little more about what's wrong?",
+      "sources": [
+        "assistantTurnCopy.en.detail"
+      ],
+      "textSHA256": "1dc0b21a41ee5ab320403d39c357a47bda51101516d7b57c807137431c04b93d",
+      "path": "turn-detail.wav",
+      "sha256": "e70f1695f32f94a4a32f2f788928dafbff127a681bab71ee84a5d03c317ec40a",
+      "bytes": 127244,
+      "durationSeconds": 2.65,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.1134869692590978,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 316.16666666666663,
+        "trailingSilenceMs": 481.1666666666667,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "4bdad4e57783c1d5e396e1f5a2ba1a9efd6adad91855551630f257f9af256277",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.16212447301461352,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 301.375,
+          "trailingSilenceMs": 469.2916666666667,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "turn-ack-where",
+      "text": "Got it. Where in your home is it?",
+      "sources": [
+        "assistantTurnCopy.en.ack",
+        "assistantTurnCopy.en.where"
+      ],
+      "textSHA256": "46ecf2cb6ba643942396062a4f88949c10e7417c249a37f5c535408668c4af77",
+      "path": "turn-ack-where.wav",
+      "sha256": "284fba1018939295aa1a6bab1b93c40037e62e2bb7c054f4a972a46d11ffbca3",
+      "bytes": 103244,
+      "durationSeconds": 2.15,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.08069122931146198,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 347.8333333333333,
+        "trailingSilenceMs": 461.125,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "a206ff212a06a1546191f21a57418a1f670bfb2da1d7d3b577ef7b0507ea652b",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.11527327111597359,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 325.125,
+          "trailingSilenceMs": 460.7083333333333,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "turn-ack-when",
+      "text": "Got it. When would you like someone to come by?",
+      "sources": [
+        "assistantTurnCopy.en.ack",
+        "assistantTurnCopy.en.when"
+      ],
+      "textSHA256": "3365169471c85bc6b2ac1ad648ada74abb3c008f23967a3e9299c78b05195d4a",
+      "path": "turn-ack-when.wav",
+      "sha256": "c8079861b9e7db83bfb08edb2649a17814c7f131aa6d4f2b11221659f623aa7d",
+      "bytes": 129644,
+      "durationSeconds": 2.7,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.09479721965902005,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 346.41666666666663,
+        "trailingSilenceMs": 411.7916666666667,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "35d1cfafa4d4237f3c611001555de3a1c434c8ced69e871e6d80e8b751a2251a",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.13542481798083936,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 344.625,
+          "trailingSilenceMs": 402.75,
+          "first20msPeak": 0,
+          "last20msPeak": 0
+        },
+        "endpointReview": "Measured raw 20ms endpoint peaks below 0.04; short complete whole utterance; human completeness/listening review still required"
+      }
+    },
+    {
+      "id": "turn-ack-detail",
+      "text": "Got it. Can you tell me a little more about what's wrong?",
+      "sources": [
+        "assistantTurnCopy.en.ack",
+        "assistantTurnCopy.en.detail"
+      ],
+      "textSHA256": "f4d145bac52290100265e4c68f98218aed3ded0dd6965bc7ab952bc9fd28370c",
+      "path": "turn-ack-detail.wav",
+      "sha256": "5d5ccd061d89ca0e93d6cecd58cbd8d0b778fdc061c7323b929c3c1875d57677",
+      "bytes": 144044,
+      "durationSeconds": 3,
+      "format": {
+        "encoding": "PCM",
+        "channels": 1,
+        "sampleRate": 24000,
+        "bitsPerSample": 16
+      },
+      "metrics": {
+        "peak": 0.699981689453125,
+        "rms": 0.10699709409150378,
+        "fullScaleSamples": 0,
+        "silenceThresholdDBFS": -45,
+        "leadingSilenceMs": 346.0416666666667,
+        "trailingSilenceMs": 485.8333333333333,
+        "first20msPeak": 0,
+        "last20msPeak": 0
+      },
+      "generation": {
+        "rawWavSHA256": "ddb83bcf5403a6cb43f816a3ed98095f8711f08439798d742b2354b6bfaaa00d",
+        "fixedGain": 0.7,
+        "rawMetrics": {
+          "peak": 0.999969482421875,
+          "rms": 0.15285321886900982,
+          "fullScaleSamples": 1,
+          "silenceThresholdDBFS": -45,
+          "leadingSilenceMs": 325.25,
+          "trailingSilenceMs": 470.2916666666667,
           "first20msPeak": 0,
           "last20msPeak": 0
         },

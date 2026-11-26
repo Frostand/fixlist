@@ -5,26 +5,33 @@ import { QUICK_PICK_IDS, quickPickAnalysis, volunteerStats } from '../../communi
 import { assistant } from '../../lib/assistant';
 import { sendRequestTurn } from '../../lib/request-conversation';
 import { assistantRulesCopy } from '../../lib/assistant-copy';
+import { dialogueCopy } from '../../lib/native-dialogue';
+import { taskAnalysis } from '../../lib/assistant-conversation';
+import { analyzeTaskWithRules } from '../../community/task-rules';
 import { localeFor, useLanguage, useT } from '../../i18n';
-import { Avatar, Button, Heading, Icon } from './UI';
+import { Avatar, Button, Heading, Icon, UnreadBadge } from './UI';
+import { ACTIVE_STATUSES, unreadMessages } from './unread';
 import { DraftScreen } from './DraftScreen';
 export interface Draft {
     analysis: JobAnalysis;
     source: JobSource;
     text: string;
     evidence: readonly ScanEvidence[];
+    photos?: readonly string[];
 }
 export function ProgressTracker({ status }: {
     status: Job['status'];
 }) { const t = useT(); const steps = ['open', 'accepted', 'on-the-way', 'arrived', 'reported-done', 'completed'] as const; const index = steps.indexOf(status as typeof steps[number]); if (status === 'cancelled')
     return <p className="c-status">{t('c.status.cancelled')}</p>; return <ol className="c-progress" aria-label={t('c.tracker')}>{steps.map((s, i) => <li key={s} className={i <= index ? 'c-reached' : ''} aria-current={i === index ? 'step' : undefined}><span aria-hidden="true">{i < index ? <Icon name="check" size={16}/> : i + 1}</span>{t(`c.status.${s}`)}</li>)}</ol>; }
-export function RequestSummary({ job, state, onOpen, tracker = false }: {
+export function RequestSummary({ job, state, onOpen, tracker = false, viewerId, onMessage }: {
     job: Job;
     state: CommunityState;
     onOpen(): void;
     tracker?: boolean;
-}) { const t = useT(), language = useLanguage(); const volunteer = state.accounts.find((a) => a.id === job.volunteerId), stats = volunteer ? volunteerStats(state, volunteer.id) : null; return <article className="c-request"><div className="c-request-top"><span className={`c-status c-status-${job.status}`}>{t(`c.status.${job.status}`)}</span>{job.scheduledFor ? <span className="c-small">{new Intl.DateTimeFormat(localeFor(language), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(job.scheduledFor))}</span> : null}</div><h2>{language === job.analysis.language ? job.analysis.title : job.analysis.titleEnglish}</h2>{volunteer ? <div className="c-neighbor-line"><Avatar name={volunteer.name} tone={volunteer.avatarTone}/><span><strong>{t(job.status === 'completed' ? 'c.volunteer.helped' : 'c.volunteer.assigned', { name: volunteer.firstName })}</strong><small>{stats?.rating ? t('c.volunteer.rating', { rating: stats.rating.toFixed(1) }) : t('c.volunteer.new')}</small>{job.status === 'on-the-way' ? <small>{t('c.volunteer.eta', { name: volunteer.firstName })}</small> : null}</span></div> : <p className="c-small">{t('c.volunteer.waiting')}</p>}{tracker ? <ProgressTracker status={job.status}/> : null}<Button kind="secondary" icon="arrow" onClick={onOpen}>{t('c.home.view')}</Button></article>; }
-export function ActiveRequest({ state, job, onNavigate }: { state: CommunityState; job: Job; onNavigate(path: string): void }) {
+    viewerId?: string;
+    onMessage?(): void;
+}) { const t = useT(), language = useLanguage(); const volunteer = state.accounts.find((a) => a.id === job.volunteerId), stats = volunteer ? volunteerStats(state, volunteer.id) : null; return <article className="c-request"><div className="c-request-top"><span className={`c-status c-status-${job.status}`}>{t(`c.status.${job.status}`)}</span>{job.scheduledFor ? <span className="c-small">{new Intl.DateTimeFormat(localeFor(language), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(job.scheduledFor))}</span> : null}</div><h2>{language === job.analysis.language ? job.analysis.title : job.analysis.titleEnglish}</h2>{volunteer ? <div className="c-neighbor-line"><Avatar name={volunteer.name} tone={volunteer.avatarTone}/><span><strong>{t(job.status === 'completed' ? 'c.volunteer.helped' : 'c.volunteer.assigned', { name: volunteer.firstName })}</strong><small>{stats?.rating ? t('c.volunteer.rating', { rating: stats.rating.toFixed(1) }) : t('c.volunteer.new')}</small>{job.status === 'on-the-way' ? <small>{t('c.volunteer.eta', { name: volunteer.firstName })}</small> : null}</span></div> : <p className="c-small">{t('c.volunteer.waiting')}</p>}{tracker ? <ProgressTracker status={job.status}/> : null}{onMessage && viewerId && job.volunteerId && ACTIVE_STATUSES.includes(job.status) ? <Button kind="secondary" icon="message" onClick={onMessage}>{t('c.home.message')}<UnreadBadge count={unreadMessages(state, viewerId, job.id)}/></Button> : null}<Button kind="secondary" icon="arrow" onClick={onOpen}>{t('c.home.view')}</Button></article>; }
+export function ActiveRequest({ state, job, onNavigate, viewerId }: { state: CommunityState; job: Job; onNavigate(path: string): void; viewerId?: string }) {
     const t = useT(), language = useLanguage();
     const volunteer = state.accounts.find(a => a.id === job.volunteerId);
     if (!volunteer) return null;
@@ -34,7 +41,7 @@ export function ActiveRequest({ state, job, onNavigate }: { state: CommunityStat
     return <article className="c-request c-active-request"><div className="c-neighbor-line"><Avatar name={volunteer.name} tone={volunteer.avatarTone}/><span><strong>{volunteer.name}</strong><small>{stats.rating !== null ? t('c.volunteer.rating', { rating: stats.rating.toFixed(1) }) : t('c.volunteer.new')}</small></span></div>
         <h2>{t(key, { name: volunteer.firstName, date })}</h2><ProgressTracker status={job.status}/>
         {job.status === 'reported-done' ? <Button icon="check" onClick={() => onNavigate(`confirm/${job.id}`)}>{t('c.home.confirm')}</Button> : null}
-        <Button kind="secondary" icon="message" onClick={() => onNavigate(`messages/${job.id}`)}>{t('c.home.message')}</Button>
+        <Button kind="secondary" icon="message" onClick={() => onNavigate(`messages/${job.id}`)}>{t('c.home.message')}{viewerId ? <UnreadBadge count={unreadMessages(state, viewerId, job.id)}/> : null}</Button>
         <Button kind="quiet" onClick={() => onNavigate(`job/${job.id}`)}>{t('c.home.view')}</Button>
     </article>;
 }
@@ -50,7 +57,7 @@ export function ElderHome({ account, elder, state, jobs, onNavigate, onDraft }: 
     const active = jobs.filter(j => ['accepted', 'on-the-way', 'arrived', 'reported-done'].includes(j.status));
     const waiting = jobs.find(j => j.status === 'open');
     return <div className="c-stack"><Heading intro={family ? t('c.family.access') : t('c.home.question')}>{t(family ? 'c.family.title' : 'c.home.greeting', { name: family ? elder.firstName : account.firstName })}</Heading>
-        {active.map(job => <ActiveRequest key={job.id} state={state} job={job} onNavigate={onNavigate}/>)}
+        {active.map(job => <ActiveRequest key={job.id} state={state} job={job} onNavigate={onNavigate} viewerId={account.id}/>)}
         {family ? <Button icon="help" onClick={() => onNavigate('type')}>{t('c.family.ask', { name: elder.firstName })}</Button> : <>
             <div className="c-talk-home"><button className="c-mic" onClick={() => onNavigate('talk')}><Icon name="mic" size={52}/><strong>{t('c.home.talk')}</strong></button><p>{t('c.home.talkHint')}</p></div>
             <div className="c-home-tiles"><button onClick={() => onNavigate('type')}><Icon name="help" size={32}/><strong>{t('c.home.type')}</strong><span>{t('c.home.typeHint')}</span></button><button onClick={() => onNavigate('rooms')}><Icon name="room" size={32}/><strong>{t('c.home.scan')}</strong><span>{t('c.home.scanHint')}</span></button></div>
@@ -59,11 +66,13 @@ export function ElderHome({ account, elder, state, jobs, onNavigate, onDraft }: 
         {family ? <RequestList state={state} jobs={jobs.filter(j => !active.includes(j))} onOpen={id => onNavigate(`job/${id}`)}/> : !active.length ? <section><h2>{t('c.home.active')}</h2>{waiting ? <RequestSummary state={state} job={waiting} onOpen={() => onNavigate(`job/${waiting.id}`)}/> : <p>{t('c.home.none')}</p>}</section> : null}
     </div>;
 }
-export function RequestList({ state, jobs, onOpen }: {
+export function RequestList({ state, jobs, onOpen, viewerId, onMessage }: {
     state: CommunityState;
     jobs: readonly Job[];
     onOpen(id: string): void;
-}) { const t = useT(); return <div className="c-stack">{jobs.length ? jobs.map((j) => <RequestSummary key={j.id} job={j} state={state} tracker onOpen={() => onOpen(j.id)}/>) : <p className="c-empty">{t('c.job.empty')}</p>}</div>; }
+    viewerId?: string;
+    onMessage?(id: string): void;
+}) { const t = useT(); return <div className="c-stack">{jobs.length ? jobs.map((j) => <RequestSummary key={j.id} job={j} state={state} tracker onOpen={() => onOpen(j.id)} {...(viewerId && onMessage ? { viewerId, onMessage: () => onMessage(j.id) } : {})}/>) : <p className="c-empty">{t('c.job.empty')}</p>}</div>; }
 type TalkPhase = 'idle' | 'starting' | 'listening' | 'thinking' | 'replied';
 export function AskScreen({ talk, account, onDraft, onPost, isCurrent = () => true }: {
     talk: boolean;
@@ -86,41 +95,58 @@ export function AskScreen({ talk, account, onDraft, onPost, isCurrent = () => tr
     const [text, setText] = useState(''), [partial, setPartial] = useState(''), [turns, setTurns] = useState<ChatTurn[]>([]);
     const [voice, setVoice] = useState<boolean | null>(null), [error, setError] = useState(''), [typing, setTyping] = useState(!talk), [draft, setDraft] = useState<Draft | null>(null);
     const [speechOutput, setSpeechOutput] = useState(false), [rulesOnly, setRulesOnly] = useState(false);
+    const [retryable, setRetryable] = useState(false);
+    const [held, setHeld] = useState(false), [manual, setManual] = useState(false);
+    const operation = useRef(0), manualOwner = useRef(false);
     const typingRef = useRef<HTMLTextAreaElement>(null);
     const busy = phase === 'thinking', recording = phase === 'starting' || phase === 'listening';
     useEffect(() => {
         const owner = { identity }; scope.current = owner; setViewIdentity(identity); setBlocked(false);
         alive.current = true; pending.current = false; starting.current = false; reviewToken.current++; posted.current = false;
-        setPhase('idle'); setText(''); setPartial(''); partialText.current = ''; setTurns([]); setDraft(null); setError(''); setVoice(null); setSpeechOutput(false); setRulesOnly(false); setTyping(!talk);
+        operation.current++; manualOwner.current = false;
+        setPhase('idle'); setText(''); setPartial(''); partialText.current = ''; setTurns([]); setDraft(null); setError(''); setVoice(null); setSpeechOutput(false); setRulesOnly(false); setTyping(!talk); setRetryable(false); setHeld(false); setManual(false);
         void assistant.availability(language).then(a => {
             if (alive.current && scope.current === owner && authorization.current()) {
                 setVoice(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && a.reason !== 'native-unavailable' && a.speechInput);
                 setSpeechOutput(a.speechOutput); setRulesOnly(!a.onDeviceModel);
             }
         }).catch(() => { if (alive.current && scope.current === owner && authorization.current()) { setVoice(false); setSpeechOutput(false); setRulesOnly(true); } });
-        return () => { alive.current = false; listeningAbort.current?.abort(); listeningAbort.current = null; listening.current?.cancel(); listening.current = null; assistant.stopSpeaking(); };
+        return () => { alive.current = false; assistant.cancelConversation(); listeningAbort.current?.abort(); listeningAbort.current = null; listening.current?.cancel(); listening.current = null; assistant.stopSpeaking(); };
     }, [account.id, language, talk]);
     useEffect(() => { if (typing) typingRef.current?.focus(); }, [typing]);
     function speak(words: string) { if (!alive.current || !authorization.current()) return; assistant.stopSpeaking(); if (speechOutput) void assistant.speak(words, language).catch(() => {}); }
-    async function submit(words: string, source: JobSource) {
-        if (!alive.current || !authorization.current() || !currentView || scope.current.identity !== identity || !words.trim() || pending.current) return;
-        const owner = scope.current, active = () => alive.current && scope.current === owner && authorization.current();
-        pending.current = true; reviewToken.current++; posted.current = false; setPhase('thinking'); setError(''); setText(''); setDraft(null); assistant.stopSpeaking();
+    function enterManual(value?: Draft) {
+        if (!alive.current || !authorization.current() || !currentView || scope.current.identity !== identity || reviewToken.current !== renderedToken) return;
+        // Retire ownership synchronously, before cancellation can deliver callbacks.
+        operation.current++; manualOwner.current = true; reviewToken.current++; posted.current = false;
+        const session = listening.current; listening.current = null;
+        const controller = listeningAbort.current; listeningAbort.current = null;
+        controller?.abort(); session?.cancel(); assistant.cancelConversation(); assistant.stopSpeaking();
+        pending.current = false; starting.current = false; partialText.current = '';
+        setPartial(''); setText(''); setPhase('replied'); setHeld(false); setManual(true);
+        if (value) setDraft(value);
+    }
+    async function submit(words: string, source: JobSource, retry = false) {
+        if (!alive.current || !authorization.current() || !currentView || manualOwner.current || scope.current.identity !== identity || (!retry && !words.trim()) || pending.current) return;
+        const owner = scope.current, epoch = operation.current, active = () => alive.current && scope.current === owner && operation.current === epoch && !manualOwner.current && authorization.current();
+        pending.current = true; reviewToken.current++; posted.current = false; setPhase('thinking'); setError(''); setText(''); setManual(false); assistant.stopSpeaking();
         try {
-            const result = await sendRequestTurn(turns, words, language, account.firstName);
+            const result = await sendRequestTurn(turns, words, language, account.firstName, retry);
             if (!active()) return;
-            setTurns(result.turns); setBlocked(result.reply.conversation?.status === 'blocked'); setRulesOnly(result.reply.engine === 'rules' || result.reply.job?.engine === 'rules');
-            setPhase('replied'); if (talk) speak(result.reply.text);
-            if (result.reply.job) setDraft({ analysis: result.reply.job, source, text: result.originalText, evidence: [] });
+            setTurns(result.turns); setBlocked(result.reply.conversation?.status === 'blocked'); setRulesOnly(!result.reply.dialogue && (result.reply.engine === 'rules' || result.reply.job?.engine === 'rules')); setRetryable(!!result.reply.retryable);
+            setHeld(!!result.reply.requiresResolution);
+            setPhase('replied'); if (talk && result.reply.text) speak(result.reply.text);
+            if (result.reply.job) setDraft(previous => ({ analysis: previous && JSON.stringify(result.reply.job) === JSON.stringify(turns.at(-1)?.dialogue?.state.job) ? previous.analysis : result.reply.job!, source, text: result.originalText, evidence: [] }));
+            else setDraft(null);
         } catch {
             if (active()) { setError(t('c.error')); setText(words); setPhase(turns.length ? 'replied' : 'idle'); }
         } finally { if (active()) { pending.current = false; } }
     }
     async function start() {
-        if (!alive.current || !authorization.current() || !currentView || scope.current.identity !== identity || pending.current || voice !== true || recording || starting.current || listening.current) return;
-        const owner = scope.current, active = () => alive.current && scope.current === owner && authorization.current();
+        if (!alive.current || !authorization.current() || !currentView || manualOwner.current || scope.current.identity !== identity || pending.current || voice !== true || recording || starting.current || listening.current) return;
+        const owner = scope.current, epoch = operation.current, active = () => alive.current && scope.current === owner && operation.current === epoch && !manualOwner.current && authorization.current();
         const controller = new AbortController(); listeningAbort.current = controller;
-        starting.current = true; reviewToken.current++; setDraft(null);
+        starting.current = true; reviewToken.current++;
         setError(''); setPartial(''); partialText.current = ''; setPhase('starting'); assistant.stopSpeaking();
         try {
             const session = await assistant.startListening(language, words => { if (active()) { partialText.current = words; setPartial(words); } }, controller.signal);
@@ -160,20 +186,27 @@ export function AskScreen({ talk, account, onDraft, onPost, isCurrent = () => tr
         <>
             <div className="c-chat" aria-live="polite">{turns.map((turn, i) => <div className={`c-bubble c-bubble-${turn.role}`} key={i}><span>{t(turn.role === 'user' ? 'c.talk.you' : 'c.talk.assistant')}</span><p lang={language} dir="auto" role={blocked && i === turns.length - 1 ? 'alert' : undefined}>{turn.text}</p>{talk && turn.role === 'assistant' ? <Button kind="quiet" icon="replay" disabled={!speechOutput || recording || busy} onClick={() => speak(turn.text)}>{t('c.talk.replay')}</Button> : null}</div>)}
                 {phase === 'listening' && partial ? <div className="c-bubble c-bubble-user"><span>{t('c.talk.you')}</span><p>{partial}</p></div> : null}</div>
-            {draft ? <section aria-label={t('c.talk.preview')}><DraftScreen embedded key={draft.text} draft={draft} isCurrent={() => alive.current && authorization.current()} onChange={value => { if (alive.current && authorization.current()) setDraft(value); }} onPost={(slots, analysis) => {
-                if (!authorization.current() || scope.current.identity !== identity || !currentView || pending.current || posted.current || reviewToken.current !== renderedToken || !alive.current) return false;
+            {draft ? <section aria-label={t('c.talk.preview')}><DraftScreen embedded key={draft.text} draft={draft} initialEditing={manual} postingDisabled={held || busy || recording || !!text.trim()} isCurrent={() => alive.current && authorization.current()} onChange={enterManual} onPhotosChange={photos => { if (alive.current && authorization.current()) setDraft(previous => previous ? { ...previous, photos } : previous); }} onPost={(slots, analysis) => {
+                if (!authorization.current() || scope.current.identity !== identity || !currentView || held || pending.current || text.trim() || recording || posted.current || reviewToken.current !== renderedToken || !alive.current) return false;
                 const accepted = onPost ? onPost(draft, slots, analysis) : (onDraft({ ...draft, analysis }), true);
                 if (accepted) posted.current = true;
                 return accepted;
             }}/></section> : null}
-            {talk ? busy ? <p className="c-thinking c-small" role="status">{t('c.talk.thinking')}</p> : <>
+            {talk && !manual ? busy ? <p className="c-thinking c-small" role="status">{t('c.talk.thinking')}</p> : <>
                 <div className="c-talk-home"><button className={`c-mic ${phase === 'listening' ? 'c-listening' : ''}`} disabled={voice !== true || phase === 'starting'} onClick={() => phase === 'listening' ? void stop() : void start()}><Icon name="mic" size={42}/><strong>{t(phase === 'starting' ? 'c.talk.starting' : phase === 'listening' ? 'c.talk.stop' : 'c.talk.speak')}</strong></button>
                     {phase === 'listening' ? <p role="status">{t('c.talk.listening')}</p> : null}</div>
                 {!recording ? <Button kind="quiet" onClick={() => { if (!alive.current || !authorization.current()) return; setTyping(true); typingRef.current?.focus(); }}>{t('c.talk.typeInstead')}</Button> : null}
             </> : null}
             {talk && voice === false && !draft ? <p className="c-small" role="status">{t('c.talk.unavailable')}</p> : null}
         </>
-        {(!talk || typing || voice === false) && !recording ? <form className="c-stack" onSubmit={e => { e.preventDefault(); void submit(text, 'typed'); }}><label className="c-field">{t(talk ? 'c.talk.placeholder' : 'c.type.title')}<textarea ref={typingRef} rows={4} required disabled={busy} maxLength={2000} placeholder={t(talk ? 'c.talk.placeholder' : 'c.type.placeholder')} value={text} onChange={e => { if (!alive.current || !authorization.current()) return; reviewToken.current++; setDraft(null); setText(e.target.value); }}/></label><Button type="submit" disabled={!text.trim() || busy} kind={talk ? 'secondary' : 'primary'}>{t(busy ? 'c.talk.thinking' : talk ? 'c.talk.send' : 'c.type.draft')}</Button></form> : null}
+        {!manual && (!talk || typing || voice === false) && !recording ? <form className="c-stack" onSubmit={e => { e.preventDefault(); void submit(text, 'typed'); }}><label className="c-field">{t(talk ? 'c.talk.placeholder' : 'c.type.title')}<textarea ref={typingRef} rows={4} required disabled={busy} maxLength={2000} placeholder={t(talk ? 'c.talk.placeholder' : 'c.type.placeholder')} value={text} onChange={e => { if (!alive.current || !authorization.current()) return; reviewToken.current++; setText(e.target.value); }}/></label><Button type="submit" disabled={!text.trim() || busy} kind={talk ? 'secondary' : 'primary'}>{t(busy ? 'c.talk.thinking' : talk ? 'c.talk.send' : 'c.type.draft')}</Button></form> : null}
+        {!manual && (retryable || (!draft && turns.at(-1)?.dialogue?.state.status === 'collecting' && !blocked)) ? <div className="c-stack">{retryable ? <Button kind="secondary" disabled={busy || recording} onClick={() => { void submit('', draft?.source ?? 'typed', true); }}>{dialogueCopy[language].retry}</Button> : null}
+            <Button kind="quiet" disabled={busy || recording} onClick={() => {
+                if (!alive.current || !authorization.current() || pending.current) return;
+                const words = turns.at(-1)?.dialogue?.state.originalText ?? turns.filter(t => t.role === 'user').map(t => t.text).join('\n');
+                const base = taskAnalysis('general', language, analyzeTaskWithRules);
+                enterManual(draft ?? { analysis: { ...base, title: words.slice(0, 120), titleEnglish: words.slice(0, 120), summary: words, summaryEnglish: words }, source: 'typed', text: words, evidence: [] });
+            }}>{dialogueCopy[language].manualAction}</Button></div> : null}
         {error ? <p role="alert">{error}</p> : null}
     </div>;
 }

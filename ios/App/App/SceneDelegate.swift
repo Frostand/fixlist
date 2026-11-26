@@ -30,6 +30,7 @@ class FixListBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(FixListPrintPlugin())
         bridge?.registerPluginInstance(FixListCapturePlugin())
         bridge?.registerPluginInstance(FixListHazardsPlugin())
+        bridge?.registerPluginInstance(FixListVisionPlugin())
         bridge?.registerPluginInstance(FixListAssistantPlugin())
 
         // Community screens scroll the document; retain normal WebView scrolling.

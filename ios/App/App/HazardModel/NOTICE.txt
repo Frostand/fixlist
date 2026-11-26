@@ -1,15 +1,34 @@
-FixList local relevance image encoder and text embeddings
+FixList local visible-object review detector
 
-Model: OpenCLIP ViT-B-32, laion2b_s34b_b79k
-Publisher: LAION; model training credited to Romain Beaumont.
-Weights license: MIT, as marked by the publisher model card:
-https://huggingface.co/laion/CLIP-ViT-B-32-laion2B-s34B-b79K
-OpenCLIP implementation: https://github.com/mlfoundations/open_clip
+Model: Ultralytics YOLO-World v2 small (yolov8s-worldv2.pt).
+Fixed vocabulary, 640 x 640 RGB, fp16 ML Program + class-wise Core ML NMS.
+Source checkpoint SHA-256:
+9b2c17ab6124a913e9b3a5c170617920d91b0f01111a8479da69f00e2cf27792
 
-Converted image encoder and normalized prompt vectors are generated offline.
-The original weight SHA-256 and local runtime content pin are recorded in
-hazard-prompts.json. These content pins are not signatures or attestations.
-No private photographs, image embeddings, or household data are bundled here.
+Ultralytics code, pretrained weights, and exported model: AGPL-3.0.
+Full license: LICENSE-AGPL-3.0.txt (same folder).
+Publisher and corresponding implementation/source:
+https://github.com/ultralytics/ultralytics/tree/v8.4.14
+Checkpoint: https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8s-worldv2.pt
+Upstream model/research: https://github.com/AILab-CVC/YOLO-World
+https://docs.ultralytics.com/models/yolo-world/
+https://www.ultralytics.com/license
 
-This is unverified, experimental relevance output for photo review. It is not
-a hazard finding, checklist answer, safety assessment, or validated home test.
+Text embeddings are baked offline using OpenAI CLIP ViT-B/32 (MIT code and
+weights; https://github.com/openai/CLIP). See LICENSE-OpenAI-CLIP-MIT.txt.
+No text encoder runs on the phone.
+Core ML conversion uses coremltools (BSD-3-Clause). Runtime inference uses
+Apple Vision/Core ML; no Ultralytics Python runtime is installed in the app.
+The AGPL applies to this export; embedding it does not make it MIT-licensed.
+
+Reproduction and local changes: scan/ondevice/export_detector.py,
+publish_detector.py, detector-rules.json, and
+ios/App/App/FixListHazardsPlugin.swift. The historic HazardImageEncoder and
+hazard-prompts resource names are retained for Xcode compatibility; they now
+contain an object detector and rule manifest. Content pins are in the manifest.
+No private photos or household information are bundled in this model.
+
+Unverified experimental object proposals only. Object presence, lower-frame
+geometry, and no grab bar detected do not establish a hazard, a missing bar,
+support needs, or safety. Confidence is not a calibrated hazard probability.
+Users review and decide; no checklist is answered automatically.

@@ -1,7 +1,8 @@
 #!/bin/sh
-# Offline identity gate shared by npm and Xcode; no repair or skip mode.
-expected_bytes=180586112
-expected_sha256=fde4639f4dc4f2e5fdcd23bbfd075266111b5bb5edf6bdbe75fc9029a91c3f68
+# Offline YOLO-World detector weight identity gate shared by npm and Xcode.
+# Generated pins: scan/ondevice/publish_detector.py. No repair or skip mode.
+expected_bytes=25039328
+expected_sha256=fc131187cf9ab3f11f209e5d4d7ade76ef09616f37dbbacf33f384909bbf8a9c
 
 if [ "$#" -gt 1 ]; then
   printf '%s\n' 'error: Usage: /bin/sh scripts/verify-ios-model.sh [weight-file]' >&2

@@ -1,3 +1,63 @@
+# Current iOS runtime: visible-object proposals
+
+The shipping resource is now YOLO-World v2 small, with a baked vocabulary and
+Core ML NMS, run by Vision using `.scaleFill`. The historic package/JSON names
+remain to preserve Xcode resource references. `detector-rules.json` is the rule
+source; `publish_detector.py` generates native/web identity, thresholds and weight
+pins together. Scores in the legacy `relevance`/`probability` fields are raw,
+uncalibrated object confidence. Users decide whether a proposed object matters.
+
+Rugs/mats/runners and lower-frame horizontal cords can produce prompts. Stair
+objects require a staircase detection plus overlap; the current review did not
+demonstrate reliable stair recall. Bathroom prompts require a fixture, bathroom
+context for tubs, and no detected grab bar. Missing a bar does not prove absence.
+Handrail stability, lighting and shower grip always abstain. Floor-clutter
+proposals cover shoes, bags, boxes, clothes, toys and books with separate class
+thresholds, a lower-frame bottom gate and furniture-overlap suppression. An
+object reaching the furniture bottom is retained, including objects under a
+table. Lower frame is not floor segmentation or a walking-route estimate.
+There are now nine trusted questions. Cached flags from the exact Round 1
+identity are discarded on read while saved photos remain available to rescore.
+
+Reproduce outside git; never modify the original CLIP environment:
+
+```sh
+uv venv --python python3.12 ~/.local/share/fixlist-scan/detector-venv
+uv pip install --python ~/.local/share/fixlist-scan/detector-venv/bin/python -r scan/ondevice/detector-requirements.txt
+mkdir -p ~/.local/share/fixlist-scan/detector-work
+cd ~/.local/share/fixlist-scan/detector-work
+~/.local/share/fixlist-scan/detector-venv/bin/python /path/to/fixlist/scan/ondevice/export_detector.py
+```
+
+From the repo, run `review_detector.py --package <export.mlpackage> --images
+<review-directory> --out <external-output>`. Inspect its contact sheet and raw
+predictions. Then explicitly publish with `python3 scan/ondevice/publish_detector.py
+--export-dir <external-export-directory>`. Do not publish an unreviewed export.
+NMS pads to 80 columns to work around an upstream Core ML issue; unused labels
+are zero-confidence padding, not additional vocabulary. The graph uses iOS 15
+specification version 6. Re-exporting can change package UUIDs and content pins.
+
+Compile the model with `xcrun coremlcompiler compile
+ios/App/App/HazardModel/HazardImageEncoder.mlpackage <external-compiled-directory>`.
+Run `verify_detector_native.py --compiled <compiled.mlmodelc> --predictions
+<review/predictions.json> --out <external-native-directory>` for 47 deterministic
+rule checks, 46 synthetic Swift/Python parity cases and real-image Vision/Python
+flag-centre comparisons. Add floor-clutter examples with `--images` (the Round 2
+report records the nine reviewed inputs). Vision class
+confidence must be multiplied by observation confidence; labels sum to one.
+Host checks do not qualify physical phone behavior or measure phone latency.
+
+The exported model and upstream Ultralytics implementation/weights are
+**AGPL-3.0**. See `ios/App/App/HazardModel/NOTICE.txt` and the full license there.
+The source checkpoint and runtime byte pins are local content identities, not
+signatures or calibrated performance evidence. Parent must include the new LFS
+weight object in the eventual commit/push; setup pulls that unchanged LFS path.
+
+The earlier CLIP/floor-object experiments below are archived development work.
+Do not rerun locked selection, evaluation, or labels to tune this detector.
+
+## Archived CLIP and floor-object experiments
+
 # On-device photo model
 
 The iPhone uses a bundled Core ML image encoder to suggest photos for human review. Its eight categories identify visible subjects, such as rugs and bathroom fixtures; they do not confirm hazards.

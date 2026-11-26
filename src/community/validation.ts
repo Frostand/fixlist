@@ -1,3 +1,4 @@
+import { requestPhotos } from './request-photos';
 import { isLanguage } from '../domain/roles';
 import { SKILLS, TASK_CATEGORIES, TOOLS } from './types';
 import type { Account, AvailabilitySlot, ElderProfile, ElderPreferences, FamilyLink, Job, JobAnalysis, ScanEvidence, VolunteerProfile } from './types';
@@ -69,9 +70,9 @@ export function evidence(v: unknown): v is ScanEvidence {
     && (v.thumbnail === null || (typeof v.thumbnail === 'string' && v.thumbnail.length <= 500000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(v.thumbnail)));
 }
 export function job(v: unknown): v is Job {
-  return shape(v, ['id', 'elderId', 'createdById', 'createdAt', 'source', 'originalText', 'analysis', 'evidence', 'preferredSlots', 'repeatEveryDays', 'status', 'volunteerId', 'scheduledFor', 'timeline', 'rating', 'hoursCredited'])
+  return shape(v, ['id', 'elderId', 'createdById', 'createdAt', 'source', 'originalText', 'analysis', 'evidence', 'preferredSlots', 'repeatEveryDays', 'status', 'volunteerId', 'scheduledFor', 'timeline', 'rating', 'hoursCredited'], ['photos'])
     && id(v.id) && id(v.elderId) && id(v.createdById) && iso(v.createdAt) && oneOf(v.source, ['voice', 'typed', 'scan', 'quick-pick']) && text(v.originalText)
-    && analysis(v.analysis) && list(v.evidence, evidence, 30) && slots(v.preferredSlots)
+    && (v.photos === undefined || requestPhotos(v.photos)) && analysis(v.analysis) && list(v.evidence, evidence, 30) && slots(v.preferredSlots)
     && (v.repeatEveryDays === null || (finite(v.repeatEveryDays, 1, 365) && Number.isInteger(v.repeatEveryDays)))
     && oneOf(v.status, ['open', 'accepted', 'on-the-way', 'arrived', 'reported-done', 'completed', 'cancelled']) && (v.volunteerId === null || id(v.volunteerId))
     && (v.scheduledFor === null || iso(v.scheduledFor)) && list(v.timeline, (e): e is Job['timeline'][number] => shape(e, ['at', 'actorId', 'type'], ['note', 'familyGrantRevision'])

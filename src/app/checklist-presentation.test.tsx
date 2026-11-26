@@ -39,7 +39,7 @@ function capture(render: () => ReactNode) { let tree: ReactNode; function Probe(
 describe('unanswered and explicitly uncertain presentation', () => {
   it('derives display state without rewriting stored values or reclassifying legacy Yes/No answers', () => {
     const state = mixed(), before = structuredClone(state), legacy = { ...state, checklistAttribution: {} };
-    expect(checklistAnswerCounts(scenario.checklist, state)).toEqual({ total: 8, answered: 3, notSure: 1, unanswered: 5 });
+    expect(checklistAnswerCounts(scenario.checklist, state)).toEqual({ total: 9, answered: 3, notSure: 1, unanswered: 6 });
     expect(displayAnswer(legacy, scenario.checklist[0]!.id)).toBe('yes'); expect(displayAnswer(legacy, scenario.checklist[1]!.id)).toBe('no');
     expect(displayAnswer(legacy, scenario.checklist[2]!.id)).toBe('unanswered'); expect(firstUnanswered(scenario.checklist, state)?.id).toBe(scenario.checklist[3]!.id);
     expect(state).toEqual(before);
@@ -62,13 +62,13 @@ describe('unanswered and explicitly uncertain presentation', () => {
     expect(checkedValues(html(question(state, 'rug-check')))).toEqual([answer]);
   });
   it.each(['en', 'es'] as const)('distinguishes all progress counts on the phone and print report in %s', (language) => {
-    const state = mixed(), p = props(state), progress = language === 'en' ? '3 of 8 answered · 1 not sure' : '3 de 8 respondidas · 1 sin certeza';
+    const state = mixed(), p = props(state), progress = language === 'en' ? '3 of 9 answered · 1 not sure' : '3 de 9 respondidas · 1 sin certeza';
     const home = html(<ResidentHome {...p} requests={visibleRequestsFor(scenario, state, 'margaret')} next={elderNextStep(scenario, state)} />, language);
     const rooms = html(<RoomList {...p} />, language), summary = html(<CoverageSummary scenario={scenario} state={state} />, language);
     const report = html(<PrintReport scenario={scenario} snapshot={createPrintSnapshot(state, '2026-10-18T12:00:00.000Z')} />, language);
     for (const rendered of [home, rooms, html(question(state, scenario.checklist[3]!.id), language), summary, report]) expect(rendered).toContain(progress);
     const list = report.match(/<section aria-labelledby="report-coverage-heading">[\s\S]*?<\/section>/)![0];
-    expect(list.match(new RegExp(`</strong>: ${language === 'en' ? 'Not answered' : 'Sin responder'}`, 'g'))).toHaveLength(5);
+    expect(list.match(new RegExp(`</strong>: ${language === 'en' ? 'Not answered' : 'Sin responder'}`, 'g'))).toHaveLength(6);
     expect(list.match(new RegExp(`</strong>: ${language === 'en' ? en['check.unknown'] : es['check.unknown']}`, 'g'))).toHaveLength(1);
     expect(summary).toContain('data-answer="unanswered"'); expect(summary).toContain('data-answer="unknown"');
     expect(summary).not.toContain(language === 'en' ? ' unknown' : ' desconocidas');
@@ -77,7 +77,7 @@ describe('unanswered and explicitly uncertain presentation', () => {
     let state = createInitialState(scenario);
     for (const item of scenario.checklist) state = run(state, { type: 'answer_checklist', checklistItemId: item.id, answer: 'unknown' });
     const rendered = html(<CoverageSummary scenario={scenario} state={state} />);
-    expect(rendered).toContain('8 of 8 answered · 8 not sure'); expect(rendered).not.toContain('checklist is incomplete');
+    expect(rendered).toContain('9 of 9 answered · 9 not sure'); expect(rendered).not.toContain('checklist is incomplete');
     expect(rendered).toContain('certify safety'); expect(computePlan(scenario, state)).toEqual([]);
     expect(rendered).not.toContain('data-complete="true"');
     const p = props(state); expect(html(<ResidentHome {...p} requests={[]} next={elderNextStep(scenario, state)} />)).toContain('Review a Not sure answer');
@@ -85,14 +85,14 @@ describe('unanswered and explicitly uncertain presentation', () => {
   it('uses the same distinction in legacy checklist and floor-plan descriptions', () => {
     const state = mixed(), checklist = html(<ChecklistSection scenario={scenario} state={state} onCommand={noop} />), floor = html(<FloorPlan scenario={scenario} state={state} />);
     expect(checklist.match(/checked=""/g)).toHaveLength(3); expect(checklist).toContain('Not answered');
-    expect(checklist).toContain('3 of 8 answered · 1 not sure');
+    expect(checklist).toContain('3 of 9 answered · 1 not sure');
     expect(floor).toContain('not sure'); expect(floor).toContain('not answered'); expect(floor).not.toContain(' unknown');
   });
   it('shows granted helpers the same answer states, without adding checklist fields to volunteer projections', () => {
     let state = run(mixed(), { type: 'grant_delegation', personId: 'sam', scopes: ['checklist'] });
     expect(checkedValues(html(question(state, scenario.checklist[2]!.id, 'sam')))).toEqual(['unknown']);
     expect(html(question(state, scenario.checklist[3]!.id, 'sam'))).toContain('Not answered');
-    const p = props(state, 'sam'); expect(html(<ResidentHome {...p} requests={[]} next={helperNextStep(scenario, state, 'sam')} />)).toContain('3 of 8 answered · 1 not sure');
+    const p = props(state, 'sam'); expect(html(<ResidentHome {...p} requests={[]} next={helperNextStep(scenario, state, 'sam')} />)).toContain('3 of 9 answered · 1 not sure');
     state = atStage('invited');
     for (const view of visibleRequestsFor(scenario, state, 'alex')) { expect(view.kind).toBe('volunteer'); expect(view).not.toHaveProperty('checklistAnswers'); expect(view).not.toHaveProperty('checklistAttribution'); }
   });

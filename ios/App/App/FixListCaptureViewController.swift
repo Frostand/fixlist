@@ -7,7 +7,7 @@ import UIKit
 /// One portrait-only, offline AR session. Session callbacks and UI state live on
 /// the main queue; pixel conversion and cache operations use CaptureFiles.queue.
 final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
-    private enum Step { case floor, outline, photos }
+    private enum Step { case floor, outline, tour, photos }
     private enum Mark { case corner, door }
     private let options: CaptureOptions
     private let completion: ([String: Any]) -> Void
@@ -16,6 +16,13 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private var cameraImageResolution: CGSize?
     private var viewportAvailableBounds: CGRect?
     private let overlay = AnchorEntity(world: .zero)
+    // Decorative ARKit surfaces stay separate from the person's saved outline.
+    // No collision/input components: placement continues to use the saved floor.
+    private let planeOverlay = AnchorEntity(world: .zero)
+    private var planeEntities: [UUID: ModelEntity] = [:]
+    private var pendingPlaneUpdates: [UUID: ARPlaneAnchor] = [:]
+    private var planeMeshUpdatedAt: [UUID: TimeInterval] = [:]
+    private let planeMeshInterval: TimeInterval = 0.3
     // Transient aiming geometry never enters the saved outline or its history.
     private let aimOverlay = AnchorEntity(world: .zero)
     private let aimRing = Entity()
@@ -78,6 +85,26 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         }
         self.refresh()
     }
+    private enum TourState { case ready, spinning, building, review }
+    private var tourState = TourState.ready
+    private var tourStops: [CaptureTourStop] = []
+    private var tourFrames: [CaptureTourFrame] = []
+    private var tourTargets: [SIMD3<Float>] = []
+    private var tourCaptured: Set<Int> = []
+    private var tourFramePending = false
+    private var tourCancellation = CaptureTourCancellation()
+    private var tourOrigin = SIMD3<Float>.zero
+    private var tourPositionSum = SIMD3<Float>.zero
+    private var tourPositionCount = 0
+    private var tourCapturedAt = ""
+    private var tourPreviousPose: (simd_float4x4, TimeInterval)?
+    private var tourStableSince: TimeInterval?
+    private var tourNotice: String?
+    private let tourControls = UIStackView()
+    private var tourPrimaryButton = UIButton()
+    private var tourSecondaryButton = UIButton()
+    private var tourPhotosButton = UIButton()
+    private var tourDots: [UIView] = []
     private var aimPosition: SIMD2<Float>?
     #if DEBUG && targetEnvironment(simulator)
     private var uiPreviewState = 0
@@ -96,17 +123,23 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private var interrupted = false
     private var relocalizing = false
     private var resetNotice = false
-    private var worldGeneration = 0
+    // Tie decorative resources to the same world/finish lifetime as capture data.
+    // The host harness extracts resetWorld/finish verbatim, without scene APIs.
+    private var worldGeneration = 0 {
+        didSet { clearPlaneOverlays() }
+    }
     private var trackingFailures = 0
     private var promptIndex = 0
     private var photos: [CapturePhoto] = []
     private var pendingPhoto: CapturePhoto?
     private var saving = false
-    private var finished = false
+    private var finished = false {
+        didSet { if finished { clearPlaneOverlays() } }
+    }
     private var observers: [NSObjectProtocol] = []
     private var lastStatus = ""
 
-    // The contract permits zero prompts but requires >=1 completed photo. Offer
+    // Without tour stops, a completed capture needs a photo. Offer
     // one unlinked extra photo, labelled with the supplied room name, in that case.
     private var prompts: [CapturePrompt] {
         options.prompts.isEmpty ? [CapturePrompt(checklistItemId: nil, text: options.roomName)] : options.prompts
@@ -163,10 +196,11 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             return // No AR session, lifecycle observer, camera access or capture files.
         }
         #endif
-        // Only this explicit horizontal-plane session may run; no depth or reconstruction.
+        // Plane detection works without LiDAR; no depth or scene reconstruction.
         arView.session.delegateQueue = .main
         arView.session.delegate = self
         arView.scene.addAnchor(overlay)
+        arView.scene.addAnchor(planeOverlay)
         arView.scene.addAnchor(aimOverlay)
         makeAimGeometry()
         coaching.session = arView.session
@@ -181,6 +215,9 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
                 guard let self = self, !self.finished, self.view.window != nil else { return }
                 // No reset: ask ARKit to recover the SAME world frame.
                 self.arView.session.run(self.configuration())
+            },
+            center.addObserver(forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.updatePlaneOverlayVisibility()
             }
         ]
         refresh()
@@ -229,10 +266,80 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private func configuration() -> ARWorldTrackingConfiguration {
         let configuration = ARWorldTrackingConfiguration()
         configuration.worldAlignment = .gravity
-        configuration.planeDetection = [.horizontal]
+        configuration.planeDetection = [.horizontal, .vertical]
         configuration.environmentTexturing = .none
         configuration.isAutoFocusEnabled = true
         return configuration
+    }
+
+    private func updatePlaneOverlayVisibility() {
+        // Hide this optional decoration for Reduce Transparency. Existing corner
+        // markers, aiming controls and accessibility actions remain available.
+        planeOverlay.isEnabled = !finished && trackingNormal && !interrupted && !UIAccessibility.isReduceTransparencyEnabled
+    }
+
+    private func clearPlaneOverlays() {
+        planeOverlay.children.removeAll()
+        planeEntities.removeAll()
+        pendingPlaneUpdates.removeAll()
+        planeMeshUpdatedAt.removeAll()
+    }
+
+    private func removePlaneOverlay(_ id: UUID) {
+        planeEntities.removeValue(forKey: id)?.removeFromParent()
+        pendingPlaneUpdates.removeValue(forKey: id)
+        planeMeshUpdatedAt.removeValue(forKey: id)
+    }
+
+    private func queuePlaneOverlay(_ plane: ARPlaneAnchor) {
+        guard plane.alignment == .vertical || planeHeights[plane.identifier] != nil else {
+            removePlaneOverlay(plane.identifier)
+            return
+        }
+        // Follow pose refinements immediately, independently of mesh throttling.
+        planeEntities[plane.identifier]?.transform = Transform(matrix: plane.transform)
+        pendingPlaneUpdates[plane.identifier] = plane
+    }
+
+    private func rebuildPendingPlaneMeshes() {
+        guard !finished, trackingNormal, !interrupted else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        for (id, plane) in pendingPlaneUpdates {
+            if let last = planeMeshUpdatedAt[id], now - last < planeMeshInterval { continue }
+            pendingPlaneUpdates.removeValue(forKey: id)
+            planeMeshUpdatedAt[id] = now
+            // ARKit's triangulation follows the detected boundary (including
+            // irregular shapes), rather than painting its rectangular extent.
+            let geometry = plane.geometry
+            let vertices = geometry.vertices
+            let indices = geometry.triangleIndices.map { UInt32(UInt16(bitPattern: $0)) }
+            guard vertices.count >= 3, !indices.isEmpty, indices.count % 3 == 0,
+                  vertices.allSatisfy({ $0.x.isFinite && $0.y.isFinite && $0.z.isFinite }),
+                  indices.allSatisfy({ Int($0) < vertices.count }) else {
+                planeEntities[id]?.model = nil
+                continue
+            }
+            var descriptor = MeshDescriptor(name: "Detected room plane")
+            descriptor.positions = MeshBuffers.Positions(vertices)
+            // Reverse winding also paints the back side on iOS 15, without the
+            // UnlitMaterial.faceCulling property introduced in iOS 18.
+            descriptor.primitives = .triangles(indices + Array(indices.reversed()))
+            guard let mesh = try? MeshResource.generate(from: [descriptor]) else { continue }
+            let color = plane.alignment == .horizontal
+                ? UIColor(red: 0.20, green: 0.72, blue: 0.62, alpha: 1)
+                : UIColor(red: 0.36, green: 0.60, blue: 0.92, alpha: 1)
+            var material = UnlitMaterial(color: color)
+            material.blending = .transparent(opacity: .init(floatLiteral: 0.22))
+            let entity = planeEntities[id] ?? ModelEntity()
+            entity.model = ModelComponent(mesh: mesh, materials: [material])
+            entity.transform = Transform(matrix: plane.transform)
+            // RealityKit entities aren't VoiceOver elements. Deliberately do not
+            // generate collision shapes, input targets or accessibility labels.
+            if planeEntities[id] == nil {
+                planeEntities[id] = entity
+                planeOverlay.addChild(entity)
+            }
+        }
     }
 
     private func text(_ key: String) -> String { options.strings[key] ?? CaptureOptions.english[key] ?? key }
@@ -455,6 +562,31 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         reviewControls.addArrangedSubview(retakeButton)
         reviewControls.addArrangedSubview(nextButton)
 
+        tourPrimaryButton = button("tourStart", action: #selector(tourPrimaryTapped))
+        tourSecondaryButton = button("tourCloseups", action: #selector(tourSecondaryTapped))
+        tourPhotosButton = button("tourCloseups", action: #selector(tourPhotosTapped))
+        tourPrimaryButton.accessibilityIdentifier = "capture.tourPrimary"
+        tourSecondaryButton.accessibilityIdentifier = "capture.tourSecondary"
+        tourPhotosButton.accessibilityIdentifier = "capture.tourPhotos"
+        let tourRow = UIStackView(arrangedSubviews: [tourPrimaryButton, tourSecondaryButton])
+        tourRow.distribution = .fillEqually
+        tourControls.axis = .vertical
+        tourControls.distribution = .fillEqually
+        tourControls.addArrangedSubview(tourRow)
+        tourControls.addArrangedSubview(tourPhotosButton)
+        pin(tourControls, to: bottomBar.contentView, inset: 4)
+        for _ in 0..<24 {
+            let dot = UIView(frame: CGRect(x: 0, y: 0, width: 18, height: 18))
+            dot.layer.cornerRadius = 9
+            dot.layer.borderColor = UIColor.black.cgColor
+            dot.layer.borderWidth = 2
+            dot.isUserInteractionEnabled = false
+            dot.isAccessibilityElement = false
+            dot.isHidden = true
+            arView.addSubview(dot)
+            tourDots.append(dot)
+        }
+
         // Combined top/bottom chrome is capped at 30% of the viewport. Long
         // prompts and larger Dynamic Type scroll inside the instruction card.
         NSLayoutConstraint.activate([
@@ -503,7 +635,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         restart.accessibilityLabel = text("restartTracking")
         restart.accessibilityHint = text("restartConfirmMessage")
         var actions = [restart]
-        if step != .photos {
+        if step == .floor || step == .outline {
             actions.append(UIAction(title: text("skipOutline"), image: UIImage(systemName: "arrow.right")) { [weak self] _ in
                 self?.skipOutlineTapped()
             })
@@ -514,7 +646,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
                                 state: doorMode ? .on : .off) { [weak self] _ in self?.doorTapped() }
             actions.append(door)
         }
-        if isVideoIdle, !saving, pendingPhoto == nil, !photos.isEmpty {
+        if isVideoIdle, !saving, !tourBusy, pendingPhoto == nil, !photos.isEmpty || !tourStops.isEmpty {
             actions.append(UIAction(title: text("done"), image: UIImage(systemName: "checkmark")) { [weak self] _ in
                 self?.completeCapture()
             })
@@ -529,8 +661,10 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
 
     private func refresh() {
         guard isViewLoaded, !finished else { return }
+        updatePlaneOverlayVisibility()
         let isPhotos = step == .photos
         let isOutline = step == .outline
+        let isTour = step == .tour
         var hasPhoto = pendingPhoto != nil
         #if DEBUG && targetEnvironment(simulator)
         if CaptureUIPreview.enabled { hasPhoto = uiPreviewHasPhoto }
@@ -538,14 +672,26 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         let progress = text("photoProgress").replacingOccurrences(of: "{current}", with: String(promptIndex + 1))
             .replacingOccurrences(of: "{total}", with: String(prompts.count))
         let status: String
-        if videoState == .recording {
+        if isTour && tourState == .building { status = text("tourBuilding") }
+        else if videoState == .recording {
             status = text("videoRecording").replacingOccurrences(of: "{seconds}", with: String(min(30, Int(ProcessInfo.processInfo.systemUptime - videoStarted))))
         } else if let notice = videoNotice { status = notice }
         else if videoState == .finishing || videoState == .reviewing || videoState == .saving { status = text("videoReview") }
         else if interrupted { status = text("interrupted") }
-        else if resetNotice && !trackingNormal { status = text("relocalizeFailed") }
+        else if resetNotice && !trackingNormal { status = text("tourResetNotice") }
         else if step == .floor && !relocalizing { status = text("findFloor") }
         else if !trackingNormal { status = text("trackingLimited") }
+        else if isTour {
+            if tourState == .building { status = text("tourBuilding") }
+            else if let notice = tourNotice { status = notice }
+            else if tourState == .spinning {
+                let ring = text(tourCaptured.filter { $0 < 12 }.count < 12 ? "tourLevel" : "tourFloor")
+                status = text("tourProgress").replacingOccurrences(of: "{count}", with: String(tourCaptured.count))
+                    .replacingOccurrences(of: "{ring}", with: ring)
+            } else if tourState == .review {
+                status = text("tourSaved").replacingOccurrences(of: "{count}", with: String(tourStops.count))
+            } else { status = text("tourReady") }
+        }
         else if isOutline {
             status = text(doorMode ? "doorMode" : corners.count >= 3 ? "moreCorners" : "aimCorner")
         } else { status = progress }
@@ -555,14 +701,28 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             lastStatus = status
             UIAccessibility.post(notification: .announcement, argument: status)
         }
-        stepLabel.text = text(isPhotos ? "stepPhotos" : "stepOutline")
+        stepLabel.text = text(isPhotos ? "tourStepPhotos" : isTour ? "stepTour" : "tourStepOutline")
         instructionIcon.image = UIImage(systemName: interrupted || !trackingNormal && step != .floor ? "exclamationmark.triangle" :
-                                        isPhotos ? "camera" : step == .floor ? "viewfinder" : "plus.viewfinder")
+                                        isTour ? "pano" : isPhotos ? "camera" : step == .floor ? "viewfinder" : "plus.viewfinder")
         instructionIcon.tintColor = .white
         countLabel.text = text("cornerCount").replacingOccurrences(of: "{count}", with: String(corners.count))
-        promptLabel.isHidden = !isPhotos
+        promptLabel.isHidden = !isPhotos && !isTour
+        if isTour { promptLabel.text = text("tourAim") }
         if isPhotos { promptLabel.text = prompts[promptIndex].text }
-        outlineControls.isHidden = isPhotos
+        outlineControls.isHidden = isPhotos || isTour
+        tourControls.isHidden = !isTour
+        tourPhotosButton.isHidden = tourState != .review
+        let primaryKey = tourState == .spinning ? "tourFinishSpot" : tourState == .review ? "tourAnother" : "tourStart"
+        let secondaryKey = tourState == .spinning ? "tourCancelSpot" : tourStops.isEmpty ? "tourCloseups" : "tourFinish"
+        tourPrimaryButton.configuration?.title = text(primaryKey)
+        tourPrimaryButton.accessibilityLabel = text(primaryKey)
+        tourSecondaryButton.configuration?.title = text(secondaryKey)
+        tourSecondaryButton.accessibilityLabel = text(secondaryKey)
+        tourPrimaryButton.isHidden = tourState == .review && tourStops.count >= 6
+        tourPrimaryButton.isEnabled = tourState == .spinning ? CaptureTourMath.canFinish(tourFrames.count) && !tourFramePending :
+            tourState != .building && (tourState == .review || trackingNormal && !interrupted)
+        tourSecondaryButton.isEnabled = tourState != .building
+        if !isTour || tourState != .spinning || interrupted || !trackingNormal { tourDots.forEach { $0.isHidden = true } }
         photoControls.isHidden = !isPhotos || hasPhoto || !isVideoIdle
         reviewControls.isHidden = !isPhotos || !hasPhoto || !isVideoIdle
         videoControls.isHidden = isVideoIdle
@@ -592,7 +752,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         let nextKey = promptIndex == prompts.count - 1 ? "done" : "usePhoto"
         nextButton.configuration?.title = text(nextKey)
         nextButton.accessibilityLabel = text(nextKey)
-        arView.isAccessibilityElement = !isPhotos
+        arView.isAccessibilityElement = !isPhotos && !isTour
         arView.accessibilityElementsHidden = hasPhoto
         preview.isHidden = !hasPhoto
         doorChip.isHidden = !isOutline || !doorMode
@@ -733,20 +893,198 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         closed = true
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         drawOutline()
-        beginPhotos()
+        beginTour()
     }
     @objc private func skipOutlineTapped() {
+        guard !finished, !saving, step == .floor || step == .outline else { return }
         corners.removeAll(); doors.removeAll(); history.removeAll(); closed = false
         drawOutline()
-        beginPhotos()
+        beginTour()
     }
     private func beginPhotos() {
+        clearTourAttempt()
         step = .photos
         doorMode = false
         aimOverlay.isEnabled = false
         aimPosition = nil
         refresh()
         UIAccessibility.post(notification: .screenChanged, argument: promptLabel)
+    }
+
+    private var tourBusy: Bool { tourState == .spinning || tourState == .building || tourFramePending }
+
+    private func beginTour() {
+        guard !finished else { return }
+        step = .tour
+        doorMode = false
+        aimOverlay.isEnabled = false
+        aimPosition = nil
+        refresh()
+        UIAccessibility.post(notification: .screenChanged, argument: statusLabel)
+    }
+
+    private func clearTourAttempt() {
+        tourCancellation.cancel()
+        if tourState == .building {
+            // Queued after the old write and before any replacement write.
+            // A late main callback must never delete a reused s1 filename.
+            let url = CaptureFiles.folder(options.captureId).appendingPathComponent("pano-s\(tourStops.count + 1).jpg")
+            CaptureFiles.queue.async { try? CaptureFiles.remove(url) }
+        }
+        tourCancellation = CaptureTourCancellation()
+        tourFrames.removeAll()
+        tourCaptured.removeAll()
+        tourTargets.removeAll()
+        tourFramePending = false
+        tourPositionSum = .zero
+        tourPositionCount = 0
+        tourPreviousPose = nil
+        tourStableSince = nil
+        tourNotice = nil
+        tourState = tourStops.isEmpty ? .ready : .review
+        tourDots.forEach { $0.isHidden = true }
+    }
+
+    // Stops cannot be carried into a new AR world: unlike close-up photos,
+    // their pixels encode world directions and their positions must stay posed.
+    private func invalidateTourWorld() {
+        clearTourAttempt()
+        let urls = tourStops.map(\.url)
+        tourStops.removeAll()
+        tourState = .ready
+        CaptureFiles.queue.async { urls.forEach { try? CaptureFiles.remove($0) } }
+    }
+
+    @objc private func tourPrimaryTapped() {
+        guard !finished, step == .tour else { return }
+        switch tourState {
+        case .ready:
+            guard trackingNormal, !interrupted, let frame = arView.session.currentFrame,
+                  case .normal = frame.camera.trackingState, tourStops.count < 6 else { return }
+            clearTourAttempt()
+            tourState = .spinning
+            tourOrigin = frame.camera.transform[3].xyz
+            let forward = -frame.camera.transform[2].xyz
+            tourTargets = CaptureTourMath.targets(yaw: atan2(forward.x, -forward.z))
+            tourCapturedAt = CaptureFiles.timestamp()
+        case .spinning: finishTourSpot()
+        case .review:
+            guard tourStops.count < 6 else { return }
+            clearTourAttempt()
+            tourState = .ready
+            tourNotice = text("tourWalk")
+        case .building: return
+        }
+        refresh()
+    }
+
+    @objc private func tourSecondaryTapped() {
+        guard !finished, step == .tour, tourState != .building else { return }
+        switch tourState {
+        case .spinning: clearTourAttempt(); refresh()
+        case .ready:
+            if tourStops.isEmpty { beginPhotos() } else { completeCapture() }
+        case .review: completeCapture()
+        case .building: break
+        }
+    }
+
+    @objc private func tourPhotosTapped() {
+        guard !finished, step == .tour, !tourBusy else { return }
+        beginPhotos()
+    }
+
+    private func finishTourSpot() {
+        guard step == .tour, tourState == .spinning, !tourFramePending,
+              CaptureTourMath.canFinish(tourFrames.count), tourStops.count < 6 else { return }
+        tourState = .building
+        let frames = tourFrames
+        tourFrames.removeAll() // worker owns the compact rasters until it returns
+        let cancellation = tourCancellation
+        let generation = worldGeneration
+        let position = tourPositionCount > 0 ? tourPositionSum / Float(tourPositionCount) : tourOrigin
+        let stopId = "s\(tourStops.count + 1)"
+        let capturedAt = tourCapturedAt
+        refresh()
+        CaptureFiles.queue.async {
+            do {
+                let stop = try CaptureTourWriter.write(frames: frames, captureId: self.options.captureId, stopId: stopId,
+                    position: position, capturedAt: capturedAt, cancellation: cancellation)
+                DispatchQueue.main.async {
+                    guard !self.finished, generation == self.worldGeneration, self.tourCancellation === cancellation,
+                          !cancellation.isCancelled else {
+                        // clearTourAttempt already queued cleanup in file order.
+                        return
+                    }
+                    self.tourStops.append(stop)
+                    self.tourState = .review
+                    self.clearTourAttempt()
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    self.refresh()
+                }
+            } catch {
+                os_log("FixListCapture panorama failed: %{public}@", log: captureLog, type: .error, String(describing: error))
+                DispatchQueue.main.async {
+                    guard !self.finished, generation == self.worldGeneration, self.tourCancellation === cancellation else { return }
+                    self.clearTourAttempt()
+                    self.tourState = .ready
+                    self.tourNotice = self.text("tourFailed")
+                    self.refresh()
+                }
+            }
+        }
+    }
+
+    private func updateTour(frame: ARFrame, normal: Bool) {
+        guard step == .tour, tourState == .spinning else { return }
+        let pose = frame.camera.transform
+        // Dots are screen-space decorations at infinity, never floor geometry.
+        for i in tourDots.indices {
+            let dot = tourDots[i]
+            guard i < tourTargets.count, simd_dot(-pose[2].xyz, tourTargets[i]) > 0,
+                  let point = arView.project(pose[3].xyz + tourTargets[i] * 3), arView.bounds.contains(point) else {
+                dot.isHidden = true; continue
+            }
+            dot.isHidden = false
+            dot.center = point
+            dot.backgroundColor = tourCaptured.contains(i) ? .systemGreen : .white
+            dot.alpha = tourCaptured.contains(i) ? 0.35 : 0.9
+        }
+        let previous = tourPreviousPose
+        tourPreviousPose = (pose, frame.timestamp)
+        let speed = previous.map { CaptureTourMath.angularVelocity(previous: $0.0, current: pose, elapsed: frame.timestamp - $0.1) } ?? .infinity
+        let nearOrigin = CaptureTourMath.nearOrigin(pose[3].xyz, origin: tourOrigin)
+        let notice = nearOrigin ? nil : text("tourReturn")
+        if tourNotice != notice { tourNotice = notice; refresh() }
+        guard normal, !interrupted, nearOrigin else { tourStableSince = nil; return }
+        tourPositionSum += pose[3].xyz
+        tourPositionCount += 1
+        guard speed <= 0.28 else { tourStableSince = nil; return }
+        if tourStableSince == nil { tourStableSince = frame.timestamp }
+        // A brief settled interval also excludes the end of a fast turn.
+        guard frame.timestamp - (tourStableSince ?? frame.timestamp) >= 0.15, !tourFramePending,
+              let target = CaptureTourMath.select(forward: -pose[2].xyz, targets: tourTargets, captured: tourCaptured,
+                trackingNormal: normal, angularVelocity: speed) else { return }
+        tourFramePending = true
+        let cancellation = tourCancellation
+        CaptureFiles.queue.async {
+            let result = Result { try autoreleasepool { try CaptureTourWriter.compact(frame: frame) } }
+            DispatchQueue.main.async {
+                guard !self.finished, self.tourCancellation === cancellation, !cancellation.isCancelled else { return }
+                self.tourFramePending = false
+                switch result {
+                case .success(let compact):
+                    self.tourFrames.append(compact)
+                    self.tourCaptured.insert(target)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    if self.tourFrames.count == 24 { self.finishTourSpot() }
+                case .failure(let error):
+                    os_log("FixListCapture tour frame failed: %{public}@", log: captureLog, type: .error, String(describing: error))
+                    self.tourNotice = self.text("tourFailed")
+                }
+                self.refresh()
+            }
+        }
     }
 
     private func pauseCaptureForBackground() {
@@ -872,6 +1210,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
                     UIAccessibility.post(notification: .screenChanged, argument: self.retakeButton)
                 }
             } catch {
+                os_log("FixListCapture photo write failed: %{public}@", log: captureLog, type: .error, String(describing: error))
                 DispatchQueue.main.async {
                     self.finish(["status": "failed", "reason": "photo-write-failed"], keepFiles: false)
                 }
@@ -894,9 +1233,9 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         if CaptureUIPreview.enabled { advanceUIPreviewPhoto(); return }
         #endif
         guard !saving, isVideoIdle, !finished else { return }
-        // Skipping the final prompt with no retained photos closes as a benign
-        // cancellation. Never emit an empty/invalid completed manifest.
-        if promptIndex == prompts.count - 1 && photos.isEmpty {
+        // A saved tour is sufficient. With neither photos nor a tour, the final
+        // skip cancels instead of returning an empty completed manifest.
+        if promptIndex == prompts.count - 1 && photos.isEmpty && tourStops.isEmpty {
             if acceptedVideo != nil {
                 videoNotice = text("videoNeedsPhoto")
                 refresh()
@@ -918,7 +1257,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             photos.append(photo)
             pendingPhoto = nil
             preview.image = nil
-        } else if promptIndex != prompts.count - 1 || photos.isEmpty { return }
+        } else if promptIndex != prompts.count - 1 || (photos.isEmpty && tourStops.isEmpty) { return }
         advance()
     }
     private func advance() {
@@ -930,7 +1269,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     }
 
     private func completeCapture() {
-        guard !finished, !saving, isVideoIdle, pendingPhoto == nil, !photos.isEmpty, photos.count <= 40 else { return }
+        guard !finished, !saving, isVideoIdle, pendingPhoto == nil, !tourBusy, (!photos.isEmpty || !tourStops.isEmpty), photos.count <= 40, tourStops.count <= 6 else { return }
         let outline: Any = corners.count >= 3 ? ["closed": closed, "points": corners.map { [Double($0.x), Double($0.y)] }] : NSNull()
         var result: [String: Any] = [
             "format": "fixlist-room-capture", "version": 1, "captureId": options.captureId,
@@ -939,20 +1278,24 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             "doors": doors.map { [Double($0.x), Double($0.y)] }, "photos": photos.map(\.json),
             "files": Dictionary(uniqueKeysWithValues: photos.map { ($0.photoId, $0.url.absoluteString) })
         ]
+        var files = Dictionary(uniqueKeysWithValues: photos.map { ($0.photoId, $0.url.absoluteString) })
+        if !tourStops.isEmpty {
+            result["tour"] = ["format": "fixlist-room-tour", "version": 1, "stops": tourStops.map(\.json)]
+            for stop in tourStops { files[stop.fileId] = stop.url.absoluteString }
+        }
         if let video = acceptedVideo {
             result["videos"] = ["format": "fixlist-capture-videos", "version": 1,
                                 "captureId": options.captureId, "roomId": options.roomId, "clips": [video.json]]
-            var files = Dictionary(uniqueKeysWithValues: photos.map { ($0.photoId, $0.url.absoluteString) })
             files["v01"] = video.url.absoluteString
-            result["files"] = files
         }
+        result["files"] = files
         finish(["status": "completed", "capture": result], keepFiles: true)
     }
 
     @objc private func cancelTapped() {
         guard !finished else { return }
-        guard !photos.isEmpty || pendingPhoto != nil || saving || acceptedVideo != nil || !isVideoIdle else { abort(); return }
-        let alert = UIAlertController(title: text("cancelConfirmTitle"), message: text("videoCancel"), preferredStyle: .alert)
+        guard !tourStops.isEmpty || tourBusy || !photos.isEmpty || pendingPhoto != nil || saving || acceptedVideo != nil || !isVideoIdle else { abort(); return }
+        let alert = UIAlertController(title: text("cancelConfirmTitle"), message: text("tourCancelMessage"), preferredStyle: .alert)
         let keep = UIAlertAction(title: text("cancelConfirmKeep"), style: .cancel)
         keep.accessibilityLabel = text("cancelConfirmKeep")
         alert.addAction(keep)
@@ -965,6 +1308,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
     private func finish(_ outcome: [String: Any], keepFiles: Bool) {
         guard !finished else { return }
         finished = true
+        clearTourAttempt()
         // This must precede UIKit dismissal and the plugin's synchronous discard enqueue.
         discardActiveVideo(showInterrupted: false)
         aimOverlay.isEnabled = false
@@ -1004,11 +1348,11 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
 
     @objc private func resetTapped() {
         guard !finished, presentedViewController == nil else { return }
-        guard !corners.isEmpty || !doors.isEmpty || !photos.isEmpty || pendingPhoto != nil || saving else {
+        guard !tourStops.isEmpty || tourBusy || !corners.isEmpty || !doors.isEmpty || !photos.isEmpty || pendingPhoto != nil || saving else {
             resetWorld()
             return
         }
-        let alert = UIAlertController(title: text("restartConfirmTitle"), message: text("restartConfirmMessage"), preferredStyle: .alert)
+        let alert = UIAlertController(title: text("tourResetTitle"), message: text("tourResetMessage"), preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: text("cancelConfirmKeep"), style: .cancel))
         alert.addAction(UIAlertAction(title: text("restartTracking"), style: .destructive) { [weak self] _ in
             self?.resetWorld()
@@ -1022,6 +1366,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         guard !finished else { return }
         discardActiveVideo(showInterrupted: true)
         worldGeneration += 1
+        invalidateTourWorld()
         floorY = nil
         planeHeights.removeAll()
         corners.removeAll(); doors.removeAll(); history.removeAll(); closed = false; doorMode = false
@@ -1035,7 +1380,7 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
         if step != .photos { step = .floor }
         arView.session.run(configuration(), options: [.resetTracking, .removeExistingAnchors])
         refresh()
-        UIAccessibility.post(notification: .announcement, argument: text("relocalizeFailed"))
+        UIAccessibility.post(notification: .announcement, argument: text("tourResetNotice"))
     }
 
     func sessionShouldAttemptRelocalization(_ session: ARSession) -> Bool { true }
@@ -1074,23 +1419,35 @@ final class FixListCaptureViewController: UIViewController, ARSessionDelegate {
             let timestamp = frame.timestamp
             videoWriter.submit(generation: generation, buffer: buffer, timestamp: timestamp)
         }
+        updateTour(frame: frame, normal: normal)
+        rebuildPendingPlaneMeshes()
         updateAim()
     }
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) { updatePlanes(anchors) }
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) { updatePlanes(anchors) }
     func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
-        for anchor in anchors { planeHeights.removeValue(forKey: anchor.identifier) }
+        for anchor in anchors {
+            planeHeights.removeValue(forKey: anchor.identifier)
+            removePlaneOverlay(anchor.identifier)
+        }
         updatePlanes([])
     }
     private func updatePlanes(_ anchors: [ARAnchor]) {
         guard !finished, trackingNormal, !interrupted,
               let cameraY = arView.session.currentFrame?.camera.transform[3].y else { return }
-        for case let plane as ARPlaneAnchor in anchors where plane.alignment == .horizontal {
-            let y = (plane.transform * SIMD4(plane.center.x, plane.center.y, plane.center.z, 1)).y
-            planeHeights[plane.identifier] = CaptureFloorMath.candidate(height: y, cameraY: cameraY,
-                classification: plane.classification)
+        for case let plane as ARPlaneAnchor in anchors {
+            if plane.alignment == .horizontal {
+                let y = (plane.transform * SIMD4(plane.center.x, plane.center.y, plane.center.z, 1)).y
+                planeHeights[plane.identifier] = CaptureFloorMath.candidate(height: y, cameraY: cameraY,
+                    classification: plane.classification)
+            } else {
+                // A wall (even unclassified) must never enter floor selection.
+                planeHeights.removeValue(forKey: plane.identifier)
+            }
+            queuePlaneOverlay(plane)
         }
-        let locked = step == .photos || !corners.isEmpty || !doors.isEmpty || !photos.isEmpty || pendingPhoto != nil || saving
+        rebuildPendingPlaneMeshes()
+        let locked = step == .tour || step == .photos || !corners.isEmpty || !doors.isEmpty || !photos.isEmpty || pendingPhoto != nil || saving
         guard let lowest = CaptureFloorMath.select(previous: floorY, heights: Array(planeHeights.values), locked: locked) else {
             if !locked {
                 floorY = nil

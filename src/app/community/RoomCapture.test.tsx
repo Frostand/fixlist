@@ -1,3 +1,4 @@
+import { VisionReviewControl } from './VisionReviewControl';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +19,8 @@ import { CaptureFlow, GuidedPhotoTour } from '../CaptureScreens';
 import { PhotoInputActions } from '../Photos';
 import { Button, Sheet } from './UI';
 import { CaptureVideos } from '../CaptureVideos';
+import { RoomSketch } from '../RoomSketch';
+import { RoomReviewSketch } from './RoomReviewSketch';
 import { syntheticVideoAssets } from '../../lib/__fixtures__/capture-video';
 import { LANGUAGES, translate } from '../../i18n';
 import { createInitialState } from '../../domain/workflow';
@@ -109,7 +112,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function fixture() { const p = await parseCaptureBundle(JSON.stringify(bundle)); if (!p.ok) throw new Error(p.error); return p.value; }
-async function ready(view: ReturnType<typeof driver>) { await vi.waitFor(() => { expect(nodes(view.render(), Button).some(n => n.props.children === 'Take room photos')).toBe(true); }); }
+async function ready(view: ReturnType<typeof driver>) { await vi.waitFor(() => { expect(nodes(view.render(), Button).some(n => n.props.children === 'Capture a 360° room tour')).toBe(true); }); }
 function tour(tree: ReactNode) { return nodes(tree, GuidedPhotoTour)[0]!.props as unknown as Parameters<typeof GuidedPhotoTour>[0]; }
 function allowThumbnails() {
     vi.stubGlobal('createImageBitmap', async () => ({ width: 16, height: 16, close() {} }));
@@ -182,7 +185,7 @@ describe('community RoomCapture store and operation identity', () => {
         const { catalogText } = await import('../../i18n/catalog');
         const t = Object.assign((key: import('../../i18n').MessageKey) => translate(language, key), { language });
         press(view.render(), catalogText(t, 'room', 'living-room'));
-        await vi.waitFor(() => expect(nodes(view.render(), Button).some(n => n.props.children === translate(language, 'c.scan.start'))).toBe(true));
+        await vi.waitFor(() => expect(nodes(view.render(), Button).some(n => n.props.children === translate(language, 'pano.captureStart'))).toBe(true));
         press(view.render(), translate(language, 'room.startPhotos'));
         expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(1);
         expect(runtime.availability).not.toHaveBeenCalled();
@@ -202,7 +205,7 @@ describe('community RoomCapture store and operation identity', () => {
         const original = await store.read(manifest.roomId), write = vi.spyOn(store, 'writeCapture');
         runtime.availability.mockResolvedValue({ arkit: true });
         const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await review(view);
-        press(view.render(), 'Take room photos');
+        press(view.render(), 'Capture a 360° room tour');
         expect(nodes(view.render(), Sheet)).toHaveLength(1);
         (nodes(view.render(), Sheet)[0]!.props.onClose as () => void)();
         await review(view);
@@ -235,11 +238,11 @@ describe('community RoomCapture store and operation identity', () => {
         runtime.native.mockResolvedValue({ status: 'cancelled', cleanupFailed });
         const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await review(view);
         const cards = nodes(view.render(), 'article').map(n => ({ key: n.key, question: nodes(n, 'p')[0]!.props.children }));
-        press(view.render(), 'Take room photos'); press(view.render(), 'Replace room photos');
+        press(view.render(), 'Capture a 360° room tour'); press(view.render(), 'Replace room photos');
         await vi.waitFor(() => expect(runtime.native).toHaveBeenCalledOnce());
         await review(view);
         expect(nodes(view.render(), 'article').map(n => ({ key: n.key, question: nodes(n, 'p')[0]!.props.children }))).toEqual(cards);
-        expect(nodes(view.render(), Button).map(n => n.props.children)).toEqual(expect.arrayContaining(['Take room photos', 'Start photo tour']));
+        expect(nodes(view.render(), Button).map(n => n.props.children)).toEqual(expect.arrayContaining(['Capture a 360° room tour', 'Start photo tour']));
         expect(nodes(view.render(), Sheet)).toHaveLength(0); expect(nodes(view.render(), GuidedPhotoTour)).toHaveLength(0);
         expect(runtime.native).toHaveBeenCalledWith(expect.objectContaining({ store, replaceConfirmed: true, expectedCaptureId: manifest.captureId }));
         expect(runtime.analyze).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled();
@@ -299,7 +302,7 @@ describe('community RoomCapture store and operation identity', () => {
         const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await review(view);
         press(view.render(), translate('en', 'c.scan.sample'));
         const buttons = nodes(view.render(), Button).map(n => n.props.children);
-        expect(buttons).not.toContain(translate('en', 'c.scan.start')); expect(buttons).not.toContain(translate('en', 'room.startPhotos'));
+        expect(buttons).not.toContain(translate('en', 'pano.captureStart')); expect(buttons).not.toContain(translate('en', 'room.startPhotos'));
         expect(nodes(view.render(), Sheet)).toHaveLength(0);
         expect(await store.read(manifest.roomId)).toEqual(original);
         press(view.render(), 'Choose another room'); press(view.render(), 'Living room'); await review(view);
@@ -335,7 +338,7 @@ describe('community RoomCapture store and operation identity', () => {
         press(view.render(), 'Start photo tour');
         await tour(view.render()).onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos);
         await review(view);
-        expect(nodes(view.render(), Button).map(n => n.props.children)).toContain('Take room photos');
+        expect(nodes(view.render(), Button).map(n => n.props.children)).toContain('Capture a 360° room tour');
         press(view.render(), 'Start photo tour');
         expect(nodes(view.render(), Sheet)).toHaveLength(1);
         expect(nodes(view.render(), 'article')).toHaveLength(1);
@@ -355,7 +358,7 @@ describe('community RoomCapture store and operation identity', () => {
         runtime.availability.mockResolvedValue({ arkit: true });
         let finish!: (value: { status: string }) => void;
         runtime.native.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-        press(view.render(), 'Take room photos'); await settle();
+        press(view.render(), 'Capture a 360° room tour'); await settle();
         const newer = runtime.native.mock.calls[0]![0];
         await oldTour.onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos); oldTour.onCancel();
         expect(newer.signal.aborted).toBe(false); expect(newer.isCurrent()).toBe(true);
@@ -389,7 +392,7 @@ describe('community RoomCapture store and operation identity', () => {
         runtime.availability.mockResolvedValue({ arkit: true });
         runtime.native.mockResolvedValue({ status, cleanupFailed: true });
         const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await ready(view);
-        press(view.render(), 'Take room photos'); await settle(); await settle();
+        press(view.render(), 'Capture a 360° room tour'); await settle(); await settle();
         const markup = renderToStaticMarkup(<>{view.render()}</>);
         expect(markup).toContain(translate('en', status === 'completed' ? 'capture.savedCleanupFailed' : 'capture.cleanupFailed'));
         view.unmount();
@@ -401,7 +404,7 @@ describe('community RoomCapture store and operation identity', () => {
         runtime.native.mockImplementation(async () => { await store.writeCapture(manifest, photos, false, undefined, null, assets); return { status: 'completed' }; });
         let currentProps = props;
         const view = driver(() => RoomCapture(currentProps)); press(view.render(), 'Living room'); await ready(view);
-        press(view.render(), 'Take room photos'); await ready(view);
+        press(view.render(), 'Capture a 360° room tour'); await ready(view);
         expect(nodes(view.render(), CaptureVideos)).toHaveLength(1);
         expect(nodes(view.render(), CaptureVideos)[0]!.props.record).toMatchObject({ manifest, videos: assets.videos });
         currentProps = { ...props, ownerId: 'elder-soonja' };
@@ -412,7 +415,7 @@ describe('community RoomCapture store and operation identity', () => {
         if (existing) await store.writeCapture(manifest, photos);
         const view = driver(() => RoomCapture(props));
         press(view.render(), 'Living room'); await ready(view);
-        press(view.render(), 'Take room photos');
+        press(view.render(), 'Capture a 360° room tour');
         if (existing) press(view.render(), 'Replace room photos');
         await settle();
         const save = tour(view.render()).onSave;
@@ -420,7 +423,7 @@ describe('community RoomCapture store and operation identity', () => {
         expect(runtime.analyze).toHaveBeenCalledWith(manifest.roomId, expect.objectContaining({ store }));
         const b = await store.read(manifest.roomId); expect(b).not.toBeNull();
         expect(b!.manifest.captureId).not.toBe(manifest.captureId);
-        press(view.render(), 'Take room photos');
+        press(view.render(), 'Capture a 360° room tour');
         expect(nodes(view.render(), Sheet)).toHaveLength(1);
         press(view.render(), 'Replace room photos'); await settle();
         await tour(view.render()).onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos);
@@ -438,10 +441,10 @@ describe('community RoomCapture store and operation identity', () => {
             return { status: 'completed' };
         });
         const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await ready(view);
-        press(view.render(), 'Take room photos'); press(view.render(), 'Replace room photos'); await vi.waitFor(() => expect(runtime.analyze).toHaveBeenCalledOnce()); await ready(view);
+        press(view.render(), 'Capture a 360° room tour'); press(view.render(), 'Replace room photos'); await vi.waitFor(() => expect(runtime.analyze).toHaveBeenCalledOnce()); await ready(view);
         expect(runtime.native).toHaveBeenCalledWith(expect.objectContaining({ store, signal: expect.any(AbortSignal) }));
         runtime.native.mockResolvedValue({ status: 'cancelled' });
-        press(view.render(), 'Take room photos'); press(view.render(), 'Replace room photos'); await settle();
+        press(view.render(), 'Capture a 360° room tour'); press(view.render(), 'Replace room photos'); await settle();
         expect(runtime.native.mock.calls[1]![0].expectedCaptureId).toBe('cap-native-saved-02');
         expect(runtime.classic).not.toHaveBeenCalled(); view.unmount();
     });
@@ -451,7 +454,7 @@ describe('community RoomCapture store and operation identity', () => {
         runtime.native.mockImplementation(() => new Promise(r => { complete = r; }));
         let currentProps = props;
         const view = driver(() => RoomCapture(currentProps)); press(view.render(), 'Living room'); await ready(view);
-        press(view.render(), 'Take room photos'); await settle();
+        press(view.render(), 'Capture a 360° room tour'); await settle();
         const options = runtime.native.mock.calls[0]![0];
         if (change === 'unmount') view.unmount();
         else if (change === 'restart') press(view.render(), 'Choose another room');
@@ -463,7 +466,7 @@ describe('community RoomCapture store and operation identity', () => {
     it('rejects a stale photo save after scope changes', async () => {
         const { manifest, photos } = await fixture(); let currentProps = props;
         const view = driver(() => RoomCapture(currentProps)); press(view.render(), 'Living room'); await ready(view);
-        press(view.render(), 'Take room photos'); await settle(); const save = tour(view.render()).onSave;
+        press(view.render(), 'Capture a 360° room tour'); await settle(); const save = tour(view.render()).onSave;
         currentProps = { ...props, ownerId: 'elder-soonja' }; view.render();
         await save(manifest.photos.map(p => ({ ...p, camera: null })), photos);
         expect(await runtime.stores.get('reset-1:elder-margaret')!.read(manifest.roomId)).toBeNull();
@@ -472,14 +475,14 @@ describe('community RoomCapture store and operation identity', () => {
     it.each(['owner', 'room'] as const)('a late photo callback cannot abort or overwrite a newer native operation after %s changes', async change => {
         const { manifest, photos } = await fixture(); let currentProps = props;
         const view = driver(() => RoomCapture(currentProps)); press(view.render(), 'Living room'); await ready(view);
-        press(view.render(), 'Take room photos'); await settle(); const oldTour = tour(view.render());
+        press(view.render(), 'Capture a 360° room tour'); await settle(); const oldTour = tour(view.render());
         if (change === 'owner') { currentProps = { ...props, ownerId: 'elder-soonja' }; view.render(); }
         else press(view.render(), 'Choose another room');
         press(view.render(), 'Hallway'); await ready(view);
         runtime.availability.mockResolvedValue({ arkit: true });
         let finish!: (value: { status: string }) => void;
         runtime.native.mockImplementation(() => new Promise(r => { finish = r; }));
-        press(view.render(), 'Take room photos'); await settle();
+        press(view.render(), 'Capture a 360° room tour'); await settle();
         const newer = runtime.native.mock.calls[0]![0];
         await oldTour.onSave(manifest.photos.map(p => ({ ...p, camera: null })), photos);
         oldTour.onCancel();
@@ -496,7 +499,7 @@ describe('family capture permission revision guard', () => {
         let revision = 1;
         const view = driver(() => RoomCapture({ ownerId: 'elder-margaret', resetEpoch: 'reset-1', isCurrent: () => revision === 1, onDraft() {}, onType() {} }));
         press(view.render(), 'Living room'); await ready(view);
-        press(view.render(), 'Take room photos');
+        press(view.render(), 'Capture a 360° room tour');
         const sheet = nodes(view.render(), Sheet)[0]!;
         await press(sheet.props.children as ReactNode, translate('en', 'c.scan.replaceYes'));
         await settle();
@@ -542,4 +545,70 @@ describe('community capture invocation authorization', () => {
         expect(invocation('family-alex', true)).toBeUndefined();
         expect(invocation('family-alex', false, true)).toBeUndefined();
     });
+});
+
+describe('community post-scan room sketch', () => {
+    it.each(['closed', 'poses-only', 'photos-only'] as const)('reopens %s with the review cards as the single source for pins', async kind => {
+        allowThumbnails();
+        const store = runtime.stores.get('reset-1:elder-margaret')!, source = await fixture();
+        const manifest: CaptureManifest = kind === 'closed' ? source.manifest : kind === 'poses-only'
+            ? { ...source.manifest, outline: null, doors: [] }
+            : { ...source.manifest, mode: 'photos', outline: null, floorY: null, doors: [], photos: source.manifest.photos.map(photo => ({ ...photo, camera: null })) };
+        await store.writeCapture(manifest, source.photos, false); await saveFlags(store, manifest);
+        const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await review(view);
+        const sketches = nodes(view.render(), RoomReviewSketch);
+        expect(sketches).toHaveLength(kind === 'photos-only' ? 0 : 1);
+        if (kind !== 'photos-only') {
+            const sketch = sketches[0]!.props as unknown as Parameters<typeof RoomReviewSketch>[0];
+            const expected = fixtureFlags.items.filter(item => item.status === 'suggested');
+            expect(sketch.flags.map(flag => flag.checklistItemId)).toEqual(expected.map(flag => flag.checklistItemId));
+            expect(sketch.flags[0]).toMatchObject({ id: 'flag-rug-check', photoId: expected[0]!.bestPhotoId, point: expected[0]!.point });
+            expect(sketch.selectedId).toBeNull();
+            sketch.onSelect(sketch.flags[0]!.id);
+            expect(nodes(view.render(), 'article')[0]!.props['data-selected']).toBe(true);
+            sketch.onSelect('p02');
+            press(view.render(), 'Review flag 1');
+            expect(nodes(view.render(), RoomReviewSketch)[0]!.props.selectedId).toBe(sketch.flags[0]!.id);
+            // Switching rooms immediately removes the retained owner's sketch.
+            press(view.render(), 'Choose another room');
+            expect(nodes(view.render(), RoomReviewSketch)).toHaveLength(0);
+        }
+        view.unmount();
+    });
+    it.each([false, true])('shows the saved geometry immediately after native capture, including model failure %s', async modelFails => {
+        allowThumbnails(); runtime.availability.mockResolvedValue({ arkit: true });
+        const store = runtime.stores.get('reset-1:elder-margaret')!, source = await fixture();
+        runtime.native.mockImplementation(async () => { await store.writeCapture(source.manifest, source.photos, false); return { status: 'completed' }; });
+        if (!modelFails) runtime.analyze.mockImplementation(async () => saveFlags(store, source.manifest));
+        const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await ready(view);
+        press(view.render(), 'Capture a 360° room tour');
+        await vi.waitFor(() => expect(nodes(view.render(), RoomReviewSketch)).toHaveLength(1));
+        expect(nodes(view.render(), RoomReviewSketch)[0]!.props.flags).toHaveLength(modelFails ? 0 : 1);
+        if (modelFails) expect(renderToStaticMarkup(<>{view.render()}</>)).toContain(translate('en', 'c.scan.modelUnavailable'));
+        view.unmount();
+    });
+    it('defaults to 3D, toggles to the plan, and releases preview URLs on replacement and unmount', async () => {
+        const { manifest, photos } = await fixture();
+        let record: StoredCapture = { manifest, photos, flags: null };
+        const create = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:sketch-${create.mock.calls.length}`);
+        const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        const view = driver(() => RoomReviewSketch({ record, flags: [], selectedId: null, onSelect: vi.fn() }));
+        view.render(); let sketch = nodes(view.render(), RoomSketch)[0]!;
+        expect(sketch.props.mode).toBe('3d'); expect((sketch.props.photoUrls as ReadonlyMap<string, string>).size).toBe(2);
+        press(view.render(), 'Floor view'); expect(nodes(view.render(), RoomSketch)[0]!.props.mode).toBe('plan');
+        record = { ...record, photos: new Map(photos) };
+        expect((nodes(view.render(), RoomSketch)[0]!.props.photoUrls as ReadonlyMap<string, string>).size).toBe(0);
+        view.render(); expect(revoke).toHaveBeenCalledTimes(2);
+        view.unmount(); expect(revoke).toHaveBeenCalledTimes(4);
+    });
+});
+
+
+it('invalidates a child AI review immediately when leaving its room, before effect cleanup', async () => {
+    const store = runtime.stores.get('reset-1:elder-margaret')!, { manifest, photos } = await fixture();
+    await store.writeCapture(manifest, photos);
+    const view = driver(() => RoomCapture(props)); press(view.render(), 'Living room'); await ready(view);
+    const review = nodes(view.render(), VisionReviewControl)[0]!;
+    const current = review.props.isCurrent as () => boolean; expect(current()).toBe(true);
+    press(view.render(), 'Choose another room'); expect(current()).toBe(false); view.unmount();
 });

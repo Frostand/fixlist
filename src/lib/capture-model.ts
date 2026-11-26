@@ -39,11 +39,26 @@ function camera(value: unknown, width: number, height: number): value is Capture
 }
 /** Exact, data-only manifest validation. Catalog IDs are checked even for extra photos. */
 export function validateCaptureManifest(value: unknown, catalog: Pick<DemoScenario, 'rooms' | 'checklist'> = demoScenario): CaptureResult<CaptureManifest> {
-  if (!plainRecord(value) || !exactKeys(value, ['format', 'version', 'captureId', 'roomId', 'createdAt', 'mode', 'floorY', 'outline', 'doors', 'photos'])
+  if (!plainRecord(value) || !exactKeys(value, ['format', 'version', 'captureId', 'roomId', 'createdAt', 'mode', 'floorY', 'outline', 'doors', 'photos', ...(Object.hasOwn(value, 'tour') ? ['tour'] : [])])
     || value.format !== 'fixlist-room-capture' || value.version !== 1 || typeof value.captureId !== 'string' || !/^cap-[a-z0-9-]{8,40}$/.test(value.captureId)
     || !catalog.rooms.some((r) => r.id === value.roomId) || !captureDate(value.createdAt) || !['arkit', 'photos'].includes(value.mode as string)
     || !(value.floorY === null || finiteNumber(value.floorY)) || !denseArray(value.doors) || value.doors.length > 8 || !value.doors.every(point)
-    || !denseArray(value.photos) || value.photos.length < 1 || value.photos.length > 40) return captureFail('Invalid room capture fields, room, date or photo count.');
+    || !denseArray(value.photos) || value.photos.length < (Object.hasOwn(value, 'tour') ? 0 : 1) || value.photos.length > 40) return captureFail('Invalid room capture fields, room, date or photo count.');
+  if (Object.hasOwn(value, 'tour')) {
+    const tour = value.tour;
+    if (!plainRecord(tour) || !exactKeys(tour, ['format', 'version', 'stops']) || tour.format !== 'fixlist-room-tour' || tour.version !== 1
+      || !denseArray(tour.stops) || tour.stops.length < 1 || tour.stops.length > 6) return captureFail('Invalid room tour.');
+    const stops = new Set<string>();
+    for (const stop of tour.stops) {
+      if (!plainRecord(stop) || !exactKeys(stop, ['stopId', 'position', 'panorama', 'capturedAt'])
+        || typeof stop.stopId !== 'string' || !/^s[0-9]{1,2}$/.test(stop.stopId) || stops.has(stop.stopId)
+        || !denseArray(stop.position) || stop.position.length !== 3 || !stop.position.every(finiteNumber) || !captureDate(stop.capturedAt)
+        || !plainRecord(stop.panorama) || !exactKeys(stop.panorama, ['fileId', 'width', 'height', 'sha256', 'coverage'])
+        || stop.panorama.fileId !== `pano-${stop.stopId}` || stop.panorama.width !== 4096 || stop.panorama.height !== 2048
+        || !sha256String(stop.panorama.sha256) || !unitProbability(stop.panorama.coverage)) return captureFail('Invalid tour stop, panorama or hash.');
+      stops.add(stop.stopId);
+    }
+  }
   const outline = value.outline;
   if (outline !== null && (!plainRecord(outline) || !exactKeys(outline, ['closed', 'points']) || typeof outline.closed !== 'boolean'
     || !denseArray(outline.points) || outline.points.length < 3 || outline.points.length > 32 || !outline.points.every(point)
@@ -85,6 +100,7 @@ export function validateNativeCaptureResult(value: unknown): CaptureResult<Nativ
   const sidecar = Object.hasOwn(value, 'videos') ? validateCaptureVideos(videos, { ...parsed.value, roomId: manifest.roomId as string }) : null;
   if (sidecar && !sidecar.ok) return sidecar;
   const names = new Map(parsed.value.photos.map((p) => [p.photoId, `${p.photoId}.jpg`]));
+  for (const stop of parsed.value.tour?.stops ?? []) names.set(stop.panorama.fileId, `${stop.panorama.fileId}.jpg`);
   if (sidecar?.ok) names.set('v01', 'v01.mp4');
   let directory: string | undefined;
   if (!plainRecord(files) || !exactKeys(files, [...names.keys()]) || ![...names].every(([id, filename]) => {
@@ -108,7 +124,7 @@ export async function sha256Bytes(bytes: Uint8Array<ArrayBuffer> | ArrayBuffer):
 }
 export async function sha256Blob(blob: Blob): Promise<string> { return sha256Bytes(await blob.arrayBuffer()); }
 /** Header/scan structure and dimensions, without browser decoding or trusting a MIME label. */
-export function jpegDimensions(b: Uint8Array): { width: number; height: number } | null {
+export function jpegDimensions(b: Uint8Array, maxDimension = 1600): { width: number; height: number } | null {
   if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8 || b[b.length - 2] !== 0xff || b[b.length - 1] !== 0xd9) return null;
   const word = (i: number) => b[i]! * 256 + b[i + 1]!;
   let dimensions: { width: number; height: number } | null = null;
@@ -120,7 +136,7 @@ export function jpegDimensions(b: Uint8Array): { width: number; height: number }
     if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker!)) {
       if (length < 8 || dimensions) return null;
       const height = word(at + 3), width = word(at + 5);
-      if (width < 1 || height < 1 || width > 1600 || height > 1600) return null;
+      if (width < 1 || height < 1 || width > maxDimension || height > maxDimension) return null;
       dimensions = { width, height };
     }
     if (marker === 0xda) return length >= 6 && at + length < b.length - 2 ? dimensions : null;

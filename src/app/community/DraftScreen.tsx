@@ -4,25 +4,32 @@ import { assistant } from '../../lib/assistant';
 import { useT } from '../../i18n';
 import type { Draft } from './Elder';
 import { DraftEditor, JobCard } from './JobCard';
+import { RequestPhotoEditor } from './RequestPhotos';
 import { Button, Heading } from './UI';
-export function DraftScreen({ draft, onChange, onPost, embedded = false, isCurrent = () => true }: {
+export function DraftScreen({ draft, onChange, onPost, embedded = false, postingDisabled = false, initialEditing = false, onPhotosChange, isCurrent = () => true }: {
     draft: Draft;
     isCurrent?(): boolean;
     embedded?: boolean;
+    postingDisabled?: boolean;
+    initialEditing?: boolean;
     onChange(d: Draft): void;
+    onPhotosChange?(photos: readonly string[]): void;
     onPost(slots: readonly AvailabilitySlot[], analysis: JobAnalysis): boolean;
 }) {
     const t = useT(), previewHeading = useRef<HTMLHeadingElement>(null);
     useEffect(() => { if (embedded) previewHeading.current?.focus(); }, [embedded]);
-    const [editing, setEditing] = useState(false);
+    const [editing, setEditing] = useState(initialEditing);
+    // A parent can open manual editing without remounting the original analysis baseline.
+    useEffect(() => { if (initialEditing) setEditing(true); }, [initialEditing]);
     const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
-    const [posting, setPosting] = useState(false);
+    const [posting, setPosting] = useState(false), [photosBusy, setPhotosBusy] = useState(false);
+    const photosBusyRef = useRef(false);
     const initial = useRef(draft.analysis), alive = useRef(true), postingRef = useRef(false);
     useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
     const authorization = useRef(isCurrent);
     authorization.current = isCurrent;
     async function post() {
-        if (postingRef.current || !alive.current || !authorization.current()) return;
+        if (photosBusyRef.current || postingDisabled || postingRef.current || !alive.current || !authorization.current()) return;
         postingRef.current = true;
         setPosting(true);
         let accepted = false;
@@ -52,7 +59,8 @@ export function DraftScreen({ draft, onChange, onPost, embedded = false, isCurre
         {embedded ? <header className="c-heading"><h2 ref={previewHeading} tabIndex={-1}>{t('c.job.preview')}</h2><p>{t('c.job.previewBody')}</p></header> : <Heading intro={t('c.job.previewBody')}>{t('c.job.preview')}</Heading>}
         {editing ? <DraftEditor disabled={posting} analysis={draft.analysis} slots={slots} onChange={(analysis) => { if (!postingRef.current && alive.current && authorization.current()) onChange({ ...draft, analysis }); }} onSlots={(next) => { if (!postingRef.current && alive.current && authorization.current()) setSlots(next); }}/>
             : <JobCard analysis={draft.analysis} evidence={draft.evidence} slots={slots}/>}
-        <Button disabled={posting || !draft.analysis.title.trim() || !draft.analysis.summary.trim() || !Number.isFinite(draft.analysis.estimatedMinutes) || draft.analysis.estimatedMinutes < 1} onClick={() => void post()}>{t(posting ? 'c.loading' : 'c.job.post')}</Button>
+        <RequestPhotoEditor photos={draft.photos} disabled={posting} isCurrent={() => alive.current && authorization.current()} onBusyChange={busy => { photosBusyRef.current = busy; setPhotosBusy(busy); }} onChange={photos => { if (!postingRef.current && alive.current && authorization.current()) { if (onPhotosChange) onPhotosChange(photos); else onChange({ ...draft, photos }); } }}/>
+        <Button disabled={photosBusy || postingDisabled || posting || !draft.analysis.title.trim() || !draft.analysis.summary.trim() || !Number.isFinite(draft.analysis.estimatedMinutes) || draft.analysis.estimatedMinutes < 1} onClick={() => void post()}>{t(posting ? 'c.loading' : 'c.job.post')}</Button>
         <Button disabled={posting} kind="secondary" onClick={() => { if (!postingRef.current && alive.current && authorization.current()) setEditing(!editing); }}>{t(editing ? 'c.save' : 'c.job.change')}</Button>
     </div>;
 }

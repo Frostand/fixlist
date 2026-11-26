@@ -28,10 +28,10 @@ function confirmActions(actionIds: readonly string[]): DemoState {
 }
 
 describe('expanded synthetic catalog and derivation', () => {
-  it('validates five rooms, eight linked concerns/actions and seven fixed fictional profiles', () => {
+  it('validates five rooms, nine linked concerns/actions and seven fixed fictional profiles', () => {
     expect(validateCatalog(demoScenario)).toEqual({ ok: true });
     expect(demoScenario.rooms.map((room) => room.id)).toEqual(['living-room', 'hallway', 'stairs', 'bedroom', 'bathroom']);
-    for (const items of [demoScenario.concerns, demoScenario.checklist, demoScenario.evidence, demoScenario.referenceActions]) expect(items).toHaveLength(8);
+    for (const items of [demoScenario.concerns, demoScenario.checklist, demoScenario.evidence, demoScenario.referenceActions]) expect(items).toHaveLength(9);
     expect(demoScenario.profiles.map((profile) => profile.id)).toEqual(['unknown-profile', 'maple-owner', 'maple-renter', 'incomplete-maple', 'outside-area', 'over-income', 'boundary-maple']);
     expect(demoScenario.factDefinitions.map((definition) => definition.id)).toEqual(['ageYears', 'annualIncomeUsd', 'area', 'homeowner', 'resident']);
     expect(demoScenario.programs.map((program) => program.id)).toEqual(['fictional-maple-support', 'fictional-maple-lighting']);
@@ -57,12 +57,12 @@ describe('expanded synthetic catalog and derivation', () => {
     expect(computePlan(demoScenario, state)).toEqual([]);
   });
 
-  it('preserves authored order across all eight actions independently of confirmation order', () => {
+  it('preserves authored order across all nine actions independently of confirmation order', () => {
     const ids = demoScenario.referenceActions.map((action) => action.id);
     const state = confirmActions([...ids].reverse());
     const plan = computePlan(demoScenario, state);
     expect(plan.map((item) => item.referenceActionId)).toEqual(ids);
-    expect(plan.map((item) => item.catalogPosition)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(plan.map((item) => item.catalogPosition)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(plan.every((item) => item.orderExplanation.includes('not a validated risk score'))).toBe(true);
   });
 
@@ -83,34 +83,34 @@ describe('expanded synthetic catalog and derivation', () => {
 });
 
 describe('coverage measures answers only', () => {
-  it('starts with eight unknown questions distributed across five rooms and no safety claim', () => {
+  it('starts with nine unknown questions distributed across five rooms and no safety claim', () => {
     const coverage = computeCoverage(demoScenario, createInitialState(demoScenario));
-    expect(coverage).toMatchObject({ total: 8, answered: 0, unknown: 8, yes: 0, no: 0 });
-    expect(coverage.rooms.map((room) => [room.roomId, room.total, room.unknown])).toEqual([['living-room', 1, 1], ['hallway', 1, 1], ['stairs', 3, 3], ['bedroom', 1, 1], ['bathroom', 2, 2]]);
+    expect(coverage).toMatchObject({ total: 9, answered: 0, unknown: 9, yes: 0, no: 0 });
+    expect(coverage.rooms.map((room) => [room.roomId, room.total, room.unknown])).toEqual([['living-room', 2, 2], ['hallway', 1, 1], ['stairs', 3, 3], ['bedroom', 1, 1], ['bathroom', 2, 2]]);
     expect(coverage.disclaimer).toContain('does not establish a complete home assessment or certify safety');
   });
 
   it('counts yes and no as answered without adding a plan action or relying on confirmations', () => {
     let state = command(createInitialState(demoScenario), { type: 'answer_checklist', checklistItemId: 'rug-check', answer: 'yes' });
     state = command(state, { type: 'answer_checklist', checklistItemId: 'stair-clutter-check', answer: 'no' });
-    expect(computeCoverage(demoScenario, state)).toMatchObject({ answered: 2, unknown: 6, yes: 1, no: 1 });
+    expect(computeCoverage(demoScenario, state)).toMatchObject({ answered: 2, unknown: 7, yes: 1, no: 1 });
     expect(computePlan(demoScenario, state)).toEqual([]);
     const before = computeCoverage(demoScenario, state);
     state = command(state, { type: 'confirm_concern', concernId: 'rug-concern', at });
     expect(computeCoverage(demoScenario, state)).toEqual(before);
     state = command(state, { type: 'answer_checklist', checklistItemId: 'rug-check', answer: 'unknown' });
-    expect(computeCoverage(demoScenario, state)).toMatchObject({ answered: 1, unknown: 7, yes: 0, no: 1 });
+    expect(computeCoverage(demoScenario, state)).toMatchObject({ answered: 1, unknown: 8, yes: 0, no: 1 });
   });
 
   it('keeps missing answers unknown and ignores unrelated answers', () => {
     const state = { ...createInitialState(demoScenario), checklistAnswers: { extra: 'yes' as const } };
-    expect(computeCoverage(demoScenario, state)).toMatchObject({ answered: 0, unknown: 8 });
+    expect(computeCoverage(demoScenario, state)).toMatchObject({ answered: 0, unknown: 9 });
   });
 
   it('supports an answered no-only sample with an empty plan and retained assessment limits', () => {
     let state = createInitialState(demoScenario);
     for (const item of demoScenario.checklist) state = command(state, { type: 'answer_checklist', checklistItemId: item.id, answer: 'no' });
-    expect(computeCoverage(demoScenario, state)).toMatchObject({ answered: 8, unknown: 0, no: 8 });
+    expect(computeCoverage(demoScenario, state)).toMatchObject({ answered: 9, unknown: 0, no: 9 });
     expect(computePlan(demoScenario, state)).toEqual([]);
     expect(computeCoverage(demoScenario, state).disclaimer).toContain('does not establish');
   });

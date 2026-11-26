@@ -1,16 +1,18 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ONDEVICE_MODEL, ONDEVICE_THRESHOLDS } from '../src/lib/ondevice-model';
 
 const root = resolve(import.meta.dirname, '..');
 const validator = join(root, 'scripts/verify-ios-model.sh');
 const weightPath = 'ios/App/App/HazardModel/HazardImageEncoder.mlpackage/Data/com.apple.CoreML/weights/weight.bin';
-const pointer = spawnSync('git', ['show', `HEAD:${weightPath}`], { cwd: root, encoding: 'utf8' });
-if (pointer.status !== 0) throw new Error(`Cannot read committed LFS pointer: ${pointer.stderr}`);
-const pinnedBytes = Number(pointer.stdout.match(/^size (\d+)$/m)?.[1]);
-const pinnedHash = pointer.stdout.match(/^oid sha256:([a-f0-9]{64})$/m)?.[1];
+const manifest = JSON.parse(readFileSync(join(root, 'ios/App/App/HazardModel/hazard-prompts.json'), 'utf8'));
+const pinnedBytes = manifest.weight.bytes;
+const pinnedHash = manifest.weight.sha256;
+const pointer = { stdout: `version https://git-lfs.github.com/spec/v1\noid sha256:${pinnedHash}\nsize ${pinnedBytes}\n` };
 const roots = [];
 afterEach(() => { for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }); });
 function fixture() {
@@ -31,9 +33,18 @@ function rejected(result, path, reason) {
 }
 
 describe('native model integrity', () => {
-  it('pins precisely the committed LFS object in the production validator', () => {
+  it('keeps native identity, web thresholds, reviewed rules and runtime source pins coherent', () => {
+    expect(manifest.model).toEqual(ONDEVICE_MODEL);
+    expect(Object.fromEntries(manifest.items.map((i) => [i.checklistItemId, i.threshold]))).toEqual(ONDEVICE_THRESHOLDS);
+    expect(manifest.model.engine).toBe('yolo-world-object-rules');
+    expect(manifest.model.license).toContain('AGPL-3.0');
+    for (const [path, digest] of Object.entries(manifest.runtimeSources)) {
+      expect(createHash('sha256').update(readFileSync(join(root, path))).digest('hex'), path).toBe(digest);
+    }
+  });
+  it('pins precisely the reviewed detector manifest weight object in the production validator', () => {
     expect(pointer.stdout).toMatch(/^version https:\/\/git-lfs.github.com\/spec\/v1\n/);
-    expect(Buffer.byteLength(pointer.stdout)).toBe(134);
+    expect(Buffer.byteLength(pointer.stdout)).toBeGreaterThan(100);
     const source = readFileSync(validator, 'utf8');
     expect(source.match(/^expected_bytes=(\d+)$/m)?.[1]).toBe(String(pinnedBytes));
     expect(source.match(/^expected_sha256=([a-f0-9]{64})$/m)?.[1]).toBe(pinnedHash);

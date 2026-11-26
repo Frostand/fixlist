@@ -1416,5 +1416,16 @@
   "capture.video.title": "房间视频",
   "capture.video.privacy": "视频只保存在这部手机上。AI 检查只使用照片。导出的采集内容只包含照片。",
   "capture.video.playbackFailed": "无法播放此视频。请尝试重新打开该房间。",
-  "c.volunteer.helped": "{name} 已帮忙"
+  "c.volunteer.helped": "{name} 已帮忙",
+  "c.messages.unread": "新消息：{count}",
+  "c.photos.title": "照片",
+  "c.photos.add": "添加照片",
+  "c.photos.hint": "最多添加3张照片来展示问题。照片中的位置数据将被移除。",
+  "c.photos.count": "已添加 {count} 张，最多3张",
+  "c.photos.alt": "请求照片 {number}",
+  "c.photos.remove": "移除",
+  "c.photos.removeLabel": "移除照片 {number}",
+  "c.photos.preparing": "正在处理照片…",
+  "c.photos.limit": "最多可添加3张照片。请先移除一张再添加。",
+  "c.photos.error": "无法打开这张照片。请尝试另一张照片。"
 }

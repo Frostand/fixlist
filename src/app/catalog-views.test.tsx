@@ -31,9 +31,9 @@ describe('screen and printable catalog content', () => {
     const checklist = renderToStaticMarkup(<ChecklistSection scenario={demoScenario} state={state} onCommand={noop} />);
     const plan = renderToStaticMarkup(<PlanSection scenario={demoScenario} state={state} onCommand={noop} />);
     const assistance = renderToStaticMarkup(<AssistanceSection scenario={demoScenario} state={state} onCommand={noop} />);
-    expect(checklist).toContain('0 of 8 answered');
+    expect(checklist).toContain('0 of 9 answered');
     expect(checklist).toContain('Stairs: 0 of 3 answered');
-    expect(plan).toContain('0 of 8 answered');
+    expect(plan).toContain('0 of 9 answered');
     expect(plan).toContain('An empty fix list does not certify safety');
     expect(assistance.match(/<select/g)).toHaveLength(1);
     expect(assistance).toContain('id="fictional-profile"');
@@ -47,7 +47,7 @@ describe('screen and printable catalog content', () => {
   it('prints selected facts, every action context, nested conditions, relevance and references', () => {
     const state = command(confirmedState(), { type: 'select_profile', profileId: 'boundary-maple' });
     const html = renderToStaticMarkup(<PrintReport scenario={demoScenario} snapshot={{ state, generatedAt: at, scanPins: [] }} />);
-    expect(html).toContain('8 of 8 answered');
+    expect(html).toContain('9 of 9 answered');
     expect(html).toContain('Fictional: exact age and income boundaries');
     expect(html).toContain('65 years');
     expect(html).toContain('$30,000 a year');
@@ -55,7 +55,7 @@ describe('screen and printable catalog content', () => {
       expect(html).toContain(action.title);
       expect(html).toContain(action.guidance.section);
     }
-    expect(html.match(/Cost estimate: Unknown/g)).toHaveLength(8);
+    expect(html.match(/Cost estimate: Unknown/g)).toHaveLength(9);
     expect(html).toContain('Professional review');
     expect(html).toContain('Family review');
     expect(html).toContain('reference material; it does not validate');

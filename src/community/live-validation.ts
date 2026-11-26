@@ -1,3 +1,4 @@
+import { requestPhotos } from './request-photos';
 import { isLanguage } from '../domain/roles';
 import { analysis, finite, list, oneOf, shape, text, unique } from './validation';
 import { SKILLS, TASK_CATEGORIES } from './types';
@@ -14,9 +15,9 @@ function safeStrings(v: unknown): boolean {
   return true;
 }
 export function postInput(v: unknown): v is PostLiveRequest {
-  return shape(v,['requestId','source','originalText','analysis','address']) && uuid(v.requestId)
+  return shape(v,['requestId','source','originalText','analysis','address'],['photos']) && uuid(v.requestId)
     && oneOf(v.source,['voice','typed','scan','quick-pick']) && liveText(v.originalText,4000) && liveText(v.address,500)
-    && analysis(v.analysis) && safeStrings(v.analysis);
+    && analysis(v.analysis) && safeStrings(v.analysis) && (v.photos === undefined || requestPhotos(v.photos));
 }
 export const status = (v: unknown): v is LiveJob['status'] => oneOf(v,['open','accepted','on-the-way','arrived','reported-done','completed','cancelled']);
 const titles = { repair:'Repair help', safety:'Safety installation help', yard:'Yard help', household:'Household help', errand:'Errand help', tech:'Technology help', companionship:'Companionship', moving:'Moving help' };
@@ -39,10 +40,10 @@ export function access(v: unknown): v is LiveAccess {
       && text(v.community.label,100) && text(v.community.coarseArea,100) : v.community===null);
 }
 export function details(v: unknown): v is LiveJobDetails {
-  if (!shape(v,['job','source','originalText','analysis','address','elderName','volunteerName','events','rating']) || !liveJob(v.job)) return false;
+  if (!shape(v,['job','source','originalText','analysis','address','elderName','volunteerName','events','rating'],['photos']) || !liveJob(v.job)) return false;
   const job=v.job;
   return oneOf(v.source,['voice','typed','scan','quick-pick']) && liveText(v.originalText,4000) && analysis(v.analysis) && safeStrings(v.analysis)
-    && v.analysis.peopleNeeded===1 && v.analysis.category===v.job.category && liveText(v.address,500)
+    && (v.photos === undefined || requestPhotos(v.photos)) && v.analysis.peopleNeeded===1 && v.analysis.category===v.job.category && liveText(v.address,500)
     && text(v.elderName,80) && (v.job.volunteerId===null ? v.volunteerName===null : text(v.volunteerName,80))
     && list(v.events,(e): e is LiveJobDetails['events'][number] => shape(e,['id','actorId','type','at']) && cursor(e.id)
       && (e.actorId===job.elderId || e.actorId===job.volunteerId)

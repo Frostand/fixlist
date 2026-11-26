@@ -1,11 +1,11 @@
-import { CAPTURE_FLAG_EXCLUDED, type CaptureCamera, type CaptureManifest, type CaptureOutline, type CapturePhoto, type PixelPoint, type SketchFlag, type Vec2 } from './capture-types';
+import { type CaptureCamera, type CaptureManifest, type CaptureOutline, type CapturePhoto, type PixelPoint, type SketchFlag, type Vec2 } from './capture-types';
 
 export type Vec3 = readonly [number, number, number];
 export interface RoomRay { origin: Vec3; direction: Vec3 }
 export interface RoomHit { position: Vec3; distance: number; surface: 'floor' | 'wall'; wallIndex: number | null }
 export interface DoorGap { start: number; end: number }
 export interface RoomWall { index: number; start: Vec2; end: Vec2; length: number; gaps: readonly DoorGap[] }
-export interface RoomGeometry { points: readonly Vec2[]; floorY: number; walls: readonly RoomWall[] }
+export interface RoomGeometry { points: readonly Vec2[]; floorY: number; walls: readonly RoomWall[]; /** Display bounds only, never inferred room walls. */ floorOnly?: true }
 
 /** Drawing assumptions only. Neither the wall height nor door width is a measurement. */
 export const ROOM_WALL_HEIGHT = 2.4;
@@ -129,6 +129,51 @@ export function usablePhotoCamera(photo: CapturePhoto, requireNormal = false): C
   return Math.abs(det - 1) <= 1e-3 ? c : null;
 }
 
+/** Keep the plan, 3D scene and fallback bounds on the same set of usable poses. */
+export function usableRoomPhotoCamera(photo: CapturePhoto, floorY: number): CaptureCamera | null {
+  const camera = usablePhotoCamera(photo);
+  return camera && Math.abs(camera.transform[12]!) <= 50 && Math.abs(camera.transform[14]!) <= 50
+    && Math.abs(camera.transform[13]! - floorY) <= 50 ? camera : null;
+}
+
+function intersectFloorRay(floorY: number, ray: RoomRay): RoomHit | null {
+  if (!finite3(ray.origin) || !finite3(ray.direction) || ray.origin[1] < floorY - EPS) return null;
+  const length = Math.hypot(...ray.direction);
+  if (!Number.isFinite(length) || length < EPS || ray.direction[1] >= -EPS) return null;
+  const distance = (floorY - ray.origin[1]) / (ray.direction[1] / length);
+  if (distance < ROOM_MIN_HIT_DISTANCE || distance > ROOM_MAX_HIT_DISTANCE) return null;
+  const position: Vec3 = [ray.origin[0] + ray.direction[0] / length * distance, floorY, ray.origin[2] + ray.direction[2] / length * distance];
+  return finite2([position[0], position[2]]) ? { position, distance, surface: 'floor', wallIndex: null } : null;
+}
+
+/** A closed outline supplies walls; otherwise draw only a floor patch around saved AR poses. */
+export function buildRoomSketchGeometry(capture: CaptureManifest, flags: readonly SketchFlag[] = []): RoomGeometry | null {
+  const room = buildRoomGeometry(capture);
+  if (room) return room;
+  if (capture.mode !== 'arkit' || capture.floorY === null || !Number.isFinite(capture.floorY)) return null;
+  const floorY = capture.floorY, positions: Vec2[] = [];
+  for (const stop of capture.tour?.stops ?? []) {
+    if (stop.position.every(Number.isFinite)) positions.push([stop.position[0], stop.position[2]]);
+  }
+  for (const photo of capture.photos) {
+    const camera = usableRoomPhotoCamera(photo, floorY);
+    if (!camera) continue;
+    const m = camera.transform;
+    positions.push([m[12]!, m[14]!], [m[12]! - m[8]! * 1.5, m[14]! - m[10]! * 1.5]);
+  }
+  if (!positions.length) return null;
+  // Include placeable review points in framing, without treating patch edges as walls.
+  for (const flag of flags) {
+    const photo = capture.photos.find((p) => p.photoId === flag.photoId);
+    const ray = photo && usableRoomPhotoCamera(photo, floorY) && flag.point ? pixelToWorldRay(photo, flag.point) : null;
+    const hit = ray ? intersectFloorRay(floorY, ray) : null;
+    if (hit) positions.push([hit.position[0], hit.position[2]]);
+  }
+  const xs = positions.map((p) => p[0]), zs = positions.map((p) => p[1]);
+  const minX = Math.min(...xs) - 1, maxX = Math.max(...xs) + 1, minZ = Math.min(...zs) - 1, maxZ = Math.max(...zs) + 1;
+  return { points: [[minX, minZ], [maxX, minZ], [maxX, maxZ], [minX, maxZ]], floorY, walls: [], floorOnly: true };
+}
+
 export function pixelToWorldRay(photo: CapturePhoto, point: PixelPoint): RoomRay | null {
   const camera = usablePhotoCamera(photo, true);
   if (!camera || !Number.isFinite(point.u) || !Number.isFinite(point.v) || point.u < 0 || point.u >= photo.width || point.v < 0 || point.v >= photo.height) return null;
@@ -153,6 +198,7 @@ export function worldToPixel(photo: CapturePhoto, point: Vec3): PixelPoint | nul
 }
 
 export function intersectRoomRay(room: RoomGeometry, ray: RoomRay): RoomHit | null {
+  if (room.floorOnly) return intersectFloorRay(room.floorY, ray);
   if (!finite3(ray.origin) || !finite3(ray.direction) || !pointInRoom([ray.origin[0], ray.origin[2]], room.points) || ray.origin[1] < room.floorY - EPS) return null;
   const length = Math.hypot(...ray.direction);
   if (!Number.isFinite(length) || length < EPS) return null;
@@ -182,10 +228,10 @@ export function intersectRoomRay(room: RoomGeometry, ray: RoomRay): RoomHit | nu
   return pointInRoom([position[0], position[2]], room.points) ? { position, distance, surface: 'floor', wallIndex: null } : null;
 }
 
-export function placeSketchFlag(capture: CaptureManifest, flag: SketchFlag, room = buildRoomGeometry(capture)): RoomHit | null {
-  if (!room || !flag.point || CAPTURE_FLAG_EXCLUDED.has(flag.checklistItemId)) return null;
+export function placeSketchFlag(capture: CaptureManifest, flag: SketchFlag, room = buildRoomSketchGeometry(capture, [flag])): RoomHit | null {
+  if (!room || !flag.point) return null;
   const photo = capture.photos.find((p) => p.photoId === flag.photoId);
-  const ray = photo ? pixelToWorldRay(photo, flag.point) : null;
+  const ray = photo && usableRoomPhotoCamera(photo, room.floorY) ? pixelToWorldRay(photo, flag.point) : null;
   return ray ? intersectRoomRay(room, ray) : null;
 }
 

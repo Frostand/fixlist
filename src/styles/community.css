@@ -83,6 +83,8 @@ html[data-community] body { background: #FAF7F2; }
 .community .c-provider-apple:active:not(:disabled) { background: #222; }
 .community .c-auth-mark { color: var(--green); margin-block: 1.3em; }
 .community .c-auth-mark svg { inline-size: 3em; block-size: 3em; }
+.community .c-brand-mark { inline-size: 1.5em; block-size: 1.5em; flex: none; object-fit: contain; }
+.community .c-auth-mark .c-brand-mark { inline-size: 4.5em; block-size: 4.5em; }
 .community .c-account-group { margin-block: 1em 1.5em; }
 .community .c-account { inline-size: 100%; display: flex; gap: .65em; text-align: start; justify-content: flex-start; padding: .8em 0; background: transparent; border: 0; border-block-end: 1px solid var(--line); border-radius: 0; }
 .community .c-account > span:nth-child(2) { flex: 1; min-inline-size: 0; }
@@ -274,3 +276,24 @@ html[dir=rtl] .community .c-directional { transform: scaleX(-1); }
 .c-family-history { padding-inline-start: 1.4rem; }
 .c-family-history li { padding-block: .5rem; }
 .c-family-history time { display: block; font-size: .9em; }
+
+/* Hide the bottom tabs while typing so the keyboard never pushes them over the text box. */
+body:has(textarea:focus, input[type="text"]:focus, input:not([type]):focus) .c-tabs { display: none !important; }
+
+/* New-message count on Message buttons. */
+.community .c-unread { display: inline-grid; place-items: center; min-inline-size: 1.5em; block-size: 1.5em; padding-inline: .35em; margin-inline-start: .45em; border-radius: 999px; background: var(--clay); color: #fff; font-size: .8em; font-weight: 700; line-height: 1; }
+
+/* Request attachments use the existing large controls and keep full images visible. */
+.community .c-request-photos { min-inline-size: 0; }
+.community .c-photo-list { display: flex; flex-wrap: wrap; gap: 1rem; }
+.community .c-photo-list > img, .community .c-photo-list > figure { flex: 1 1 12rem; min-inline-size: 0; max-inline-size: 100%; margin: 0; }
+.community .c-photo-list img { display: block; inline-size: 100%; max-block-size: 22rem; object-fit: contain; border-radius: 14px; background: var(--paper); }
+.community .c-photo-list figure .c-button { margin-block-start: .5rem; }
+/* Video build only (not the submitted app). */
+/* Hide the local-demo banner and give the page its normal safe-area padding back. */
+.c-submission-banner, .fl-auth-demo-banner { display: none !important; }
+.c-submission-banner + .community { padding-block-start: env(safe-area-inset-top); }
+/* Opaque backdrop behind the iOS status bar so scrolled content never sits under the clock. */
+body::before { content: ''; position: fixed; inset: 0 0 auto 0; block-size: env(safe-area-inset-top); background: #FAF7F2; z-index: 2147483000; pointer-events: none; animation: fl-video-tick .1s steps(2) infinite alternate; }
+/* An imperceptible color flicker keeps the Simulator recorder emitting frames continuously. */
+@keyframes fl-video-tick { from { background-color: #FAF7F2; } to { background-color: #FAF7F3; } }

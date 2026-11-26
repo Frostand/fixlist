@@ -15,9 +15,9 @@ function fixture() {
 }
 function mutateManifest(root, change) { const path = join(root, 'public/voice/en/manifest.json'), manifest = JSON.parse(readFileSync(path)); change(manifest); writeFileSync(path, JSON.stringify(manifest)); }
 describe('committed English whole-utterance prompt pack', () => {
-  it('matches all 30 source-derived exact texts, pins, PCM metrics and native resource identities', async () => {
-    const result = await verifyVoicePack(); expect(result.clips).toBe(30); expect(result.totalBytes).toBeLessThanOrEqual(10 * 1024 * 1024); expect(result.longestSeconds).toBeLessThan(15);
-    const inventory = await promptInventory(); expect(new Set(inventory.map(clip => clip.text)).size).toBe(30);
+  it('matches all 37 source-derived exact texts, pins, PCM metrics and native resource identities', async () => {
+    const result = await verifyVoicePack(); expect(result.clips).toBe(37); expect(result.totalBytes).toBeLessThanOrEqual(10 * 1024 * 1024); expect(result.longestSeconds).toBeLessThan(15);
+    const inventory = await promptInventory(); expect(new Set(inventory.map(clip => clip.text)).size).toBe(37);
     expect(inventory.find(clip => clip.id === 'unsupported-task')?.text).toBe("I didn't understand that detail. What would you like help with at home?");
   });
   it('rejects stale authored English even after an earlier verification in the same process', async () => {

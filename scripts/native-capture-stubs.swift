@@ -36,7 +36,7 @@ final class FakeSession {
 }
 struct FakeARView { let session = FakeSession() }
 final class CaptureStateHarness {
-    enum Step { case floor, outline, photos }
+    enum Step { case floor, outline, tour, photos }
     var step = Step.outline
     var finished = false
     var worldGeneration = 2
@@ -57,6 +57,10 @@ final class CaptureStateHarness {
     var resetNotice = false
     var presentedViewController: UIAlertController?
     let arView = FakeARView()
+    var tourStops: [CaptureTourStop] = []
+    var tourBusy = false
+    var tourInvalidations = 0
+    func invalidateTourWorld() { tourInvalidations += 1; tourStops.removeAll(); tourBusy = false }
     var discardedVideoAttempts = 0
     func discardActiveVideo(showInterrupted: Bool) { discardedVideoAttempts += 1 }
     func configuration() -> String { "horizontal-gravity" }

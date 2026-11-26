@@ -1,14 +1,14 @@
 import Foundation
 import CoreML
+import Vision
 import CoreGraphics
-import CoreVideo
 import ImageIO
 #if canImport(Capacitor)
 import Capacitor
 #endif
 
-// Independent of AR capture. These are relevance scores and approximate photo
-// spots, never a condition classifier, checklist answer or home assessment.
+// Independent of AR capture or LiDAR. A detected object is a possible review
+// concern, never a hazard finding, checklist answer, or home safety assessment.
 private enum HazardError: Error { case invalidInput, missingResources, invalidModel, invalidImage }
 
 private struct HazardIdentity: Codable {
@@ -27,199 +27,201 @@ private struct HazardModelInfo: Codable {
          "identity": ["version": identity.version, "weightsSHA256": identity.weightsSHA256, "runtimeSHA256": identity.runtimeSHA256]]
     }
 }
-private struct HazardPromptItem: Codable {
-    let checklistItemId: String
-    let positiveIndices: [Int]
-    let threshold: Double
+private struct HazardRuleItem: Codable { let checklistItemId: String; let threshold: Double }
+private struct HazardGeometry: Codable {
+    let minimumArea: Double
+    let rugMinCenterY: Double
+    let rugMinBottomY: Double
+    let cordMinCenterY: Double
+    let cordMinBottomY: Double
+    let cordMinWidth: Double
+    let cordMinAspect: Double
+    let stairObjectOverlap: Double
+    let bathCompanionConfidence: Double
+    let floorClutterMinBottomY: Double
+    let furnitureMinConfidence: Double
+    let furnitureObjectOverlap: Double
 }
-private struct HazardPrompts: Codable {
+private struct HazardConfig: Codable {
     let version: Int
     let model: HazardModelInfo
-    let inputName: String
-    let outputName: String
     let imageSize: Int
-    let interpolation: String
-    let cropFraction: Double
-    let logitScale: Double
-    let neutralIndices: [Int]
-    let textEmbeddings: [[Double]]
-    let items: [HazardPromptItem]
+    let classes: [String]
+    let classThresholds: [String: Double]
+    let floorClutterThresholds: [String: Double]
+    let items: [HazardRuleItem]
+    let geometry: HazardGeometry
 }
 
-/// RGB byte resampling matches Pillow's separable antialiased BILINEAR/BICUBIC
-/// kernels and 22-bit coefficient rounding; torchvision shortest-edge sizing
-/// and centre-crop use truncation and ties-to-even respectively.
-private struct HazardRGB {
-    let width: Int
-    let height: Int
-    let bytes: [UInt8]
+private struct HazardDetection {
+    let label: String
+    let confidence: Double
+    // Normalized top-left coordinates, after clipping to the saved JPEG.
+    let box: CGRect
 
-    init(jpeg: Data) throws {
-        guard let source = CGImageSourceCreateWithData(jpeg as CFData, nil),
-              CGImageSourceGetType(source) as String? == "public.jpeg",
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let w = properties[kCGImagePropertyPixelWidth] as? Int,
-              let h = properties[kCGImagePropertyPixelHeight] as? Int,
-              (1...1600).contains(w), (1...1600).contains(h),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw HazardError.invalidImage }
-        var rgba = [UInt8](repeating: 0, count: w * h * 4)
-        let ok = rgba.withUnsafeMutableBytes { pointer -> Bool in
-            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-                  let context = CGContext(data: pointer.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                    space: space, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-            return true
-        }
-        guard ok else { throw HazardError.invalidImage }
-        var rgb = [UInt8](repeating: 0, count: w * h * 3)
-        for i in 0..<(w * h) { for c in 0..<3 { rgb[i * 3 + c] = rgba[i * 4 + c] } }
-        width = w; height = h; bytes = rgb
+    init?(label: String, confidence: Double, box: CGRect) {
+        guard confidence.isFinite, confidence > 0, confidence <= 1,
+              [box.minX, box.minY, box.width, box.height].allSatisfy({ $0.isFinite }),
+              box.width > 0, box.height > 0 else { return nil }
+        let clipped = box.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return nil }
+        self.label = label; self.confidence = confidence; self.box = clipped
     }
 
-    init(width: Int, height: Int, bytes: [UInt8]) { self.width = width; self.height = height; self.bytes = bytes }
+    var dictionary: [String: Any] {
+        ["class": label, "confidence": confidence,
+         "box": [Double(box.midX), Double(box.midY), Double(box.width), Double(box.height)]]
+    }
+}
 
-    private static func coefficients(_ input: Int, _ output: Int, _ interpolation: String) -> [(Int, [Int64])] {
-        let scale = Double(input) / Double(output), filterScale = max(1, scale)
-        let support = (interpolation == "bilinear" ? 1.0 : 2.0) * filterScale
-        return (0..<output).map { i in
-            let centre = (Double(i) + 0.5) * scale
-            let start = max(0, Int(centre - support + 0.5)), end = min(input, Int(centre + support + 0.5))
-            var weights: [Double] = []
-            for j in start..<end {
-                let x = abs((Double(j) - centre + 0.5) / filterScale)
-                let weight: Double
-                if interpolation == "bilinear" { weight = max(0, 1 - x) }
-                else if x < 1 { weight = ((1.5 * x - 2.5) * x) * x + 1 }
-                else if x < 2 { weight = ((-0.5 * x + 2.5) * x - 4) * x + 2 }
-                else { weight = 0 }
-                weights.append(weight)
+/// Rules only propose visible objects. Lower-frame geometry is a heuristic,
+/// not floor segmentation, depth, a walking-route estimate, or proof of risk.
+private struct HazardRules {
+    let config: HazardConfig
+    func analyze(_ detections: [HazardDetection], width: Int, height: Int) -> [String: Any] {
+        let g = config.geometry
+        var results: [String: Any] = [:]
+        var best: [String: Double] = [:]
+        for item in config.items {
+            results[item.checklistItemId] = ["relevance": 0.0, "point": NSNull()] as [String: Any]
+        }
+        func passes(_ d: HazardDetection) -> Bool {
+            d.confidence >= (config.classThresholds[d.label] ?? 1)
+        }
+        func record(_ id: String, _ d: HazardDetection) {
+            // The v1 bridge keeps its legacy relevance field. It now carries
+            // detector confidence; it is not a calibrated hazard probability.
+            let score = min(1 - 1e-12, d.confidence)
+            guard let threshold = config.items.first(where: { $0.checklistItemId == id })?.threshold,
+                  score >= threshold, score > (best[id] ?? 0) else { return }
+            best[id] = score
+            results[id] = ["relevance": score,
+                           "point": ["u": Double(d.box.midX) * Double(width),
+                                     "v": Double(d.box.midY) * Double(height)]] as [String: Any]
+        }
+        let ds = detections.filter { Double($0.box.width * $0.box.height) >= g.minimumArea }
+        let rugs: Set<String> = ["rug", "floor mat", "runner rug"]
+        let cords: Set<String> = ["electrical cord", "extension cord", "power strip"]
+        let clutter: Set<String> = ["shoe", "bag", "cardboard box", "clothes", "toy", "book"]
+        let furniture: Set<String> = ["table", "desk", "sofa", "chair", "bed", "cabinet", "kitchen counter", "kitchen island"]
+        let supports = ds.filter { furniture.contains($0.label) && $0.confidence >= g.furnitureMinConfidence }
+        for d in ds where passes(d) {
+            if rugs.contains(d.label), Double(d.box.midY) >= g.rugMinCenterY, Double(d.box.maxY) >= g.rugMinBottomY {
+                record("rug-check", d)
             }
-            let total = weights.reduce(0, +)
-            return (start, weights.map { weight in
-                let value = weight / total * Double(1 << 22)
-                return Int64(value < 0 ? value - 0.5 : value + 0.5)
-            })
+            let aspect = Double(d.box.width) * Double(width) / (Double(d.box.height) * Double(height))
+            if cords.contains(d.label), Double(d.box.midY) >= g.cordMinCenterY,
+               Double(d.box.maxY) >= g.cordMinBottomY, Double(d.box.width) >= g.cordMinWidth, aspect >= g.cordMinAspect {
+                record("cord-check", d)
+            }
+            if clutter.contains(d.label) {
+                if d.confidence >= (config.floorClutterThresholds[d.label] ?? 1), Double(d.box.maxY) >= g.floorClutterMinBottomY {
+                    let onFurniture = supports.contains { support in
+                        // Keep objects extending to/below the furniture bottom:
+                        // a floor object can project inside a table's full box.
+                        guard d.box.maxY < support.box.maxY else { return false }
+                        let overlap = d.box.intersection(support.box)
+                        return !overlap.isNull && Double(overlap.width * overlap.height / (d.box.width * d.box.height)) >= g.furnitureObjectOverlap
+                    }
+                    if !onFurniture { record("floor-clutter-check", d) }
+                }
+                for stairs in ds where stairs.label == "stairs" && passes(stairs) {
+                    let overlap = d.box.intersection(stairs.box)
+                    if !overlap.isNull, Double(overlap.width * overlap.height / (d.box.width * d.box.height)) >= g.stairObjectOverlap {
+                        record("stair-clutter-check", d)
+                    }
+                }
+            }
         }
-    }
-
-    func prepared(edge: Int, interpolation: String, crop: (Int, Int, Int, Int)? = nil) -> HazardRGB {
-        let (left, top, cw, ch) = crop ?? (0, 0, width, height)
-        let rw = cw <= ch ? edge : Int(Double(edge) * Double(cw) / Double(ch))
-        let rh = ch <= cw ? edge : Int(Double(edge) * Double(ch) / Double(cw))
-        let xs = Self.coefficients(cw, rw, interpolation), ys = Self.coefficients(ch, rh, interpolation)
-        var horizontal = [UInt8](repeating: 0, count: rw * ch * 3)
-        for y in 0..<ch { for x in 0..<rw { for c in 0..<3 {
-            var sum: Int64 = 1 << 21
-            let (start, taps) = xs[x]
-            if cw == rw { horizontal[(y * rw + x) * 3 + c] = bytes[((top + y) * width + left + x) * 3 + c]; continue }
-            for (k, tap) in taps.enumerated() { sum += Int64(bytes[((top + y) * width + left + start + k) * 3 + c]) * tap }
-            horizontal[(y * rw + x) * 3 + c] = UInt8(clamping: sum >> 22)
-        } } }
-        let ox = Int((Double(rw - edge) / 2).rounded(.toNearestOrEven))
-        let oy = Int((Double(rh - edge) / 2).rounded(.toNearestOrEven))
-        var output = [UInt8](repeating: 0, count: edge * edge * 3)
-        for y in 0..<edge { for x in 0..<edge { for c in 0..<3 {
-            var sum: Int64 = 1 << 21
-            if ch == rh { output[(y * edge + x) * 3 + c] = horizontal[((y + oy) * rw + x + ox) * 3 + c]; continue }
-            let (start, taps) = ys[y + oy]
-            for (k, tap) in taps.enumerated() { sum += Int64(horizontal[((start + k) * rw + x + ox) * 3 + c]) * tap }
-            output[(y * edge + x) * 3 + c] = UInt8(clamping: sum >> 22)
-        } } }
-        return HazardRGB(width: edge, height: edge, bytes: output)
-    }
-
-    func pixelBuffer() throws -> CVPixelBuffer {
-        var result: CVPixelBuffer?
-        guard CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, nil, &result) == kCVReturnSuccess,
-              let buffer = result else { throw HazardError.invalidImage }
-        CVPixelBufferLockBaseAddress(buffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-        guard let base = CVPixelBufferGetBaseAddress(buffer) else { throw HazardError.invalidImage }
-        let stride = CVPixelBufferGetBytesPerRow(buffer), pointer = base.assumingMemoryBound(to: UInt8.self)
-        for y in 0..<height { for x in 0..<width {
-            let source = (y * width + x) * 3, target = y * stride + x * 4
-            pointer[target] = bytes[source + 2]; pointer[target + 1] = bytes[source + 1]
-            pointer[target + 2] = bytes[source]; pointer[target + 3] = 255
-        } }
-        return buffer
+        // A low-confidence bar anywhere suppresses this prompt. Failure to
+        // detect a bar is explicitly NOT proof that a bar is absent or needed.
+        if !detections.contains(where: { $0.label == "grab bar" && passes($0) }) {
+            for d in ds where passes(d) {
+                var fixture = d.label == "toilet" || d.label == "shower"
+                if d.label == "bathtub" {
+                    // Tub-only detections confused kitchen islands and stairs
+                    // during development review; require bathroom context.
+                    fixture = ds.contains { ["toilet", "shower"].contains($0.label) && $0.confidence >= g.bathCompanionConfidence }
+                }
+                if fixture { record("bathroom-support-check", d) }
+            }
+        }
+        // Lighting, shower grip and handrail stability
+        // have no supported rule here and remain zero-score abstentions.
+        return results
     }
 }
 
 private final class HazardEngine {
-    let prompts: HazardPrompts
-    let model: MLModel
+    let config: HazardConfig
+    let visionModel: VNCoreMLModel
 
-    init(bundle: Bundle = .main) throws {
+    convenience init(bundle: Bundle = .main) throws {
+        // Retain existing resource names to avoid concurrent Xcode project edits.
         guard let json = bundle.url(forResource: "hazard-prompts", withExtension: "json"),
               let url = bundle.url(forResource: "HazardImageEncoder", withExtension: "mlmodelc") else { throw HazardError.missingResources }
-        prompts = try JSONDecoder().decode(HazardPrompts.self, from: Data(contentsOf: json))
-        guard prompts.version == 1, prompts.model.backend == "coreml", prompts.model.engine == "clip-zero-shot",
-              [224, 256].contains(prompts.imageSize), ["bilinear", "bicubic"].contains(prompts.interpolation),
-              prompts.cropFraction == 0.6, prompts.logitScale.isFinite, prompts.logitScale > 0,
-              prompts.items.count == 8, Set(prompts.items.map(\.checklistItemId)).count == 8,
-              !prompts.textEmbeddings.isEmpty, !prompts.neutralIndices.isEmpty else { throw HazardError.invalidModel }
-        for vector in prompts.textEmbeddings {
-            guard vector.count == 512, vector.allSatisfy(\.isFinite),
-                  abs(vector.reduce(0) { $0 + $1 * $1 } - 1) < 0.001 else { throw HazardError.invalidModel }
-        }
-        let vectorIndices = prompts.textEmbeddings.indices
-        let validIndex: (Int) -> Bool = { vectorIndices.contains($0) }
-        guard prompts.neutralIndices.allSatisfy(validIndex), prompts.items.allSatisfy({
-            !$0.positiveIndices.isEmpty && $0.positiveIndices.allSatisfy(validIndex) && $0.threshold.isFinite && (0...1).contains($0.threshold)
-        }) else { throw HazardError.invalidModel }
-        let configuration = MLModelConfiguration(); configuration.computeUnits = .all
-        model = try MLModel(contentsOf: url, configuration: configuration)
+        try self.init(modelURL: url, configData: Data(contentsOf: json))
     }
 
-    private func embedding(_ rgb: HazardRGB) throws -> [Double] {
-        let input = try MLDictionaryFeatureProvider(dictionary: [prompts.inputName: MLFeatureValue(pixelBuffer: rgb.pixelBuffer())])
-        let prediction = try model.prediction(from: input)
-        guard let values = prediction.featureValue(for: prompts.outputName)?.multiArrayValue, values.count == 512 else { throw HazardError.invalidModel }
-        var vector = (0..<values.count).map { values[$0].doubleValue }
-        let norm = sqrt(vector.reduce(0) { $0 + $1 * $1 })
-        guard norm.isFinite, norm > 0 else { throw HazardError.invalidModel }
-        for i in vector.indices { vector[i] /= norm }
-        return vector
+    init(modelURL: URL, configData: Data) throws {
+        let config = try JSONDecoder().decode(HazardConfig.self, from: configData)
+        self.config = config
+        let ids = ["rug-check", "cord-check", "stair-clutter-check", "handrail-check", "stair-lighting-check",
+                   "night-lighting-check", "shower-surface-check", "bathroom-support-check", "floor-clutter-check"]
+        let abstain: Set<String> = ["handrail-check", "stair-lighting-check", "night-lighting-check", "shower-surface-check"]
+        let g = config.geometry
+        let unitValues = [g.minimumArea, g.rugMinCenterY, g.rugMinBottomY, g.cordMinCenterY,
+                          g.cordMinBottomY, g.cordMinWidth, g.stairObjectOverlap, g.bathCompanionConfidence,
+                          g.floorClutterMinBottomY, g.furnitureMinConfidence, g.furnitureObjectOverlap]
+        let sha: (String) -> Bool = { $0.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil }
+        guard config.version == 2, config.imageSize == 640, config.model.backend == "coreml",
+              config.model.engine == "yolo-world-object-rules", config.model.license == "AGPL-3.0 weights and runtime",
+              config.model.identity.version == 1, sha(config.model.identity.weightsSHA256), sha(config.model.identity.runtimeSHA256),
+              config.items.map(\.checklistItemId) == ids, config.classes.count >= 17,
+              Set(config.classes).count == config.classes.count,
+              config.items.allSatisfy({ $0.threshold.isFinite && (0...1).contains($0.threshold) && (!abstain.contains($0.checklistItemId) || $0.threshold == 1) }),
+              config.classThresholds.allSatisfy({ config.classes.contains($0.key) && $0.value.isFinite && $0.value > 0 && $0.value < 1 }),
+              Set(config.floorClutterThresholds.keys) == Set(["shoe", "bag", "cardboard box", "clothes", "toy", "book"]),
+              config.floorClutterThresholds.allSatisfy({ config.classes.contains($0.key) && $0.value.isFinite && $0.value >= (config.classThresholds[$0.key] ?? 1) && $0.value < 1 }),
+              unitValues.allSatisfy({ $0.isFinite && (0...1).contains($0) }), g.minimumArea > 0,
+              g.cordMinAspect.isFinite, (1...10).contains(g.cordMinAspect) else { throw HazardError.invalidModel }
+        let options = MLModelConfiguration(); options.computeUnits = .all
+        let model = try MLModel(contentsOf: modelURL, configuration: options)
+        guard let input = model.modelDescription.inputDescriptionsByName["image"]?.imageConstraint,
+              input.pixelsWide == config.imageSize, input.pixelsHigh == config.imageSize,
+              Set(model.modelDescription.outputDescriptionsByName.keys) == Set(["confidence", "coordinates"]) else { throw HazardError.invalidModel }
+        visionModel = try VNCoreMLModel(for: model)
+    }
+
+    func detect(jpeg: Data) throws -> (Int, Int, [HazardDetection]) {
+        guard let source = CGImageSourceCreateWithData(jpeg as CFData, nil),
+              CGImageSourceGetType(source) as String? == "public.jpeg",
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              (1...1600).contains(width), (1...1600).contains(height),
+              (properties[kCGImagePropertyOrientation] as? Int ?? 1) == 1,
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw HazardError.invalidImage }
+        let request = VNCoreMLRequest(model: visionModel)
+        // Match Python's full-image 640x640 resize. Vision returns boxes in the
+        // original image's normalized space, with a lower-left origin.
+        request.imageCropAndScaleOption = .scaleFill
+        try VNImageRequestHandler(cgImage: image, orientation: .up, options: [:]).perform([request])
+        guard let observations = request.results as? [VNRecognizedObjectObservation] else { throw HazardError.invalidModel }
+        let detections = observations.compactMap { observation -> HazardDetection? in
+            guard let label = observation.labels.first, config.classes.contains(label.identifier) else { return nil }
+            let box = observation.boundingBox
+            // Vision separates object confidence from conditional class
+            // confidence. Multiply them to recover the NMS detector score.
+            return HazardDetection(label: label.identifier, confidence: Double(observation.confidence) * Double(label.confidence),
+                                   box: CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height))
+        }
+        return (width, height, detections)
     }
 
     func analyze(jpeg: Data) throws -> [String: Any] {
-        let image = try HazardRGB(jpeg: jpeg), edge = prompts.imageSize
-        var scores = [[Double]](repeating: [], count: prompts.items.count)
-        let cw = max(1, Int(Double(image.width) * prompts.cropFraction)), ch = max(1, Int(Double(image.height) * prompts.cropFraction))
-        for view in 0..<10 {
-            try autoreleasepool {
-                let crop: (Int, Int, Int, Int)?
-                if view == 0 { crop = nil }
-                else { let cell = view - 1; crop = (Int(Double(cell % 3 * (image.width - cw)) / 2), Int(Double(cell / 3 * (image.height - ch)) / 2), cw, ch) }
-                let vector = try embedding(image.prepared(edge: edge, interpolation: prompts.interpolation, crop: crop))
-                let similarities = prompts.textEmbeddings.map { text in zip(vector, text).reduce(0) { $0 + $1.0 * $1.1 } }
-                let neutral = prompts.neutralIndices.reduce(0) { $0 + similarities[$1] } / Double(prompts.neutralIndices.count)
-                for (i, item) in prompts.items.enumerated() {
-                    let positive = item.positiveIndices.reduce(0) { $0 + similarities[$1] } / Double(item.positiveIndices.count)
-                    let logit = min(80, max(-80, prompts.logitScale * (positive - neutral)))
-                    // Endpoint clamp makes a threshold of 1 an explicit abstention.
-                    scores[i].append(min(1 - 1e-12, max(1e-12, 1 / (1 + exp(-logit)))))
-                }
-            }
-        }
-        var items: [String: Any] = [:]
-        for (i, item) in prompts.items.enumerated() {
-            let values = scores[i], best = values.max() ?? 0
-            var point: Any = NSNull()
-            // Conservative localization is a coarse grid aid. Full-image-only
-            // evidence, diffuse crops, or a high none score stays photo-only.
-            let cropScores = Array(values.dropFirst())
-            let logits = cropScores.map { log($0 / (1 - $0)) }, maxLogit = logits.max() ?? 0
-            let masses = logits.map { exp($0 - maxLogit) }, total = masses.reduce(0, +)
-            let normalized = masses.map { $0 / total }, sorted = normalized.sorted(by: >)
-            if let winner = normalized.firstIndex(of: sorted[0]), best >= item.threshold, best >= 0.7,
-               cropScores[winner] >= values[0], sorted[0] >= 0.6, sorted[0] - sorted[1] >= 0.25, 1 - values[0] < 0.2 {
-                point = ["u": (Double(winner % 3) + 0.5) * Double(image.width) / 3,
-                         "v": (Double(winner / 3) + 0.5) * Double(image.height) / 3]
-            }
-            items[item.checklistItemId] = ["relevance": best, "point": point]
-        }
-        return items
+        let (width, height, detections) = try detect(jpeg: jpeg)
+        return HazardRules(config: config).analyze(detections, width: width, height: height)
     }
 }
 
@@ -244,7 +246,7 @@ public class FixListHazardsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func availability(_ call: CAPPluginCall) {
         queue.async {
-            do { let engine = try self.loadedEngine(); call.resolve(["available": true, "model": engine.prompts.model.dictionary]) }
+            do { let engine = try self.loadedEngine(); call.resolve(["available": true, "model": engine.config.model.dictionary]) }
             catch { call.resolve(["available": false, "reason": "The on-device photo model is unavailable."]) }
         }
     }
@@ -280,7 +282,7 @@ public class FixListHazardsPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     rows.append(["photoId": id, "items": items])
                 }
-                call.resolve(["model": engine.prompts.model.dictionary, "photos": rows])
+                call.resolve(["model": engine.config.model.dictionary, "photos": rows])
             } catch { call.reject("The on-device photo check could not finish. Your photos are still on this device.", "ANALYSIS_FAILED") }
         }
     }

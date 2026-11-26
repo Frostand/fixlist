@@ -6,6 +6,7 @@ import { assistant } from '../../lib/assistant';
 import { localeFor, useT } from '../../i18n';
 import type { CommunityController } from './useCommunity';
 import { Button, Heading } from './UI';
+import { markMessagesSeen } from './unread';
 export function Messages({ state, account, job, run, isCurrent = () => true, familyRevision }: {
     state: CommunityState;
     account: Account;
@@ -17,6 +18,8 @@ export function Messages({ state, account, job, run, isCurrent = () => true, fam
     const t = useT();
     const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), alive = useRef(true);
     useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+    const count = state.messages.filter((m) => m.jobId === job.id).length;
+    useEffect(() => { markMessagesSeen(state, account.id, job.id); }, [count, account.id, job.id]);
     const authorization = useRef(isCurrent);
     authorization.current = isCurrent;
     async function send() { if (!text.trim() || busy || !alive.current || !authorization.current())

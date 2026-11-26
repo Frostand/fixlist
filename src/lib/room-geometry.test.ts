@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CaptureManifest, CapturePhoto, SketchFlag, Vec2 } from './capture-types';
-import { buildRoomGeometry, createPlanProjection, drawableRoomOutline, intersectRoomRay, pixelToWorldRay, placeSketchFlag, pointInRoom, roomWallSegments, usablePhotoCamera, worldToPixel, type Vec3 } from './room-geometry';
+import { buildRoomGeometry, buildRoomSketchGeometry, createPlanProjection, drawableRoomOutline, intersectRoomRay, pixelToWorldRay, placeSketchFlag, pointInRoom, roomWallSegments, usablePhotoCamera, worldToPixel, type Vec3 } from './room-geometry';
 
 const photo = (patch: Partial<CapturePhoto> = {}): CapturePhoto => ({
   photoId: 'p01', checklistItemId: 'rug-check', takenAt: '2026-10-18T12:00:00.000Z', width: 1000, height: 1000, sha256: '0'.repeat(64),
@@ -95,6 +95,34 @@ describe('nearest room surface with conservative doorway exits', () => {
 });
 
 describe('outline validity and photo-only fallback', () => {
+  it('builds a floor-only sketch at the measured floor height from bounded camera poses', () => {
+    const capture = manifest({ outline: null, floorY: -1 });
+    const review = flag({ point: { u: 500, v: 950 } });
+    const room = buildRoomSketchGeometry(capture, [review])!;
+    expect(room).toMatchObject({ floorOnly: true, floorY: -1, walls: [] });
+    expect(buildRoomGeometry(capture)).toBeNull();
+    expect(pointInRoom([2, 2], room.points)).toBe(true);
+    const hit = placeSketchFlag(capture, review, room)!;
+    expect(hit.surface).toBe('floor'); expect(hit.position[1]).toBe(-1);
+    expect(pointInRoom([hit.position[0], hit.position[2]], room.points)).toBe(true);
+    expect(placeSketchFlag(capture, flag())).toBeNull(); // A horizontal ray has no floor hit.
+    expect(placeSketchFlag(capture, flag({ point: { u: 500, v: 100 } }))).toBeNull();
+  });
+  it('keeps unplaceable/limited flags with photos and refuses absent or outlying poses', () => {
+    const limited = photo({ camera: { ...photo().camera!, tracking: 'limited' } });
+    const capture = manifest({ outline: null, photos: [limited] });
+    expect(buildRoomSketchGeometry(capture)?.walls).toEqual([]);
+    expect(placeSketchFlag(capture, flag({ point: { u: 500, v: 950 } }))).toBeNull();
+    for (const patch of [
+      { photos: [photo({ camera: null })] }, { floorY: null }, { floorY: NaN },
+      { mode: 'photos' as const },
+      { photos: [photo({ camera: { ...photo().camera!, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 51, 1.5, 2, 1] } })] },
+    ]) expect(buildRoomSketchGeometry(manifest({ outline: null, ...patch }))).toBeNull();
+  });
+  it('preserves walls and door gaps when a valid closed outline exists', () => {
+    const capture = manifest({ doors: [[2, 0]] });
+    expect(buildRoomSketchGeometry(capture)).toEqual(buildRoomGeometry(capture));
+  });
   it.each(([
     [[0, 0], [4, 4], [0, 4], [4, 0]],
     [[0, 0], [.04, .04], [0, .04], [.04, 0]],
@@ -115,7 +143,7 @@ describe('outline validity and photo-only fallback', () => {
     }
     expect(placeSketchFlag(manifest(), flag({ point: null }))).toBeNull();
     expect(placeSketchFlag(manifest(), flag({ photoId: 'p99' }))).toBeNull();
-    expect(placeSketchFlag(manifest(), flag({ checklistItemId: 'handrail-check' }))).toBeNull();
+    expect(placeSketchFlag(manifest(), flag({ checklistItemId: 'future-model-item' }))?.surface).toBe('wall');
     expect(placeSketchFlag(manifest(), flag())?.surface).toBe('wall');
   });
   it('fits a rotated plan with first wall horizontal, readable unrotated marker coordinates and arbitrary heading', () => {

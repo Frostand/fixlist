@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FixList product video</title>
+<style>
+@font-face { font-family: 'Zilla'; src: url('../../../node_modules/@fontsource/zilla-slab/files/zilla-slab-latin-700-normal.woff2') format('woff2'); font-weight: 700; }
+@font-face { font-family: 'Atkinson'; src: url('../../../node_modules/@fontsource-variable/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2') format('woff2'); font-weight: 200 800; }
+:root { --paper: #faf7f2; --ink: #1d2521; --ink2: #4a5550; --green: #1f5d4a; --tint: #e4efe9; --clay: #c2562f; --sun: #e8a93a; --line: #e6dfd4; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); font-family: 'Atkinson', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+.abs { position: absolute; }
+.zilla { font-family: 'Zilla', serif; font-weight: 700; letter-spacing: -0.02em; }
+.w { display: inline-block; overflow: hidden; vertical-align: bottom; padding: 0 .05em .1em; margin: 0 -.05em -.1em; }
+.wi { display: inline-block; }
+.blob { position: absolute; border-radius: 50%; filter: blur(110px); }
+/* headline block */
+.copy { position: absolute; left: 150px; width: 780px; }
+.eyebrow { font: 700 22px 'Atkinson'; letter-spacing: .18em; text-transform: uppercase; color: var(--green); margin-bottom: 22px; }
+.h1 { font-family: 'Zilla'; font-weight: 700; font-size: 92px; line-height: 1.02; letter-spacing: -0.025em; text-wrap: balance; }
+.sub { font: 500 32px/1.4 'Atkinson'; color: var(--ink2); margin-top: 28px; max-width: 700px; }
+/* phone */
+.phone { position: absolute; width: 426px; height: 898px; border-radius: 68px; background: #1b2420; padding: 12px; box-shadow: 0 70px 120px -40px rgba(29,37,33,.5), 0 24px 50px -16px rgba(29,37,33,.28), inset 0 0 0 2px #3a4641; }
+.screen { position: relative; width: 402px; height: 874px; border-radius: 56px; overflow: hidden; background: var(--paper); }
+.layer { position: absolute; inset: 0; overflow: hidden; }
+.layer img.page { position: absolute; left: 0; width: 402px; }
+.layer img.tabs { position: absolute; left: 0; width: 402px; }
+.status { position: absolute; left: 0; right: 0; top: 0; height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 6px 34px 0 46px; font: 700 17px -apple-system, 'SF Pro Text', 'Atkinson'; color: #111; z-index: 50; background: var(--paper); }
+.island { position: absolute; top: 11px; left: 50%; width: 124px; height: 36px; margin-left: -62px; border-radius: 20px; background: #000; z-index: 51; }
+.homebar { position: absolute; bottom: 8px; left: 50%; width: 140px; height: 5px; margin-left: -70px; border-radius: 3px; background: #111; z-index: 51; opacity: .85; }
+.tap { position: absolute; width: 74px; height: 74px; margin: -37px 0 0 -37px; border-radius: 50%; background: rgba(31,93,74,.22); border: 3px solid rgba(31,93,74,.75); z-index: 52; opacity: 0; }
+.chip { position: absolute; display: flex; align-items: center; gap: 14px; padding: 16px 26px 16px 16px; border-radius: 999px; background: #fff; box-shadow: 0 18px 40px -14px rgba(29,37,33,.35), 0 2px 6px rgba(29,37,33,.08); font: 700 26px 'Atkinson'; white-space: nowrap; opacity: 0; }
+.chip i { width: 36px; height: 36px; border-radius: 50%; background: var(--tint); display: grid; place-items: center; flex: none; }
+.chip i svg { width: 20px; height: 20px; stroke: var(--green); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.chip.green { background: var(--green); color: #fff; }
+.chip.green i { background: rgba(255,255,255,.18); }
+.chip.green i svg { stroke: #fff; }
+.label { position: absolute; font: 700 22px 'Atkinson'; color: var(--ink2); text-align: center; width: 426px; opacity: 0; }
+.label b { color: var(--ink); }
+.logo { display: flex; align-items: center; gap: 26px; }
+.logo svg { width: 120px; height: 120px; stroke: var(--green); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.logo span { font-family: 'Zilla'; font-weight: 700; font-size: 150px; letter-spacing: -0.03em; color: var(--green); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="blob" id="blob1" style="width:900px;height:900px;left:-250px;top:-300px;background:#e4efe9"></div>
+  <div class="blob" id="blob2" style="width:800px;height:800px;right:-200px;bottom:-350px;background:#f6e3c8"></div>
+
+  <div class="abs" id="hook" style="left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+    <div class="zilla" id="hook1" style="font-size:96px;line-height:1.1"></div>
+    <div class="zilla" id="hook2" style="font-size:96px;line-height:1.1;color:var(--clay);margin-top:18px"></div>
+  </div>
+
+  <div class="abs" id="brand" style="left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0">
+    <div class="logo" id="brandLogo"><svg viewBox="0 0 24 24"><path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15"/><path d="M4 20 13 11"/></svg><span>FixList</span></div>
+    <div class="zilla" id="brandLine" style="font-size:52px;margin-top:26px;color:var(--ink)"></div>
+  </div>
+
+  <div id="copies"></div>
+  <div id="chips"></div>
+
+  <div class="phone" id="phoneA" style="opacity:0"><div class="screen" id="screenA"><div class="status"><span>9:41</span><span id="sigA"></span></div><div class="island"></div><div class="homebar"></div><div class="tap" id="tapA"></div></div></div>
+  <div class="label" id="labelA"></div>
+  <div class="phone" id="phoneB" style="opacity:0"><div class="screen" id="screenB"><div class="status"><span>9:41</span><span id="sigB"></span></div><div class="island"></div><div class="homebar"></div><div class="tap" id="tapB"></div></div></div>
+  <div class="label" id="labelB"></div>
+
+  <div class="abs" id="outro" style="left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;text-align:center">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15"/><path d="M4 20 13 11"/></svg><span>FixList</span></div>
+    <div class="zilla" style="font-size:50px;margin-top:22px">A little help at home. A neighbor who cares.</div>
+    <div style="font:600 28px 'Atkinson';color:var(--ink2);margin-top:46px">Congressional App Challenge 2026 · Georgia's 7th District · by Andrew Lieu</div>
+    <div style="font:500 20px 'Atkinson';color:var(--ink2);opacity:.8;margin-top:18px">Demo build with fictional people. Map data © OpenStreetMap contributors.</div>
+  </div>
+</div>
+<script>
+const SHOTS = '../../../recordings/product/shots/';
+const STATUS_TOP = 54, VIEW_H = 820;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const outCubic = (x) => 1 - Math.pow(1 - x, 3);
+const inOut = (x) => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const outBack = (x) => { const c = 1.5; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const $ = (id) => document.getElementById(id);
+const icon = { check: '<path d="M5 12l5 5 9-10"/>', tool: '<path d="M14 6a4 4 0 0 0 5 5l-9 9-3-3 9-9a4 4 0 0 0-2-2z"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>', pin: '<path d="M12 21s-6-6-6-11a6 6 0 0 1 12 0c0 5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/>', star: '<path d="M12 4l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 16.3 7 19l1.2-5.6L4 9.6 9.6 9z"/>', globe: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/>', lock: '<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 0 1 6 0v3"/>' };
+const signal = '<svg width="78" height="14" viewBox="0 0 78 14"><g fill="#111"><rect x="0" y="9" width="3.5" height="5" rx="1"/><rect x="5.5" y="6" width="3.5" height="8" rx="1"/><rect x="11" y="3" width="3.5" height="11" rx="1"/><rect x="16.5" y="0" width="3.5" height="14" rx="1"/><path d="M33 3.5a10 10 0 0 1 14 0l-1.6 1.7a7.7 7.7 0 0 0-10.8 0zM36.2 6.8a5.5 5.5 0 0 1 7.6 0L40 10.6z"/><rect x="52" y="1" width="23" height="12" rx="3.5" fill="none" stroke="#111" stroke-width="1.3" opacity=".5"/><rect x="54" y="3" width="18" height="8" rx="2"/><rect x="76" y="5" width="2" height="4" rx="1" opacity=".5"/></g></svg>';
+$('sigA').innerHTML = signal; $('sigB').innerHTML = signal;
+
+// ---------- story data ----------
+// Phone screen segments: shot, start, end, scroll keyframes [time, y].
+const A = [
+  { shot: 'home', t0: 8.0, t1: 11.0, scroll: [] },
+  { shot: 'talk-reply', t0: 11.0, t1: 17.4, scroll: [[12.7, 0], [14.3, 640], [15.6, 640], [16.3, 1141]] },
+  { shot: 'myhelp', t0: 17.4, t1: 20.1, scroll: [] },
+  { shot: 'room-flags', t0: 20.1, t1: 23.1, scroll: [[20.7, 0], [21.8, 420]] },
+  { shot: 'room-draft', t0: 23.1, t1: 24.5, scroll: [[23.3, 0], [24.4, 160]] },
+  { shot: 'nearby', t0: 24.5, t1: 28.2, scroll: [[25.6, 0], [26.6, 700]] },
+  { shot: 'job', t0: 28.2, t1: 30.3, scroll: [[28.5, 0], [29.5, 698]] },
+  { shot: 'accept', t0: 30.3, t1: 31.6, scroll: [] },
+  { shot: 'trip', t0: 31.6, t1: 33.5, scroll: [[31.9, 0], [32.7, 586]] },
+  { shot: 'home-confirm', t0: 33.5, t1: 35.5, scroll: [[33.8, 0], [34.5, 160]] },
+  { shot: 'rate', t0: 35.5, t1: 36.8, scroll: [] },
+  { shot: 'profile', t0: 36.8, t1: 40.6, scroll: [[37.6, 0], [39.0, 420]] },
+];
+const B = [{ shot: 'soonja-home', t0: 36.8, t1: 40.6, scroll: [[38.0, 0], [39.3, 120]] }];
+const TAPS = [
+  { phone: 'A', at: 10.5, shot: 'home', target: 'mic' },
+  { phone: 'A', at: 16.9, shot: 'talk-reply', target: 'post' },
+  { phone: 'A', at: 22.5, shot: 'room-flags', target: 'ask' },
+  { phone: 'A', at: 27.6, shot: 'nearby', target: 'see' },
+  { phone: 'A', at: 29.9, shot: 'job', target: 'volunteer' },
+  { phone: 'A', at: 30.8, shot: 'accept', target: 'slot' },
+  { phone: 'A', at: 31.25, shot: 'accept', target: 'accept' },
+  { phone: 'A', at: 33.15, shot: 'trip', target: 'way' },
+  { phone: 'A', at: 35.05, shot: 'home-confirm', target: 'confirm' },
+  { phone: 'A', at: 36.45, shot: 'rate', target: 'send' },
+];
+const COPY = [
+  { t0: 8.3, t1: 12.0, eyebrow: 'For older adults', h1: 'Just say what you need.', sub: 'Talk, type, or tap. In any of nine languages.' },
+  { t0: 12.2, t1: 17.2, eyebrow: 'On-device AI', h1: 'It writes the job for you.', sub: 'The tools, skills and time are drafted on the phone. She checks it, then posts.' },
+  { t0: 17.4, t1: 20.0, eyebrow: 'Private by default', h1: 'Posted in one tap.', sub: 'Her exact address stays hidden until a volunteer accepts.' },
+  { t0: 20.2, t1: 24.3, eyebrow: 'Room check', h1: 'Or show us the spot.', sub: 'The camera flags possible hazards. She decides what becomes a request.' },
+  { t0: 24.6, t1: 30.1, eyebrow: 'For volunteers', h1: 'Help that fits.', sub: 'Nearby requests ranked by skills, tools, free time and distance, with the reasons shown.' },
+  { t0: 30.3, t1: 33.4, eyebrow: 'On the way', h1: 'Accept. Drive over. Check in.', sub: 'Directions open in Apple or Google Maps, and family can follow along.' },
+  { t0: 33.6, t1: 36.6, eyebrow: 'Back to Margaret', h1: 'Done when she says it’s done.', sub: 'She confirms the job and thanks Jordan.' },
+  { t0: 36.9, t1: 40.2, eyebrow: 'Built to last', h1: 'Real hours. Every language.', sub: 'Confirmed help builds a volunteer’s record. Soon-ja uses FixList in Korean.' },
+];
+const CHIPS = [
+  { t0: 13.4, t1: 16.6, x: 1560, y: 330, text: 'Ladder', icon: 'tool' },
+  { t0: 13.8, t1: 16.6, x: 1560, y: 420, text: 'Basic electrical', icon: 'check' },
+  { t0: 14.2, t1: 16.6, x: 1560, y: 510, text: 'About 20 minutes', icon: 'clock' },
+  { t0: 18.0, t1: 20.0, x: 1560, y: 470, text: 'Address stays private', icon: 'lock' },
+  { t0: 26.8, t1: 29.8, x: 1560, y: 330, text: 'Strong match', icon: 'star', green: true },
+  { t0: 27.1, t1: 29.8, x: 1560, y: 420, text: 'Free Sat morning', icon: 'clock' },
+  { t0: 27.4, t1: 29.8, x: 1560, y: 510, text: 'Has the tools', icon: 'tool' },
+  { t0: 31.9, t1: 33.4, x: 1560, y: 470, text: 'Directions in Maps', icon: 'pin' },
+  { t0: 37.4, t1: 40.2, x: 150, y: 720, text: 'Verified service hours', icon: 'check', green: true },
+  { t0: 37.8, t1: 40.2, x: 150, y: 810, text: '9 languages', icon: 'globe' },
+];
+const LABELS = [
+  { id: 'labelA', t0: 8.4, t1: 24.3, html: '<b>Margaret</b> · asking for help' },
+  { id: 'labelA', t0: 24.6, t1: 33.4, html: '<b>Jordan</b> · volunteer' },
+  { id: 'labelA', t0: 33.6, t1: 36.7, html: '<b>Margaret</b>' },
+  { id: 'labelA', t0: 36.9, t1: 40.3, html: '<b>Jordan</b> · profile' },
+  { id: 'labelB', t0: 37.1, t1: 40.3, html: '<b>Soon-ja</b> · in Korean' },
+];
+
+let META;
+const layerCache = new Map();
+function layerFor(screen, seg) {
+  const key = screen.id + seg.shot;
+  if (layerCache.has(key)) return layerCache.get(key);
+  const m = META.shots[seg.shot], el = document.createElement('div'); el.className = 'layer';
+  const page = document.createElement('img'); page.className = 'page'; page.src = SHOTS + seg.shot + '.png'; page.style.top = STATUS_TOP + 'px'; el.appendChild(page);
+  if (m.full && m.tabs) { const tabs = document.createElement('img'); tabs.className = 'tabs'; tabs.src = SHOTS + seg.shot + '-tabs.png'; tabs.style.top = (STATUS_TOP + m.tabs.y) + 'px'; el.appendChild(tabs); }
+  el.style.opacity = 0; screen.insertBefore(el, screen.firstChild); layerCache.set(key, { el, page });
+  return layerCache.get(key);
+}
+function scrollAt(seg, t) {
+  const k = seg.scroll; if (!k.length) return 0;
+  if (t <= k[0][0]) return k[0][1];
+  for (let i = 1; i < k.length; i++) if (t <= k[i][0]) return k[i - 1][1] + (k[i][1] - k[i - 1][1]) * inOut(prog(t, k[i - 1][0], k[i][0]));
+  return k.at(-1)[1];
+}
+function renderPhone(screen, segs, t) {
+  for (const { el } of layerCache.values()) if (el.parentNode === screen) el.style.opacity = 0;
+  segs.forEach((seg, i) => {
+    if (t < seg.t0 - 0.01 || t > seg.t1 + 0.35) return;
+    const L = layerFor(screen, seg), fadeIn = i === 0 ? 1 : outCubic(prog(t, seg.t0, seg.t0 + 0.3)), fadeOut = t > seg.t1 ? 1 - prog(t, seg.t1, seg.t1 + 0.3) : 1;
+    L.el.style.opacity = Math.min(fadeIn, fadeOut); L.el.style.zIndex = i;
+    L.el.style.transform = `translateX(${(1 - fadeIn) * 26}px)`;
+    L.page.style.transform = `translateY(${-scrollAt(seg, t)}px)`;
+  });
+}
+function renderTap(tapEl, phone, segs, t) {
+  tapEl.style.opacity = 0;
+  for (const tap of TAPS) {
+    if (tap.phone !== phone || t < tap.at - 0.05 || t > tap.at + 0.55) continue;
+    const seg = segs.find((s) => s.shot === tap.shot), r = META.shots[tap.shot].rects[tap.target]; if (!seg || !r) continue;
+    const p = prog(t, tap.at - 0.05, tap.at + 0.55), scale = 0.55 + 0.75 * outCubic(p);
+    tapEl.style.left = (r.x + r.w / 2) + 'px'; tapEl.style.top = (STATUS_TOP + r.y + r.h / 2 - scrollAt(seg, tap.at)) + 'px';
+    tapEl.style.opacity = p < .15 ? p / .15 : 1 - (p - .15) / .85; tapEl.style.transform = `scale(${scale})`;
+  }
+}
+function words(el, text) { el.innerHTML = text.split(' ').map((w) => `<span class="w"><span class="wi">${w}</span></span>`).join(' '); return [...el.querySelectorAll('.wi')]; }
+function revealWords(list, t, start, step = 0.07, dur = 0.5) { list.forEach((w, i) => { const p = outCubic(prog(t, start + i * step, start + i * step + dur)); w.style.transform = `translateY(${(1 - p) * 110}%)`; }); }
+
+// build copy blocks and chips once
+const copyEls = COPY.map((c) => { const d = document.createElement('div'); d.className = 'copy'; d.innerHTML = `<div class="eyebrow">${c.eyebrow}</div><div class="h1"></div><div class="sub">${c.sub}</div>`; $('copies').appendChild(d); return { d, words: words(d.querySelector('.h1'), c.h1), eyebrow: d.querySelector('.eyebrow'), sub: d.querySelector('.sub') }; });
+const chipEls = CHIPS.map((c) => { const d = document.createElement('div'); d.className = 'chip' + (c.green ? ' green' : ''); d.innerHTML = `<i><svg viewBox="0 0 24 24">${icon[c.icon]}</svg></i>${c.text}`; d.style.left = c.x + 'px'; d.style.top = c.y + 'px'; $('chips').appendChild(d); return d; });
+const hook1 = words($('hook1'), 'Grandma’s hallway light went out.'), hook2 = words($('hook2'), 'She can’t use a ladder anymore.'), brandLine = words($('brandLine'), 'A little help at home. A neighbor who cares.');
+
+window.renderAt = (t) => {
+  // background drift
+  $('blob1').style.transform = `translate(${Math.sin(t / 6) * 60}px, ${Math.cos(t / 7) * 40}px)`;
+  $('blob2').style.transform = `translate(${Math.cos(t / 5) * 50}px, ${Math.sin(t / 8) * 50}px)`;
+
+  // hook 0-4
+  revealWords(hook1, t, 0.25); revealWords(hook2, t, 1.9);
+  $('hook').style.opacity = 1 - prog(t, 3.6, 4.0);
+  $('hook').style.transform = `translateY(${-prog(t, 3.6, 4.0) * 30}px)`;
+
+  // brand 4-8
+  const b = prog(t, 4.0, 4.6), bOut = prog(t, 7.5, 8.0);
+  $('brand').style.opacity = Math.min(outCubic(b), 1 - bOut);
+  $('brandLogo').style.transform = `scale(${0.8 + 0.2 * outBack(b)})`;
+  revealWords(brandLine, t, 4.7, 0.06);
+
+  // single phone 8-36.8 at x 1290; two phones after
+  const enter = outBack(prog(t, 8.0, 8.8)), exit = prog(t, 40.3, 40.9), two = inOut(prog(t, 36.6, 37.4));
+  const ax = 1290 - 213 - two * 110, ay = 91;
+  $('phoneA').style.left = ax + 'px'; $('phoneA').style.top = (ay + (1 - enter) * 700 + exit * 40) + 'px';
+  $('phoneA').style.opacity = t < 8 ? 0 : 1 - exit;
+  $('phoneA').style.transform = `rotate(${(1 - enter) * 6}deg) scale(${1 - two * 0.06})`;
+  const bIn = outBack(prog(t, 36.7, 37.4));
+  $('phoneB').style.left = (1610 - 213 + (1 - bIn) * 500) + 'px'; $('phoneB').style.top = (ay + exit * 40) + 'px';
+  $('phoneB').style.opacity = t < 36.7 ? 0 : Math.min(prog(t, 36.7, 37.0), 1 - exit); $('phoneB').style.transform = 'scale(0.94)';
+  renderPhone($('screenA'), A, t); renderPhone($('screenB'), B, t);
+  renderTap($('tapA'), 'A', A, t); renderTap($('tapB'), 'B', B, t);
+
+  // labels under phones
+  for (const id of ['labelA', 'labelB']) $(id).style.opacity = 0;
+  for (const l of LABELS) { if (t < l.t0 || t > l.t1 + 0.3) continue; const el = $(l.id); el.innerHTML = l.html; el.style.opacity = Math.min(prog(t, l.t0, l.t0 + 0.3), 1 - prog(t, l.t1, l.t1 + 0.3)); const ph = l.id === 'labelA' ? $('phoneA') : $('phoneB'); el.style.left = ph.style.left; el.style.top = '1003px'; }
+
+  // copy blocks
+  COPY.forEach((c, i) => {
+    const e = copyEls[i], on = t >= c.t0 - 0.1 && t <= c.t1 + 0.4; e.d.style.display = on ? 'block' : 'none'; if (!on) return;
+    const out = prog(t, c.t1, c.t1 + 0.35);
+    e.d.style.top = (c.eyebrow === 'Built to last' ? 250 : 330) + 'px';
+    e.eyebrow.style.opacity = Math.min(prog(t, c.t0, c.t0 + 0.3), 1 - out);
+    revealWords(e.words, t, c.t0 + 0.05); e.d.querySelector('.h1').style.opacity = 1 - out;
+    e.sub.style.opacity = Math.min(outCubic(prog(t, c.t0 + 0.45, c.t0 + 0.85)), 1 - out);
+    e.sub.style.transform = `translateY(${(1 - outCubic(prog(t, c.t0 + 0.45, c.t0 + 0.85))) * 16}px)`;
+  });
+  CHIPS.forEach((c, i) => { const p = outBack(prog(t, c.t0, c.t0 + 0.45)), out = prog(t, c.t1, c.t1 + 0.3); chipEls[i].style.opacity = Math.min(prog(t, c.t0, c.t0 + 0.2), 1 - out); chipEls[i].style.transform = `translateX(${(1 - p) * 40}px) scale(${0.9 + 0.1 * p})`; });
+
+  // outro 40.6-45
+  const o = prog(t, 40.7, 41.3);
+  $('outro').style.opacity = outCubic(o) * (1 - prog(t, 44.5, 45));
+  $('outro').style.transform = `translateY(${(1 - outCubic(o)) * 24}px)`;
+};
+
+window.init = async (meta) => {
+  META = meta;
+  for (const seg of [...A, ...B]) layerFor(seg === B[0] ? $('screenB') : $('screenA'), seg);
+  await document.fonts.ready;
+  await Promise.all([...document.images].map((img) => img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; })));
+  window.renderAt(0);
+  return true;
+};
+</script>
+</body>
+</html>

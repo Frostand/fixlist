@@ -39,6 +39,7 @@ describe('multilingual rules fallback', () => {
   it.each([
     ['rug-check', 'Secure or remove a loose rug', []], ['night-lighting-check', 'Install night lights', []],
     ['grab-bar-check', 'Install a grab bar', ['drill', 'stud-finder']], ['clutter', 'Clear a walkway', ['gloves']],
+    ['floor-clutter-check', 'Clear a walkway', ['gloves']],
     ['smoke-alarm-check', 'Check a smoke alarm', ['ladder']], ['something-unknown', 'Help with a household task', []],
   ])('turns %s into a reviewable draft', (id, title, tools) => {
     const result = scanFlagAnalysis(id as string, 'Unverified area to review', 'en');

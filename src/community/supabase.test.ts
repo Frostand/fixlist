@@ -1,3 +1,4 @@
+import { PHOTO } from './request-photo.fixture';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { SupabaseLiveCommunity } from './supabase';
@@ -165,5 +166,23 @@ describe('live community adapter through the installed official SDK',()=>{
     h.respond(success({items:[{...job,elderId:otherId,volunteerId:null,status:'open'}],nextCursor:null}));expect(await h.port.ownJobs({},signal())).toEqual({ok:false,code:'retry'});
     h.respond(success({items:[{id:'1',jobId:otherId,fromId:otherId,at:job.createdAt,text:'Wrong job',language:'en'}],nextCursor:null}));expect(await h.port.messages(jobId,{},signal())).toEqual({ok:false,code:'retry'});
     h.respond(success({items:[{jobId,volunteerId:otherId,approvedServiceCreditMinutes:45,confirmedAt:job.createdAt}],nextCursor:null}));expect(await h.port.serviceHours({},signal())).toEqual({ok:false,code:'retry'});
+  });
+});
+
+
+describe('private request photo mapping', () => {
+  it('sends validated photos intact through the existing post RPC and snapshots the array', async () => {
+    const h = harness(mutation('open')), draft = { ...structuredClone(input), photos: [PHOTO] };
+    const pending = h.port.postRequest(draft,key,signal()); draft.photos.push('invalid after dispatch');
+    expect(await pending).toEqual(mutation('open'));
+    expect(sent(h).body.p_payload.photos).toEqual([PHOTO]);
+  });
+  it('accepts private detail photos, rejects malformed media and keeps discovery photo-free', async () => {
+    const h = harness(success({ ...details, photos: [PHOTO] }));
+    expect(await h.port.details(jobId,signal())).toEqual(success({ ...details, photos: [PHOTO] }));
+    h.respond(success({ ...details, photos: ['data:image/jpeg;base64,AAAA'] }));
+    expect(await h.port.details(jobId,signal())).toEqual({ok:false,code:'retry'});
+    h.respond(success({items:[{...discovery,photos:[PHOTO]}],nextCursor:null}));
+    expect(await h.port.discover({},signal())).toEqual({ok:false,code:'retry'});
   });
 });

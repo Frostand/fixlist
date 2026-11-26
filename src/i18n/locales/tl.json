@@ -1416,5 +1416,16 @@
   "capture.video.title": "Video ng kuwarto",
   "capture.video.privacy": "Nananatili ang video sa teleponong ito. Mga larawan ang ginagamit ng AI sa pag-check. Mga larawan lang ang kasama sa mga capture export.",
   "capture.video.playbackFailed": "Hindi ma-play ang video na ito. Subukang buksan muli ang kuwarto.",
-  "c.volunteer.helped": "Tinulungan ni {name}"
+  "c.volunteer.helped": "Tinulungan ni {name}",
+  "c.messages.unread": "Mga bagong mensahe: {count}",
+  "c.photos.title": "Mga larawan",
+  "c.photos.add": "Magdagdag ng larawan",
+  "c.photos.hint": "Magdagdag ng hanggang 3 larawan para ipakita ang problema. Inaalis ang datos ng lokasyon sa mga larawan.",
+  "c.photos.count": "{count} sa 3 larawan",
+  "c.photos.alt": "Larawan {number} ng kahilingan",
+  "c.photos.remove": "Alisin",
+  "c.photos.removeLabel": "Alisin ang larawan {number}",
+  "c.photos.preparing": "Inihahanda ang inyong larawan…",
+  "c.photos.limit": "Maaari kayong magdagdag ng hanggang 3 larawan. Alisin ang isa para magdagdag ng iba.",
+  "c.photos.error": "Hindi namin mabuksan ang larawang iyon. Pakisubukan ang ibang larawan."
 }

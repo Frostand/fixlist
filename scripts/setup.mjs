@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+// The localized YOLO-World detector retains this resource path for Xcode/LFS.
+// verify-ios-model.sh pins the reviewed detector bytes, not the former CLIP model.
 const weight = 'ios/App/App/HazardModel/HazardImageEncoder.mlpackage/Data/com.apple.CoreML/weights/weight.bin';
 const execute = promisify(execFile);
 const usage = 'Usage: npm run setup [-- --web | -- --ios]';

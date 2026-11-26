@@ -35,7 +35,7 @@ describe('initial state and explicit confirmation', () => {
   it('starts without a plan, confirmations, or workflow requests', () => {
     const state = createInitialState(demoScenario);
     expect(computePlan(demoScenario, state)).toEqual([]);
-    expect(Object.keys(state.checklistAnswers)).toHaveLength(8);
+    expect(Object.keys(state.checklistAnswers)).toHaveLength(9);
     expect(Object.values(state.checklistAnswers).every((answer) => answer === 'unknown')).toBe(true);
     expect(Object.values(state.confirmations).every((item) => !item.humanConfirmed)).toBe(true);
     expect(state.requests).toEqual([]);

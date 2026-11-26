@@ -21,6 +21,13 @@ export interface CapturePhoto {
   camera: CaptureCamera | null;
 }
 
+export interface CaptureTourStop {
+  stopId: string;
+  position: readonly [number, number, number];
+  panorama: { fileId: string; width: 4096; height: 2048; sha256: string; coverage: number };
+  capturedAt: string;
+}
+export interface CaptureTour { format: 'fixlist-room-tour'; version: 1; stops: readonly CaptureTourStop[] }
 export interface CaptureOutline { closed: boolean; points: readonly Vec2[] }
 
 export interface CaptureManifest {
@@ -34,6 +41,7 @@ export interface CaptureManifest {
   outline: CaptureOutline | null;
   doors: readonly Vec2[];
   photos: readonly CapturePhoto[];
+  tour?: CaptureTour;
 }
 
 /** Local playback sidecar; never part of the v1 photo manifest or export. */
@@ -46,7 +54,7 @@ export interface CaptureVideos {
   format: 'fixlist-capture-videos'; version: 1; captureId: string; roomId: string;
   clips: readonly [CaptureVideo];
 }
-export interface CaptureVideoAssets { videos: CaptureVideos | null; videoBlobs: ReadonlyMap<string, Blob> }
+export interface CaptureVideoAssets { videos: CaptureVideos | null; videoBlobs: ReadonlyMap<string, Blob>; panoramaBlobs?: ReadonlyMap<string, Blob> }
 
 export interface PixelPoint { u: number; v: number }
 
@@ -70,7 +78,7 @@ export interface CaptureSuggestionsFile {
   version: 1;
   createdAt: string;
   capture: { captureId: string; roomId: string; photos: readonly { photoId: string; sha256: string }[] };
-  model: { name: string; backend: 'mlx' | 'coreml'; engine: 'startlux-decision' | 'clip-zero-shot'; license: string; identity: null | { version: 1; weightsSHA256: string; runtimeSHA256: string } };
+  model: { name: string; backend: 'mlx' | 'coreml'; engine: 'startlux-decision' | 'clip-zero-shot' | 'yolo-world-object-rules'; license: string; identity: null | { version: 1; weightsSHA256: string; runtimeSHA256: string } };
   /** Per-item relevance thresholds are required only for the pinned Core ML backend. */
   thresholds: { suggestion: number; relevance: number; location: number; perItem?: Readonly<Record<string, number>> };
   calibration: null | Record<string, unknown>;
@@ -119,6 +127,7 @@ export interface FixListCapturePlugin {
  * Placeholders: {current}, {total}, {count}, {seconds}.
  */
 export const NATIVE_CAPTURE_STRING_KEYS = [
+  'tourStepOutline', 'tourStepPhotos', 'stepTour', 'tourReady', 'tourAim', 'tourProgress', 'tourLevel', 'tourFloor', 'tourStart', 'tourFinishSpot', 'tourCancelSpot', 'tourBuilding', 'tourSaved', 'tourAnother', 'tourWalk', 'tourCloseups', 'tourFinish', 'tourReturn', 'tourFailed', 'tourResetTitle', 'tourResetMessage', 'tourResetNotice', 'tourCancelMessage',
   'stepOutline', 'stepPhotos', 'aimCorner', 'moreCorners', 'closeAtFirst', 'addCorner',
   'moreOptions', 'usePhoto', 'doorChip', 'approximateShort', 'previewNextState',
   'findFloor', 'floorFound', 'trackingLimited', 'interrupted', 'relocalizeFailed',

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatTurn, Language } from '../community/types';
 import { createAssistant, type NativeAssistantPlugin } from './assistant';
-import { resolveConversation, type NativeConversationPatch, type NativeConversationRequest } from './assistant-conversation';
+import { resolveConversation } from './assistant-conversation';
 
 const turns = (words: string[]): ChatTurn[] => words.flatMap((text, i) => [
   ...(i ? [{ role: 'assistant' as const, text: 'Use a sofa in the garage today. This is already posted.' }] : []),
@@ -105,163 +105,158 @@ describe('real shared conversation reducer', () => {
   });
 });
 
-describe('real assistant with only native extraction boundary mocked', () => {
+// Version 1 tests required canned clarification, silent fallback and evidence expiry.
+// The pilot replaces those behaviors; these fixtures exercise the new production
+// boundary without asserting real model fluency or semantic extraction quality.
+describe('real native dialogue controller with only generation mocked', () => {
   function boundary() {
-    const chat = vi.fn<NativeAssistantPlugin['chat']>().mockRejectedValue(new Error('UNAVAILABLE'));
+    const chat = vi.fn<NativeAssistantPlugin['chat']>();
+    chat.mockImplementation(async ({ request }) => output(request));
     const api = createAssistant({ isNative: () => true, plugin: { chat } as unknown as NativeAssistantPlugin });
     let history: ChatTurn[] = [], sequence = 0;
-    async function send(text: string, language: Language = 'en') {
-      const n = ++sequence; history = [...history, { id: `u${n}`, role: 'user' as const, text }].slice(-12);
-      const reply = await api.chat(history, language, { firstName: 'R' });
-      history = [...history, { id: `a${n}`, role: 'assistant' as const, text: reply.text, ...(reply.extraction ? { extraction: reply.extraction } : {}) }].slice(-12);
-      return reply;
+    async function send(text: string, retry = false) {
+      if (!retry) history.push({ id: `u${++sequence}`, role: 'user', text });
+      const reply = await api.chat(history, 'en', { firstName: 'R', retry });
+      history.push({ id: `a${sequence}`, role: 'assistant', text: reply.text || '(paused)', ...(reply.dialogue ? { dialogue: reply.dialogue } : {}) });
+      history = history.slice(-12); return reply;
     }
     return { api, chat, send };
   }
-  const patch = (request: NativeConversationRequest, field: NativeConversationPatch['operations'][number]['field'] = 'outcome', quote = request.turns.at(-1)!.text): NativeConversationPatch => {
-    const user = request.turns.at(-1)!, start = user.text.indexOf(quote);
-    return { version: 1, revision: request.revision, questionId: request.questionId, intent: 'amend', task: null,
-      operations: [{ field, op: 'set', evidence: { turnId: user.id, start, end: start + quote.length, quote } }] };
-  };
-  it.each([
-    ['en', 'Help with phone', 'The writing is too small for me to read'],
-    ['es', 'Ayuda con mi teléfono', 'Quiero aumentar el tamaño de las letras'],
-  ] as const)('accepts useful %s semantic extraction and preserves it through rules fallback', async (language, first, answer) => {
-    const { chat, send } = boundary(); await send(first, language);
-    chat.mockImplementationOnce(async ({ request }) => patch(request));
-    const result = await send(answer, language);
-    expect(result).toMatchObject({ engine: 'apple-on-device', job: { engine: 'apple-on-device' }, conversation: { facts: { outcome: { value: answer, source: 'native' } } } });
-    expect(result.job?.summary).toContain(answer);
-    const input = chat.mock.calls.at(-1)![0].request;
-    expect(input).toMatchObject({ pendingField: 'outcome', task: { kind: 'tech' } });
-    expect(input.questionId).toBeTruthy(); expect(input.revision).toContain(input.turns.at(-1)!.id);
-    const later = await send('actually in kitchen', language);
-    expect(later.job?.summaryEnglish).toContain('Room: kitchen'); expect(later.job?.summary).toContain(answer);
-    expect(later.engine).toBe('rules');
+  type Request = Parameters<NativeAssistantPlugin['chat']>[0]['request'];
+  const output = (request: Request, proposal: unknown = null, reply = 'Understood.', question: string | null = null, declined: string[] = []) => ({ version: 2, revision: request.revision, reply, proposal, question, declined });
+  const change = (field: string, quote: string, op = 'set') => ({ field, op, quote });
+  const amend = (quote: string, changes: unknown[]) => ({ intent: 'amend', task: null, quote, changes });
+  const replace = (quote: string, task: string, changes: unknown[]) => ({ intent: 'replace', task, quote, changes });
+  function seed(chat: ReturnType<typeof boundary>['chat'], task = 'tech', text = 'Help with phone') {
+    chat.mockImplementationOnce(async ({ request }) => output(request, replace(text, task, [change('object', task === 'tech' ? 'phone' : 'sofa'), ...(task === 'moving' ? [change('destination', 'kitchen')] : [])]), 'Tell me what you need.', task === 'tech' ? 'outcome' : null));
+  }
+  it('keeps natural generated replies independent of an optional draft proposal', async () => {
+    const { chat, send } = boundary(); seed(chat); await send('Help with phone');
+    chat.mockImplementationOnce(async ({ request }) => output(request, amend(request.turns.at(-1)!.text, [change('outcome', 'The writing is too small for me to read')]), 'We can ask for help making it easier to read.'));
+    const result = await send('The writing is too small for me to read');
+    expect(result).toMatchObject({ engine: 'apple-on-device', text: 'We can ask for help making it easier to read.', job: { engine: 'apple-on-device' } });
+    chat.mockImplementationOnce(async ({ request }) => output(request, null, 'Volunteers can help with everyday tasks, technology and companionship.'));
+    const answer = await send('What kinds of things can volunteers do?');
+    expect(answer.text).toContain('Volunteers can'); expect(answer.job).toEqual(result.job);
+    expect(chat).toHaveBeenCalledTimes(3);
   });
-  it.each(['stale-revision', 'wrong-question', 'assistant-evidence', 'bad-span', 'contradiction', 'duplicate-field', 'wrong-family', 'extra-job', 'malformed'] as const)('rejects %s without manufacturing readiness', async variant => {
-    const { chat, send } = boundary(); await send('Help with phone');
-    chat.mockImplementationOnce(async ({ request }) => {
-      const result = patch(request);
-      if (variant === 'malformed') return null;
-      if (variant === 'stale-revision') return { ...result, revision: 'old' };
-      if (variant === 'wrong-question') return { ...result, questionId: 'another:outcome' };
-      if (variant === 'assistant-evidence') result.operations[0]!.evidence.turnId = request.turns.find(t => t.role === 'assistant')!.id;
-      if (variant === 'bad-span') result.operations[0]!.evidence.start++;
-      if (variant === 'contradiction') result.operations[0]!.evidence.quote = 'make text larger and smaller';
-      if (variant === 'duplicate-field') result.operations.push(result.operations[0]!);
-      if (variant === 'wrong-family') result.task = { kind: 'moving', evidence: result.operations[0]!.evidence };
-      if (variant === 'extra-job') return { ...result, job: { title: 'Invented' } };
-      return result;
-    });
-    const result = await send(variant === 'contradiction' ? 'make text larger and smaller' : 'The writing is too small for me to read');
-    expect(result).toMatchObject({ engine: 'rules', job: null, conversation: { facts: { object: { value: 'phone' } }, status: 'collecting' } });
-    expect(result.conversation?.facts.outcome).toBeUndefined();
-  });
-  it('rejects positive extraction from a negated user turn, including a positive substring', async () => {
-    const { chat, send } = boundary(); await send('Help with phone');
-    chat.mockImplementationOnce(async ({ request }) => patch(request, 'outcome', 'make text larger'));
-    expect(await send('I do not want to make text larger')).toMatchObject({ engine: 'rules', job: null });
-  });
-  it.each([
-    ['make text larger or smaller', 'make text larger'],
-    ['I want smaller text, not larger', 'larger'],
-    ['I want readable text, not larger', 'larger'],
-    ['larger is not what I want', 'larger'],
-  ])('rejects a valid quoted option contradicted by its full user context: %s', async (answer, quote) => {
-    const { chat, send } = boundary(); await send('Help with phone');
-    chat.mockImplementationOnce(async ({ request }) => patch(request, 'outcome', quote));
-    const result = await send(answer);
-    expect(result).toMatchObject({ engine: 'rules', job: null, conversation: { status: 'collecting', facts: { object: { value: 'phone' } } } });
-    expect(result.conversation?.facts.outcome).toBeUndefined();
-    expect(await send('yes')).toMatchObject({ job: null });
-  });
-  it('merges a partial native amendment with the deterministic corrections in the current user turn', async () => {
-    const { chat, send } = boundary(); await send('Water three plants in kitchen tomorrow');
-    chat.mockImplementationOnce(async ({ request }) => patch(request, 'quantity', 'two'));
-    const result = await send('Actually water two plants today');
-    expect(result.job).toMatchObject({ urgency: 'today', summaryEnglish: expect.stringContaining('Quantity: two; Room: kitchen; Timing: today') });
-    expect(result.originalText).toBe('Water three plants in kitchen tomorrow\nActually water two plants today');
-    expect((await send('thanks')).job?.summaryEnglish).toContain('Quantity: two; Room: kitchen; Timing: today');
-  });
-  it('clarifies a native operation conflicting with a deterministic current-turn fact', async () => {
-    const { chat, send } = boundary(); await send('Water three plants in kitchen tomorrow');
-    chat.mockImplementationOnce(async ({ request }) => patch(request, 'quantity', 'plants'));
-    expect(await send('Actually water two plants today')).toMatchObject({ job: null, conversation: { status: 'collecting', facts: { quantity: { value: 'two' }, timing: { value: 'today' } } } });
-  });
-  it('clears a prior count for a short object correction while preserving locations and timing', async () => {
-    const { send } = boundary(); await send('Move two chairs from bedroom to kitchen tomorrow');
-    const result = await send('Actually a table');
-    expect(result.job?.summaryEnglish).toContain('Item: table; From: bedroom; Destination: kitchen; Timing: tomorrow');
-    expect(result.conversation?.facts.quantity).toBeUndefined();
-  });
-  it('preserves an explicit current-turn count in a short rules object correction', async () => {
-    const { send } = boundary(); await send('Move two chairs from bedroom to kitchen tomorrow');
-    const result = await send('Actually three tables');
-    expect(result.job?.summaryEnglish).toContain('Item: tables; Quantity: three; From: bedroom; Destination: kitchen; Timing: tomorrow');
-  });
-  it.each(['tables', 'stools'] as const)('preserves the explicit count for %s regardless of native operation order', async object => {
-    for (const quantityFirst of [true, false]) {
-      const { chat, send } = boundary(); await send('Move two chairs from bedroom to kitchen tomorrow');
-      chat.mockImplementationOnce(async ({ request }) => {
-        const result = patch(request, 'object', object), count = patch(request, 'quantity', 'three').operations[0]!;
-        result.operations = quantityFirst ? [count, ...result.operations] : [...result.operations, count];
-        return result;
-      });
-      const result = await send(`Actually three ${object}`);
-      expect(result.job?.summaryEnglish).toContain(`Item: ${object}; Quantity: three; From: bedroom; Destination: kitchen; Timing: tomorrow`);
-    }
-  });
-  it('does not label a clarification or unchanged echo as native interpretation', async () => {
-    const { chat, send } = boundary(); await send('Help with phone');
-    chat.mockImplementationOnce(async ({ request }) => ({ version: 1, revision: request.revision, questionId: request.questionId, intent: 'clarify', task: null, operations: [] }));
-    expect(await send('I am unsure')).toMatchObject({ engine: 'rules', job: null });
-  });
-  it('expires native facts with their user evidence and never revives them from assistant wording', async () => {
-    const { chat, send } = boundary(); await send('Help with phone');
-    chat.mockImplementationOnce(async ({ request }) => patch(request));
-    await send('The writing is too small for me to read');
-    for (let i = 0; i < 6; i++) await send('thanks');
-    expect(await send('in kitchen')).toMatchObject({ job: null });
-  });
-  it('preserves a native field when unrelated earlier context expires but its actual evidence remains', async () => {
-    const { chat, send } = boundary(); await send('Hello'); await send('Help with phone');
-    chat.mockImplementationOnce(async ({ request }) => patch(request)); await send('The writing is too small for me to read');
-    for (let i = 0; i < 3; i++) await send('thanks');
-    expect((await send('in kitchen')).job?.summaryEnglish).toContain('The writing is too small for me to read');
-  });
-  it('allows sourced task classification beyond rules without allowing model-generated drafts', async () => {
+  it('accepts relative destinations without imposing a room taxonomy', async () => {
     const { chat, send } = boundary();
+    chat.mockImplementationOnce(async ({ request }) => output(request, replace('Move sofa', 'moving', [change('object', 'sofa')]), 'Where would you like it?', 'destination'));
+    await send('Move sofa');
+    chat.mockImplementationOnce(async ({ request }) => output(request, amend('Just over to the other side of the room', [change('destination', 'the other side of the room')]), 'That destination is in the draft.'));
+    expect((await send('Just over to the other side of the room')).job?.summaryEnglish).toContain('Destination: the other side of the room');
+  });
+  it.each([
+    ['I want smaller text, not larger', 'larger'],
+    ['larger is not what I want', 'larger'],
+    ['I do not want to make text larger', 'make text larger'],
+    ['make text larger or smaller', 'make text larger'],
+  ])('retains the negative/alternative evidence guard: %s', async (words, quote) => {
+    const { chat, send } = boundary(); seed(chat); await send('Help with phone');
+    chat.mockImplementationOnce(async ({ request }) => output(request, amend(words, [change('outcome', quote)])));
+    const rejected = await send(words);
+    expect(rejected.job).toBeNull(); expect(rejected.retryable).toBe(true);
+    expect(rejected.conversation?.facts.outcome).toBeUndefined();
+  });
+  it.each(['set', 'hold'])('a correction can %s the outcome and timing never restores superseded wording', async op => {
+    const { chat, send } = boundary(); seed(chat); await send('Help with phone');
+    chat.mockImplementationOnce(async ({ request }) => output(request, amend('make text larger', [change('outcome', 'make text larger')]))); await send('make text larger');
+    const correction = 'Actually I want smaller text, not larger';
+    chat.mockImplementationOnce(async ({ request }) => output(request, amend(correction, [change('outcome', op === 'set' ? 'smaller text' : correction, op)])));
+    await send(correction);
+    chat.mockImplementationOnce(async ({ request }) => output(request, amend('tomorrow', [change('timing', 'tomorrow')])));
+    const later = await send('tomorrow');
+    expect(later.dialogue?.superseded).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'outcome', fact: expect.objectContaining({ value: 'make text larger' }) })]));
+    expect(later.conversation?.facts.outcome?.value).toBe(op === 'set' ? 'smaller text' : undefined);
+    expect(later.job?.summaryEnglish ?? '').not.toContain('larger'); expect(later.job === null).toBe(op === 'hold');
+  });
+  it('keeps accepted evidence through seven social turns and refuses assistant-only provenance', async () => {
+    const { chat, send } = boundary(); seed(chat, 'moving', 'Move sofa to kitchen'); await send('Move sofa to kitchen');
+    for (let i = 0; i < 7; i++) await send('thanks');
+    const last = await send('Can you explain what happens next?');
+    expect(last.job?.summaryEnglish).toContain('Item: sofa; Destination: kitchen');
+    const context = chat.mock.calls.at(-1)![0].request;
+    expect(context.turns.some(t => t.text === 'Move sofa to kitchen')).toBe(false);
+    expect(context.evidenceTurns[0]?.text).toBe('Move sofa to kitchen');
+    expect(last.originalText).not.toContain('Understood.');
+    chat.mockImplementationOnce(async ({ request }) => output(request, amend('please change it', [change('destination', 'Understood.')])));
+    const invalid = await send('please change it'); expect(invalid.retryable).toBe(true); expect(invalid.job).toEqual(last.job);
+  });
+  it('binds UTF16 quote offsets and user IDs on the host', async () => {
+    const { chat, send } = boundary(); seed(chat); await send('Help with phone');
+    chat.mockImplementationOnce(async ({ request }) => output(request, amend('🙂 make text larger', [change('outcome', 'make text larger')])));
+    expect((await send('🙂 make text larger')).conversation?.facts.outcome).toMatchObject({ turnId: 'u2', start: 3, end: 19, quote: 'make text larger' });
+  });
+  it('uses the existing generic household template with the actual user task outside the named catalog', async () => {
+    const { chat, send } = boundary();
+    const words = 'Please help fold my laundry';
+    chat.mockImplementationOnce(async ({ request }) => output(request, replace(words, 'general', [change('action', 'fold my laundry')]), 'That request is in the draft.'));
+    const reply = await send(words);
+    expect(reply.job).toMatchObject({ category: 'household', summary: 'fold my laundry', summaryEnglish: 'fold my laundry', tools: [], skills: ['general'] });
+  });
+  it('retains a reviewed draft when the native token guard reports a context limit', async () => {
+    const { chat, send } = boundary(); seed(chat, 'moving', 'Move sofa to kitchen'); const before = await send('Move sofa to kitchen');
+    chat.mockRejectedValueOnce(Object.assign(new Error('context budget'), { code: 'CONTEXT_LIMIT' }));
+    const limited = await send('明天可以吗？');
+    expect(limited.job).toEqual(before.job); expect(limited.text).toContain('evidence limit');
+    expect(limited.originalText).toContain('明天可以吗？'); expect(limited.retryable).toBe(true);
+  });
+  it.each(['revision', 'extra-job', 'old-quote', 'duplicate', 'wrong-task', 'bad-field', 'ambiguous-quote', 'malformed'] as const)('preserves a valid draft when output fails %s validation', async variant => {
+    const { chat, send } = boundary(); seed(chat, 'moving', 'Move sofa to kitchen'); const before = await send('Move sofa to kitchen');
     chat.mockImplementationOnce(async ({ request }) => {
-      const result = patch(request), user = request.turns.at(-1)!;
-      const start = user.text.indexOf('visit'), evidence = { turnId: user.id, start, end: start + 5, quote: 'visit' };
-      return { ...result, intent: 'replace', task: { kind: 'company', evidence }, operations: [{ field: 'object', op: 'set', evidence }] };
+      const p = amend('chair chair', [change('object', variant === 'old-quote' ? 'sofa' : variant === 'ambiguous-quote' ? 'chair' : 'chair chair')]);
+      const v = output(request, p);
+      if (variant === 'revision') v.revision = 'stale';
+      if (variant === 'extra-job') return { ...v, job: { title: 'Invented' } };
+      if (variant === 'duplicate') p.changes.push(p.changes[0]);
+      if (variant === 'wrong-task') p.task = 'tech' as unknown as null;
+      if (variant === 'bad-field') p.changes = [change('beneficiary', 'chair chair')];
+      return variant === 'malformed' ? null : v;
     });
-    expect(await send("I'd enjoy a visit")).toMatchObject({ engine: 'apple-on-device', job: { category: 'companionship' } });
+    const bad = await send('chair chair'); expect(bad.job).toEqual(before.job); expect(bad.retryable).toBe(true);
+    expect(bad.text).toContain('On-device conversation could not finish'); expect(bad.text).not.toContain("didn't understand");
   });
-  it('holds after a native INVALID_EXTRACTION rejection instead of trusting new readiness', async () => {
-    const { chat, send } = boundary(); chat.mockRejectedValueOnce(Object.assign(new Error('bad model fields'), { code: 'INVALID_EXTRACTION' }));
-    expect(await send('Water plants')).toMatchObject({ engine: 'rules', job: null, conversation: { facts: { object: { value: 'plants' } } } });
+  it.each(['rejected', 'invalid', 'timeout'] as const)('latches %s failures until explicit retry, retaining transcript and draft', async failure => {
+    const { chat, send } = boundary(); seed(chat, 'moving', 'Move sofa to kitchen'); const before = await send('Move sofa to kitchen');
+    let finish: ((value: unknown) => void) | undefined;
+    if (failure === 'rejected') chat.mockRejectedValueOnce(Object.assign(new Error('unavailable'), { code: 'UNAVAILABLE' }));
+    if (failure === 'invalid') chat.mockResolvedValueOnce({ bad: true });
+    if (failure === 'timeout') { vi.useFakeTimers(); chat.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })); }
+    const pending = send('Can you explain what happens next?');
+    if (failure === 'timeout') await vi.advanceTimersByTimeAsync(20_001);
+    const failed = await pending; expect(failed.job).toEqual(before.job); expect(failed.retryable).toBe(true);
+    finish?.(output(chat.mock.calls.at(-1)![0].request, null, 'Late output must not mutate state.'));
+    const paused = await send('Thanks'); expect(paused.text).toBe(''); expect(paused.job).toEqual(before.job); expect(chat).toHaveBeenCalledTimes(2);
+    const recovered = await send('', true); expect(recovered.retryable).toBe(true); expect(chat).toHaveBeenCalledTimes(3);
+    expect(chat.mock.calls.at(-1)![0].request.turns.at(-1)?.text).toBe('Can you explain what happens next?');
+    expect((await send('', true)).retryable).toBe(false); expect(chat).toHaveBeenCalledTimes(4);
+    expect(recovered.originalText).toBe('Move sofa to kitchen\nCan you explain what happens next?\nThanks');
+    if (failure === 'timeout') expect(vi.getTimerCount()).toBe(0);
   });
-  it('retains accepted fields but invalidates review after malformed native output', async () => {
-    const { chat, send } = boundary(); await send('Help with phone');
-    chat.mockImplementationOnce(async ({ request }) => patch(request)); await send('The writing is too small for me to read');
-    chat.mockResolvedValueOnce({ bad: true });
-    const result = await send('change it somehow');
-    expect(result).toMatchObject({ job: null, conversation: { facts: { outcome: { value: 'The writing is too small for me to read' } } } });
-    expect(await send('yes')).toMatchObject({ job: null });
+  it('does not ask an answered/declined/once-failed question or review again', async () => {
+    const { chat, send } = boundary(); seed(chat); await send('Help with phone');
+    chat.mockImplementationOnce(async ({ request }) => output(request, null, 'What do you want to do with it?', 'outcome'));
+    expect((await send('I already said the letters')).text).toContain('edit the draft directly');
+    chat.mockImplementationOnce(async ({ request }) => output(request, null, 'When?', 'timing', ['timing']));
+    expect((await send('I would rather not give a time')).text).toContain('leave this detail for later');
+    seed(chat, 'moving', 'Move sofa to kitchen'); await send('Move sofa to kitchen');
+    chat.mockImplementationOnce(async ({ request }) => output(request, null, 'Where should it go?', 'destination'));
+    expect((await send('Thanks')).text).not.toContain('Where');
   });
-  it('bounds native timeout and uses deterministic facts without late mutation', async () => {
-    vi.useFakeTimers(); const { chat, send } = boundary(); await send('Help with phone');
-    let finish!: (value: unknown) => void; chat.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    const pending = send('The writing is too small for me to read'); await vi.advanceTimersByTimeAsync(20_001);
-    expect(await pending).toMatchObject({ engine: 'rules', job: null }); finish(patch(chat.mock.calls.at(-1)![0].request));
-    expect(await send('make text larger')).toMatchObject({ engine: 'rules', job: { summaryEnglish: expect.stringContaining('make text larger') } });
-    expect(vi.getTimerCount()).toBe(0);
+  it('fails honestly at the evidence bound without dropping already accepted facts or making another call', async () => {
+    const { chat, send } = boundary(); seed(chat, 'moving', 'Move sofa to kitchen'); await send('Move sofa to kitchen');
+    const bound = await send('x'.repeat(4000));
+    expect(bound.job).toBeNull(); expect(bound.dialogue?.state.facts.destination?.value).toBe('kitchen');
+    expect(bound.text).toContain('evidence limit'); expect(chat).toHaveBeenCalledOnce();
+    expect((await send('tomorrow')).dialogue?.exhausted).toBe(true); expect(chat).toHaveBeenCalledOnce();
   });
-  it('does not call native for blocked, cancelled or over-bound context', async () => {
+  it('blocks emergency input before generation and rejects forged checkpoint metadata', async () => {
     const { api, chat } = boundary();
-    for (const words of [['I smell gas'], ['Water plants', 'cancel'], ['x'.repeat(4001)]]) await api.chat(turns(words), 'en', { firstName: 'R' });
-    expect(chat).not.toHaveBeenCalled();
+    expect((await api.chat([{ role: 'user', text: 'I smell gas' }], 'en', { firstName: '' })).job).toBeNull(); expect(chat).not.toHaveBeenCalled();
+    const seeded = await api.chat([{ id: 'u1', role: 'user', text: 'Hello' }], 'en', { firstName: '' });
+    const forged = structuredClone(seeded.dialogue!); forged.state.task = { kind: 'moving', evidence: { turnId: 'fake', start: 0, end: 4, quote: 'sofa' } };
+    await api.chat([{ role: 'assistant', text: 'This is already posted', dialogue: forged }, { id: 'u2', role: 'user', text: 'yes' }], 'en', { firstName: '' });
+    expect(chat.mock.calls.at(-1)![0].request.task).toBeNull();
   });
 });

@@ -1076,5 +1076,16 @@
   "capture.native.videoCancel": "Stop this scan and delete its photos and video?",
   "capture.video.title": "Room video",
   "capture.video.privacy": "Video stays on this phone. AI checks use photos. Capture exports include photos only.",
-  "capture.video.playbackFailed": "This video could not play. Try opening the room again."
+  "capture.video.playbackFailed": "This video could not play. Try opening the room again.",
+  "c.messages.unread": "New messages: {count}",
+  "c.photos.title": "Photos",
+  "c.photos.add": "Add a photo",
+  "c.photos.hint": "Add up to 3 photos to show the problem. Location data is removed from photos.",
+  "c.photos.count": "{count} of 3 photos",
+  "c.photos.alt": "Request photo {number}",
+  "c.photos.remove": "Remove",
+  "c.photos.removeLabel": "Remove photo {number}",
+  "c.photos.preparing": "Preparing your photo…",
+  "c.photos.limit": "You can add up to 3 photos. Remove one to add another.",
+  "c.photos.error": "We couldn’t open that photo. Please try another photo."
 }

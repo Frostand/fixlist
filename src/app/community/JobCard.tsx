@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Account, AvailabilitySlot, JobAnalysis, Language, ScanEvidence } from '../../community/types';
 import { TOOLS } from '../../community/types';
+import { RequestPhotos } from './RequestPhotos';
 import { assistant } from '../../lib/assistant';
 import { LANGUAGES, useLanguage, useT } from '../../i18n';
 import { Availability, Button, Chips, Icon, skillLabel, slotLabel, toolLabel } from './UI';
@@ -8,9 +9,10 @@ export function EvidencePhoto({ evidence, caption = true }: {
     evidence: ScanEvidence;
     caption?: boolean;
 }) { const t = useT(); return <figure className="c-evidence">{evidence.thumbnail ? <div className="c-photo"><img src={evidence.thumbnail} alt={t('c.job.photo', { label: evidence.label })}/>{evidence.point ? <span className="c-photo-marker" role="img" aria-label={t('c.job.marker')} style={{ left: `${100 * evidence.point.u}%`, top: `${100 * evidence.point.v}%` }}>+</span> : null}</div> : <p>{t('c.job.noPhoto')}</p>}{caption ? <figcaption>{evidence.label}</figcaption> : null}</figure>; }
-export function JobCard({ analysis, evidence = [], slots = [], original = false }: {
+export function JobCard({ analysis, evidence = [], photos, slots = [], original = false }: {
     analysis: JobAnalysis;
     evidence?: readonly ScanEvidence[];
+    photos?: readonly string[] | undefined;
     slots?: readonly AvailabilitySlot[];
     original?: boolean;
 }) {
@@ -24,7 +26,7 @@ export function JobCard({ analysis, evidence = [], slots = [], original = false 
             setTranslation({ title, summary }); }).catch(() => { }); return () => { current = false; }; }, [analysis.title, analysis.summary, analysis.language, language, original]);
     const native = original || language === analysis.language;
     const title = native ? analysis.title : translation?.title ?? analysis.titleEnglish, summary = native ? analysis.summary : translation?.summary ?? analysis.summaryEnglish;
-    return <article className="c-job-card"><h2 lang={native ? analysis.language : translation ? language : analysis.titleEnglish === analysis.title ? analysis.language : 'en'}>{title}</h2>{native && analysis.language !== 'en' && analysis.title !== analysis.titleEnglish ? <p className="c-small" lang="en">{analysis.titleEnglish}</p> : null}<p lang={native ? analysis.language : translation ? language : analysis.summaryEnglish === analysis.summary ? analysis.language : 'en'}>{summary}</p><div className="c-job-facts"><span><Icon name="clock"/>{t('c.job.time', { minutes: analysis.estimatedMinutes })}</span><span><Icon name="person"/>{t(analysis.peopleNeeded === 1 ? 'c.job.person' : 'c.job.people', { count: analysis.peopleNeeded })}</span></div>{analysis.tools.length ? <div><h3>{t('c.job.tools')}</h3><ul className="c-tags">{analysis.tools.map((x) => <li key={x}>{toolLabel(t, x)}</li>)}</ul></div> : null}<div><h3>{t('c.job.skills')}</h3><ul className="c-tags">{analysis.skills.map((s) => <li key={s}>{skillLabel(t, s)}</li>)}</ul></div><div><h3>{t('c.job.when')}</h3>{slots.length ? <ul className="c-tags">{slots.map((s) => <li key={`${s.day}-${s.part}`}>{slotLabel(t, s)}</li>)}</ul> : <p>{t('c.job.flexible')}</p>}</div>{analysis.safetyNotes.length ? <div className="c-safety"><h3>{t('c.job.safety')}</h3><ul>{analysis.safetyNotes.map((note, i) => <li key={i}>{note}</li>)}</ul></div> : null}{evidence.length ? <section><h3>{t('c.job.spot')}</h3>{evidence.map((e) => <EvidencePhoto key={e.flagId} evidence={e}/>)}</section> : null}<p className="c-engine"><Icon name="help" size={18}/>{t(analysis.engine === 'apple-on-device' ? 'c.job.ai' : 'c.job.rules')}</p></article>;
+    return <article className="c-job-card"><h2 lang={native ? analysis.language : translation ? language : analysis.titleEnglish === analysis.title ? analysis.language : 'en'}>{title}</h2>{native && analysis.language !== 'en' && analysis.title !== analysis.titleEnglish ? <p className="c-small" lang="en">{analysis.titleEnglish}</p> : null}<p lang={native ? analysis.language : translation ? language : analysis.summaryEnglish === analysis.summary ? analysis.language : 'en'}>{summary}</p><div className="c-job-facts"><span><Icon name="clock"/>{t('c.job.time', { minutes: analysis.estimatedMinutes })}</span><span><Icon name="person"/>{t(analysis.peopleNeeded === 1 ? 'c.job.person' : 'c.job.people', { count: analysis.peopleNeeded })}</span></div>{analysis.tools.length ? <div><h3>{t('c.job.tools')}</h3><ul className="c-tags">{analysis.tools.map((x) => <li key={x}>{toolLabel(t, x)}</li>)}</ul></div> : null}<div><h3>{t('c.job.skills')}</h3><ul className="c-tags">{analysis.skills.map((s) => <li key={s}>{skillLabel(t, s)}</li>)}</ul></div><div><h3>{t('c.job.when')}</h3>{slots.length ? <ul className="c-tags">{slots.map((s) => <li key={`${s.day}-${s.part}`}>{slotLabel(t, s)}</li>)}</ul> : <p>{t('c.job.flexible')}</p>}</div>{analysis.safetyNotes.length ? <div className="c-safety"><h3>{t('c.job.safety')}</h3><ul>{analysis.safetyNotes.map((note, i) => <li key={i}>{note}</li>)}</ul></div> : null}{evidence.length ? <section><h3>{t('c.job.spot')}</h3>{evidence.map((e) => <EvidencePhoto key={e.flagId} evidence={e}/>)}</section> : null}<RequestPhotos photos={photos}/><p className="c-engine"><Icon name="help" size={18}/>{t(analysis.engine === 'apple-on-device' ? 'c.job.ai' : 'c.job.rules')}</p></article>;
 }
 export function OriginalToggle({ language, original, onChange }: {
     language: Language;

@@ -5,9 +5,11 @@ import type { Account, AvailabilitySlot, CommunityState, Job, MatchResult, Volun
 import { SKILLS, TOOLS } from '../../community/types';
 import { localeFor, useLanguage, useT } from '../../i18n';
 import { printCurrentPage } from '../../lib/native-print';
-import { Avatar, Availability, Button, Chips, Heading, Icon, MatchChips, Sheet, skillLabel, toolLabel } from './UI';
+import { Avatar, Availability, Button, Chips, Heading, Icon, MatchChips, Sheet, skillLabel, toolLabel, UnreadBadge } from './UI';
+import { RequestPhotos } from './RequestPhotos';
 import { JobCard, OriginalToggle, Requester } from './JobCard';
 import { ProgressTracker } from './Elder';
+import { JobRoomTours } from './RoomTour';
 const NearbyMap = lazy(() => import('./NearbyMap'));
 export function NearbyList({ state, matches, onOpen, maxMiles = 10 }: {
     state: CommunityState;
@@ -15,7 +17,7 @@ export function NearbyList({ state, matches, onOpen, maxMiles = 10 }: {
     maxMiles?: number;
     onOpen(id: string): void;
 }) { const t = useT(); return <div className="c-nearby-list">{matches.length ? matches.map((match) => { const job = state.jobs.find((j) => j.id === match.jobId), elder = state.accounts.find((a) => a.id === job?.elderId); if (!job)
-    return null; return <article className="c-match-card" key={job.id} data-score={match.score}><div className="c-request-top"><strong className="c-match-score">{t('c.nearby.match', { score: match.score })}</strong></div>{elder ? <Requester elder={elder} needs={state.elders.find(e => e.accountId === elder.id)?.needs ?? []} language={job.analysis.language}/> : null}<h2>{job.analysis.titleEnglish}</h2><p>{job.analysis.summaryEnglish}</p><MatchChips reasons={match.reasons} gaps={match.gaps} maxMiles={maxMiles}/><Button kind="secondary" icon="arrow" onClick={() => onOpen(job.id)}>{t('c.nearby.view')}</Button></article>; }) : <p className="c-empty">{t('c.nearby.empty')}</p>}</div>; }
+    return null; return <article className="c-match-card" key={job.id} data-score={match.score}><div className="c-request-top"><strong className="c-match-score">{t('c.nearby.match', { score: match.score })}</strong></div>{elder ? <Requester elder={elder} needs={state.elders.find(e => e.accountId === elder.id)?.needs ?? []} language={job.analysis.language}/> : null}<h2>{job.analysis.titleEnglish}</h2><p>{job.analysis.summaryEnglish}</p><RequestPhotos photos={job.photos}/><MatchChips reasons={match.reasons} gaps={match.gaps} maxMiles={maxMiles}/><Button kind="secondary" icon="arrow" onClick={() => onOpen(job.id)}>{t('c.nearby.view')}</Button></article>; }) : <p className="c-empty">{t('c.nearby.empty')}</p>}</div>; }
 export function Nearby({ state, account, onOpen }: {
     state: CommunityState;
     account: Account;
@@ -28,7 +30,7 @@ export function Nearby({ state, account, onOpen }: {
     const pins = useMemo(() => filtered.flatMap((m) => { const job = state.jobs.find((j) => j.id === m.jobId), elder = state.accounts.find((a) => a.id === job?.elderId); return job && elder ? [{ id: job.id, point: elder.location, score: m.score, title: job.analysis.titleEnglish }] : []; }), [filtered, state]);
     return <div className="c-stack"><Heading intro={t('c.nearby.body')}>{t('c.nearby.title')}</Heading><Suspense fallback={<div className="c-map c-map-loading" role="status">{t('c.loading')}</div>}><NearbyMap pins={pins} center={account.location} onOpen={onOpen}/></Suspense><div className="c-chips c-filters">{(['all', 'skills', 'today', 'distance'] as const).map((f) => <button className="c-chip" aria-pressed={f === filter} onClick={() => setFilter(f)} key={f}>{t(`c.nearby.${f}`)}</button>)}</div><NearbyList state={state} matches={filtered} onOpen={onOpen} maxMiles={profile?.maxMiles ?? 10}/></div>;
 }
-export function VolunteerJob({ job, elder, address, needs = [], profile, match, onAccept, onStep, onMessages }: {
+export function VolunteerJob({ job, elder, address, needs = [], profile, match, onAccept, onStep, onMessages, unread = 0, captureScope }: {
     job: Job;
     elder: Account;
     address: string | null;
@@ -38,6 +40,8 @@ export function VolunteerJob({ job, elder, address, needs = [], profile, match, 
     onAccept(date: string): boolean;
     onStep(step: 'trip' | 'arrive' | 'done', note?: string): boolean;
     onMessages(): void;
+    unread?: number;
+    captureScope?: { ownerId: string; resetEpoch: string; isCurrent(): boolean } | undefined;
 }) {
     const t = useT(), viewerLanguage = useLanguage(), [original, setOriginal] = useState(false), [accepting, setAccepting] = useState(false);
     const [chosen, setChosen] = useState<AvailabilitySlot | null>(null), [customDate, setCustomDate] = useState(''), [note, setNote] = useState('');
@@ -45,10 +49,11 @@ export function VolunteerJob({ job, elder, address, needs = [], profile, match, 
     const slots = match?.sharedSlots.length ? match.sharedSlots : profile.availability;
     const destination = `${elder.location.lat},${elder.location.lng}`;
     const pins = useMemo(() => [{ id: job.id, point: elder.location, score: 100, title: t('c.map.destination') }], [job.id, elder.location.lat, elder.location.lng, t.language]);
-    const details = <>{job.analysis.language !== viewerLanguage ? <OriginalToggle language={job.analysis.language} original={original} onChange={setOriginal}/> : null}<JobCard analysis={job.analysis} evidence={job.evidence} slots={job.preferredSlots} original={original}/></>;
+    const details = <>{job.analysis.language !== viewerLanguage ? <OriginalToggle language={job.analysis.language} original={original} onChange={setOriginal}/> : null}<JobCard analysis={job.analysis} evidence={job.evidence} photos={job.photos} slots={job.preferredSlots} original={original}/></>;
     return <div className="c-stack">
         <Heading>{t(open ? 'c.job.details' : 'c.volunteer.helping', { name: elder.firstName })}</Heading>
         <Requester elder={elder} needs={needs} language={job.analysis.language}/>
+        <JobRoomTours key={job.id} evidence={job.evidence} ownerId={captureScope?.ownerId} resetEpoch={captureScope?.resetEpoch} isCurrent={captureScope?.isCurrent}/>
         {open ? <>{details}<p className="c-small"><Icon name="shield"/>{t('c.job.addressHidden')}</p>
             <section className="c-tools-check"><h2>{t('c.accept.tools', { have: job.analysis.tools.filter(x => profile.tools.includes(x)).length, total: job.analysis.tools.length })}</h2>
                 <ul>{job.analysis.tools.map(x => <li key={x}><Icon name={profile.tools.includes(x) ? 'check' : 'tools'}/><span>{toolLabel(t, x)}<small>{t(profile.tools.includes(x) ? 'c.accept.have' : 'c.accept.need')}</small></span></li>)}</ul></section>
@@ -65,7 +70,7 @@ export function VolunteerJob({ job, elder, address, needs = [], profile, match, 
                     : job.status === 'on-the-way' ? <Button onClick={() => onStep('arrive')}>{t('c.active.arrive')}</Button>
                     : job.status === 'arrived' ? <><label className="c-field">{t('c.active.note')}<textarea maxLength={1000} value={note} onChange={e => setNote(e.target.value)}/></label><Button onClick={() => onStep('done', note)}>{t('c.active.done')}</Button></>
                     : <p className="c-notice">{t(job.status === 'completed' ? 'c.active.complete' : job.status === 'cancelled' ? 'c.job.cancelled' : 'c.active.wait')}</p>}
-                <Button kind="secondary" icon="message" onClick={onMessages}>{t('c.messages')}</Button>
+                <Button kind="secondary" icon="message" onClick={onMessages}>{t('c.messages')}<UnreadBadge count={unread}/></Button>
             </section>
             <details className="c-job-disclosure"><summary>{t('c.job.disclosure')}</summary><div className="c-stack">{details}</div></details>
         </>}

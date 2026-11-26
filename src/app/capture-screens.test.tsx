@@ -57,7 +57,7 @@ describe('capture screens preserve roles and human decisions', () => {
     expect(html).toContain(fixtureFlags.items[0]!.question); expect(html).toContain(fixtureFlags.items[0]!.limitation);
     expect(html).toContain('Experimental model score 0.77 (uncalibrated; not a probability)'); expect(html).toContain(translate('en', 'room.aiLabel')); expect(html).toContain(translate('en', 'room.reviewNotice')); expect(html).toContain('<details class="flag-details">');
     expect(html).toContain('#/r/question/rug-check'); expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('Room sketch view'); expect(render(false)).not.toContain('Room sketch view'); expect(render(null)).toContain('No room outline. Photos only.');
+    expect(html).toContain('Room sketch view'); expect(render(false)).not.toContain('Room sketch view'); expect(render(null)).toContain('Floor and photo positions only');
     expect(html).not.toContain('Confirm concern'); expect(html).not.toContain('type="radio"'); expect(html).not.toContain('% likely'); expect(html).not.toContain('handrail-check');
   });
   it('keeps catalog-wide flags stored but offers only this room\'s checklist and sketch decisions', () => {
@@ -71,11 +71,14 @@ describe('capture screens preserve roles and human decisions', () => {
     function Probe() { tree = RoomCaptureContent({ scenario, state, person: state.people[0]!, dispatch, navigate, record: { manifest: savedManifest, photos: new Map(), flags: savedFlags }, photoUrls: new Map(), selectedId: null, onSelect: () => {}, mode: 'plan', onMode: () => {} }); return tree; }
     const html = renderToStaticMarkup(<Probe />);
     expect(html).toContain(allSuggested.items[0]!.question);
-    for (const item of allSuggested.items.slice(1)) expect(html).not.toContain(item.question);
-    expect(elements(tree, 'article')).toHaveLength(1);
+    for (const item of allSuggested.items) {
+      const inRoom = scenario.checklist.some((q) => q.id === item.checklistItemId && q.roomId === savedManifest.roomId);
+      if (inRoom) expect(html).toContain(item.question); else expect(html).not.toContain(item.question);
+    }
+    expect(elements(tree, 'article')).toHaveLength(2);
     const sketch = components(tree, RoomSketch)[0]!;
-    expect((sketch.props.flags as { checklistItemId: string }[]).map((flag) => flag.checklistItemId)).toEqual(['rug-check']);
-    expect(flags.value.items).toHaveLength(8);
+    expect((sketch.props.flags as { checklistItemId: string }[]).map((flag) => flag.checklistItemId)).toEqual(['rug-check', 'floor-clutter-check']);
+    expect(flags.value.items).toHaveLength(9);
     expect(dispatch).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled();
   });
   it('view/import never answers or confirms; Add and Ask are local navigation; Not a problem is an explicit No', async () => {

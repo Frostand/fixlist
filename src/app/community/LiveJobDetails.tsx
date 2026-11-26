@@ -1,3 +1,5 @@
+import { RequestPhotos } from './RequestPhotos';
+import { useT } from '../../i18n';
 import { useState } from 'react';
 import type { LiveJobDetails as Details } from '../../community/ports';
 import type { Language } from '../../community/types';
@@ -7,6 +9,7 @@ import { Button } from './UI';
 import { liveError, liveStatus, liveCopy as l } from './live-copy';
 
 export function LiveJobDetails({ details: d, state, controller: c, language }: { details: Details; state: LiveViewState; controller: LiveCommunityController; language: Language }) {
+    const t = useT();
     const [message, setMessage] = useState(''), [stars, setStars] = useState<1 | 2 | 3 | 4 | 5>(5), [note, setNote] = useState('');
     const [confirm, setConfirm] = useState(false), [cancel, setCancel] = useState(false);
     const locked = !!state.pending, job = d.job, elder = state.access.value?.role === 'elder' && job.elderId === c.port.identity.userId;
@@ -18,8 +21,10 @@ export function LiveJobDetails({ details: d, state, controller: c, language }: {
     return <article className="fl-live-card c-stack" aria-label={l.privateDetails}>
         <h2 lang={d.analysis.language} dir="auto">{d.analysis.title}</h2><p role="status">{liveStatus[job.status]}</p>
         <p lang={d.analysis.language} dir="auto">{d.analysis.summary}</p>
+        <RequestPhotos photos={d.photos}/>
         <p>{l.original} <bdi>{d.originalText}</bdi></p><p>{l.addressLabel} <bdi>{d.address}</bdi></p>
         <p>{l.resident} <bdi>{d.elderName}</bdi> · {l.helper} <bdi>{d.volunteerName ?? l.unassigned}</bdi></p>
+        <p className="c-small">{t('pano.liveLocal')}</p>
         <ul>{d.analysis.safetyNotes.map(s => <li key={s}>{s}</li>)}</ul>
         <details><summary>{l.history}</summary><ol>{d.events.map(event => <li key={event.id}>{event.type} · <time dateTime={event.at}>{new Date(event.at).toLocaleString(language)}</time></li>)}</ol></details>
         {volunteer && next ? <Button disabled={locked} onClick={() => { void c.execute({ kind: 'advance', jobId: job.id, step: next }); }}>{next === 'on-the-way' ? l.onWay : next === 'arrived' ? l.arrived : l.report}</Button> : null}

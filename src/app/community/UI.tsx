@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import type { AvailabilitySlot, DayPart, MatchGap, MatchReason, Skill, Tool, Weekday } from '../../community/types';
 import { LANGUAGES, useT, type Translator } from '../../i18n';
+import brandMarkUrl from '../../assets/fixlist-mark.png';
 export type IconName = 'mic' | 'home' | 'help' | 'room' | 'pin' | 'person' | 'arrow' | 'back' | 'check' | 'clock' | 'message' | 'tools' | 'leaf' | 'mail' | 'close' | 'print' | 'shield' | 'replay';
 const paths: Record<IconName, ReactNode> = {
     replay: <><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/><path d="m10 9 5 3-5 3z"/></>,
@@ -22,6 +23,8 @@ const paths: Record<IconName, ReactNode> = {
     print: <><path d="M6 8V3h12v5M6 17H3V8h18v9h-3M6 13h12v8H6z"/></>,
     shield: <><path d="M12 2 3 6v6c0 5 9 10 9 10s9-5 9-10V6zM8 12l3 3 5-6"/></>,
 };
+/** The FixList logo mark (a helper watering a sprout held in a hand). Decorative: the wordmark text names the app. */
+export function BrandMark({ size }: { size?: number }) { return <img className="c-brand-mark" src={brandMarkUrl} alt="" aria-hidden="true" width={size} height={size} draggable={false}/>; }
 export function Icon({ name, size = 24 }: {
     name: IconName;
     size?: number;
@@ -30,6 +33,8 @@ export function Button({ children, kind = 'primary', icon, className = '', ...re
     kind?: 'primary' | 'secondary' | 'quiet' | 'clay';
     icon?: IconName;
 }) { return <button type="button" className={`c-button c-${kind} ${className}`} {...rest}>{icon ? <Icon name={icon}/> : null}{children}</button>; }
+/** Small count badge for new messages; the count is announced in words. */
+export function UnreadBadge({ count }: { count: number }) { const t = useT(); return count > 0 ? <span className="c-unread"><span aria-hidden="true">{count}</span><span className="sr-only">{t('c.messages.unread', { count })}</span></span> : null; }
 export function Heading({ children, intro }: {
     children: ReactNode;
     intro?: ReactNode;

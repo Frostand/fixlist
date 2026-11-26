@@ -1,0 +1,441 @@
+FixList visible-object detector implementation report — 2026-10-25
+
+Result
+Implemented YOLO-World v2 small with fixed vocabulary, 640px RGB input,
+fp16 Core ML ML Program plus class-wise NMS. It runs through Vision on saved
+JPEGs without LiDAR. Export completed within the time box; no CLIP fallback.
+The existing CaptureSuggestionsFile shape, eight checklist IDs and review-only
+workflow are preserved. Point is the clipped detection box centre in saved
+photo pixels. Legacy relevance/probability fields carry uncalibrated detector
+confidence, not hazard probability. Unsupported rules abstain.
+
+The phone has NOT been installed or launched. The signed build waited for
+keychain authorization; Andrew instructed cancellation and an unsigned device
+build instead. That build succeeded. Parent owns final sync, signing, physical
+device testing, installation and acceptance.
+
+Approach and trust integration
+- Fixed vocabulary is baked into the model; no text encoder or network inference
+  runs on the phone. Native engine is yolo-world-object-rules.
+- Vision .scaleFill matches the full-image Python resize. Vision class confidence
+  is multiplied by observation confidence; using only the class score inflated
+  weak detections. The macOS parity harness caught and verified this correction.
+- Native box points bypass only the old 3x3-grid and 0.7 location restrictions.
+  Strict photo bounds, status, content identity and threshold checks remain.
+  Legacy Mac imports still require their grid centres.
+- English object-review copy replaces area-relevance questions in
+  ondeviceFlagCopy(). Other locales use the existing English fallback.
+- Only the exact old CLIP model identity loses cached flags on storage read.
+  Photos/manifests remain intact, allowing re-analysis. Unknown identities still
+  fail validation; tests cover name/hash/key drift.
+- Existing resource names HazardImageEncoder.mlpackage and hazard-prompts.json
+  are retained. The compiled pipeline stores weights in model0/weights; only
+  those two Xcode verification-path references were changed in the dirty pbxproj.
+- General floor clutter was skipped: no new floor-clutter-check was added.
+  Adding one would require the shared demo scenario/catalog outside this scope.
+  The original question JSON and archived locked floor-object experiment were
+  left unchanged; their labels, selection and held-out evaluation were not used.
+
+Vocabulary (36 classes)
+rug, floor mat, runner rug, electrical cord, extension cord, power strip, shoe,
+bag, cardboard box, clothes, toy, book, stairs, bathtub, toilet, shower, grab bar,
+sofa, chair, table, bed, cabinet, person, towel, sink, kitchen island, kitchen
+counter, radiator, desk, window, stair handrail, doorway, blanket, cushion,
+upholstered bench, wall-to-wall carpet.
+Ultralytics pads the NMS head to 80 columns for its Core ML workaround; the
+remaining zero-confidence labels are padding, not extra classes.
+
+Thresholds and geometric rules
+- rug / floor mat / runner rug: >=0.30. Box centre y>=0.45, bottom y>=0.65.
+  Emits rug-check at >=0.30. This detects presence, not a curled/slipping edge.
+- electrical cord / extension cord / power strip: >=0.25. Centre y>=0.60,
+  bottom y>=0.72, normalized box width>=0.08, and pixel width/height>=1.4.
+  Emits cord-check at >=0.25. Lower frame is only a floor-location heuristic.
+- shoe/clothes/toy/book: >=0.30; bag/cardboard box: >=0.35. A stairs box >=0.25
+  must overlap >=60% of the object's box area. Emits stair-clutter-check using
+  object confidence, per-item threshold 0.30.
+- toilet >=0.45 or shower >=0.50; bathtub >=0.50 additionally needs a toilet
+  or shower detection >=0.15. Any grab bar >=0.12 anywhere suppresses the
+  support prompt. Emits bathroom-support-check at >=0.45.
+- All rule candidates except bar suppression need normalized box area>=0.002.
+- handrail-check, stair-lighting-check, night-lighting-check and
+  shower-surface-check always score 0; threshold 1 means abstain.
+- Other vocabulary classes provide context only. Scores are development-selected
+  heuristics, not calibrated probabilities or independently validated thresholds.
+
+Mac image review and observations
+Used the exported Core ML package directly on the 125-image hazard-eval corpus
+(26 ov, 30 playroom, 30 Viennese rendered frames, 39 wc), plus 12 evenly spaced
+existing playroom frames and 12 evenly spaced Viennese frames. These scenes can
+overlap the main corpus; this is qualitative development review, NOT held-out
+evaluation. GPT condition/relevance labels were not used as ground truth, nor
+read to compute accuracy. No precision, recall or hazard-accuracy claim is made.
+
+Final proposal counts in the main 125 images:
+- rug-check: 22 images. Many clear floor rugs were localized, e.g. ov-0003,
+  ov-0013, pr-0002, pr-0004, wc-0004 and wc-0028. A wall-to-wall carpet in
+  wc-0008 still produces a rug prompt. Flat/secured rugs also intentionally
+  prompt review; this does not establish a trip/slip hazard.
+- cord-check: 2 images, wc-0023 and wc-0039. Visible floor cables were localized.
+  Raw detections also confused radiators, wall fixtures and a small toy vehicle
+  with cords. Vertical/upper detections are filtered. The supplemental toy at
+  playroom/000133.jpg (0.366 confidence, 0.060 box width) is suppressed by the
+  final 0.08 minimum-width rule. Thin, vertical, distant or occluded real cords
+  can be missed. A wall cable in the lower frame can still be mislocated.
+- bathroom-support-check: 2 images, ov-0006 and ov-0008. Both contain bathroom
+  fixtures. Raw high-confidence tub boxes also appeared on kitchen islands
+  (vr-0005/6/7) and a staircase (ov-0002); the added context rule suppresses those
+  support prompts. A doorway labeled shower (wc-0022, ~0.42) is below threshold.
+  Bars can be missed; railings/radiators/toilet edges can be mislabeled as bars
+  and suppress useful prompts. No detected bar never establishes absence.
+- stair-clutter-check: 0 images. Deterministic overlap-rule tests pass, but the
+  model missed obvious cluttered-stair examples. Reliable stair recall is NOT
+  demonstrated and must not be promised.
+- Additional 24 frames: 2 rug proposals, 0 final cord/support/stair proposals.
+  Lighting, handrail stability and shower grip produce no proposals by design.
+
+Review artifacts (outside git)
+/Users/al1234/.local/share/fixlist-scan/detector-review/flags.html
+  Final proposed-object boxes/centres, 28 cards across all reviewed frames.
+/Users/al1234/.local/share/fixlist-scan/detector-review/final/index.html
+  Raw detector boxes on every one of the 125 images, before geometric rules.
+The final/, playroom/ and viennese/ directories contain predictions.json with
+all raw detections >=0.05, final rule outputs, dimensions, pixel points and Mac
+timings. Earlier all/context artifacts are preliminary, not the final runtime.
+
+Model identity and resource size
+Source: yolov8s-worldv2.pt, Ultralytics assets v8.4.0.
+Source SHA256: 9b2c17ab6124a913e9b3a5c170617920d91b0f01111a8479da69f00e2cf27792
+Runtime SHA256: 8deab313cc6f0a8f963ecadce37dd507f048cdfc386eef9368eac7b6106fbf9e
+Runtime weight: 25,039,328 bytes.
+Runtime weight SHA256: fc131187cf9ab3f11f209e5d4d7ade76ef09616f37dbbacf33f384909bbf8a9c
+Complete package: 25,190,157 bytes (~24.02 MiB).
+Core ML specification version 6 (iOS 15).
+Export environment: new external detector-venv, Python 3.12.13, Ultralytics
+8.4.14, PyTorch 2.14.1, coremltools 9.0. Converter warns that this Torch version
+is untested; the actual exported package was exercised on macOS and compiled
+for arm64 iOS. The original CLIP venv was not modified. Reproduction commands
+and a frozen dependency list are in scan/ondevice/README.md and
+detector-requirements.txt. Checkpoints and Python environments stay outside git.
+
+Latency (Apple M5 Pro Mac; NOT iPhone measurements)
+125-image direct Core ML prediction median: 9.39 ms; p95: 11.05 ms.
+First prediction in that run: 564 ms. Resize/image decode are outside those
+Python timings. Native Vision detect harness: 66.5, 10.2, 15.5 ms on 3 images,
+including image decode and resize but excluding model initialization. These
+short host runs do not establish phone latency, cold start, thermals or memory.
+
+Validation — actual final outputs
+1. npm run typecheck — exit 0, no TypeScript errors.
+2. FIXLIST_REQUIRE_IOS_MODEL=1 npx vitest run
+   src/lib/ondevice-flags.test.ts src/lib/capture-suggestions.test.ts
+   src/lib/capture-storage.test.ts src/lib/scan-suggestions.test.ts
+   src/lib/scan-suggestions-v2.test.ts src/lib/scan-suggestions-binding.test.ts
+   src/app/scan-suggestions-ui.test.tsx scripts/verify-ios-model.test.mjs
+   scripts/setup.test.mjs
+   Test Files 9 passed (9)
+   Tests 241 passed (241)
+3. npm test — exit 0
+   Test Files 108 passed (108)
+   Tests 2541 passed | 1 skipped (2542)
+   Duration 10.57s
+   The optional real-model test is skipped without the env var in this full
+   run; it passed in the explicit required-model targeted run above.
+   No outstanding own or unrelated test failures in the final runs.
+4. Native macOS helper — exit 0: 16 rule checks and 3 real-image comparisons.
+   rug ov-0003: max point delta 0.916 px, confidence delta 0.01074.
+   support ov-0008: max point delta 0.098 px, confidence delta 0.00488.
+   cord wc-0023: max point delta 2.249 px, confidence delta 0.06665.
+   Pillow and Vision resampling differ slightly; this is host parity only.
+   Evidence: detector-review/native/{parity.json,native.json} and native.log.
+5. Core ML compiler — exit 0. Source and built app weight verification scripts
+   both exit 0; native/web identity and source-hash consistency tests pass.
+6. Signed xcodebuild: waited in codesign for keychain authorization. Canceled
+   with SIGINT at Andrew's explicit request; exited 75. Not a signed-build pass.
+7. Requested replacement device build — exit 0, ** BUILD SUCCEEDED **:
+   cd ios/App
+   xcodebuild -project App.xcodeproj -scheme App -configuration Debug
+     -destination 'id=00008150-001C71C81A8A401C'
+     -derivedDataPath /Users/al1234/.t3-custom/projects/fixlist/ios/DerivedData/worker-hazard
+     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+   No -allowProvisioningUpdates. No install or launch.
+   Log: detector-review/device-build-unsigned.log. One AppIntents metadata
+   warning reports no AppIntents.framework dependency; no compile errors.
+8. git diff --check and Python py_compile — exit 0.
+
+Files changed by this worker
+- ios/App/App/FixListHazardsPlugin.swift
+- ios/App/App/HazardModel/HazardImageEncoder.mlpackage/{Manifest.json,
+  Data/com.apple.CoreML/model.mlmodel, Data/com.apple.CoreML/weights/weight.bin}
+- ios/App/App/HazardModel/hazard-prompts.json, NOTICE.txt,
+  LICENSE-AGPL-3.0.txt, LICENSE-OpenAI-CLIP-MIT.txt
+- ios/App/App.xcodeproj/project.pbxproj: ONLY the two compiled-weight paths.
+  Existing unrelated changes in this shared file were preserved.
+- src/lib/ondevice-model.ts, ondevice-contract.ts, ondevice-flags.ts,
+  ondevice-flags.test.ts
+- src/lib/capture-suggestions.ts, capture-types.ts, capture-storage.ts,
+  capture-storage.test.ts (explicitly authorized scope extensions)
+- scripts/verify-ios-model.sh, verify-ios-model.test.mjs, setup.mjs model comments
+- scan/ondevice/export_detector.py, publish_detector.py, review_detector.py,
+  verify_detector_native.py, detector_rules.py, detector-rules.json,
+  detector-requirements.txt, README.md, this report; local DETECTOR-PLAN.md.
+No changes were made by this worker to RoomCapture, RoomSketch/room geometry,
+capture plugin/controller, demo catalog, question JSON, or other owner files.
+No reset, stash, clean, checkout, commit, phone install or phone launch occurred.
+
+License and remaining parent gates
+Ultralytics code, source weights and exported detector are AGPL-3.0; this is
+plainly recorded in NOTICE and the full license file. Baked OpenAI CLIP text
+embeddings use MIT code/weights; its license is also included. The export is
+not MIT-only. Sources: https://github.com/ultralytics/ultralytics/tree/v8.4.14
+and https://github.com/openai/CLIP . This report is not a legal clearance.
+
+Parent must build/sync the final shared web bundle (npm run ios:sync) before
+the signed build/install. This worker's xcodebuild alone does not refresh the
+Capacitor web assets. Perform actual saved-capture review on Andrew's phone,
+including no-LiDAR flow, coordinate overlays, cold start, and missed/false flags.
+Parent must carry the new LFS object when committing/pushing; it is only local
+until then. Repeated scene views, sparse hazard labels and development-selected
+thresholds limit the evidence. This is an implementation with honest visible-
+object review aids, not validated hazard detection or proof of home safety.
+
+
+======================================================================
+ROUND 2 — floor-clutter-check — 2026-10-25
+======================================================================
+
+Implementation result (parent acceptance / physical testing still required)
+Added a ninth trusted question, floor-clutter-check, linked to clutter-concern
+and review-floor-clutter in the living-room sample. The existing flags file
+schema and point fields are unchanged. No object-count field was added.
+
+The catalog includes originalQuestion, question, relevanceQuestion and an
+explicit geometry limitation. The sample has an unconfirmed fictional
+observation, a quick-fix action, family-review routing and an unknown cost.
+The next step is: Pick up items from the floor and keep walkways clear; find a
+nearby storage spot for shoes and bags. Its nextStepSource follows the other
+samples: Based on CDC 2017 Check for Safety. Primary source checked this round:
+https://www.cdc.gov/steadi/pdf/steadi-brochure-checkforsafety-508.pdf
+Page 2, Floors, calls for picking up floor objects. The storage-location wording
+is an authored practical adaptation, not a verbatim CDC quotation.
+
+English and Spanish catalog question/action/photo copy, the guided-photo
+capture.prompt.floor-clutter-check and fictional observation copy were appended
+to en.ts / es.ts. Existing keys were preserved. Other locales use the existing
+per-key English fallback. On-device flag questions retain the established
+English object-review fallback and clearly identify possible/unverified output.
+
+RoomCapture.tsx already calls scanFlagAnalysis(checklistItemId, label, language).
+The existing clutter/floor branch produces Clear a walkway, a household/cleaning
+request with gloves, resident-permission copy and the unverified-room-flag
+safety note. No RoomCapture change is needed or was made. The new regression
+passes a native mocked flag through validation, durable save/read, catalog text
+and valid English/Spanish/French drafts. These are host tests, not device proof.
+
+Rule details
+- Floor class thresholds: shoe >=0.30; clothes >=0.30; cardboard box >=0.35;
+  toy >=0.35; bag >=0.40; book >=0.40.
+- These are in a separate floorClutterThresholds dictionary. Round 1's stair
+  clutter thresholds and all other rule behavior remain unchanged.
+- Use the clipped normalized saved-photo box. Its area must be >=0.002 and
+  its bottom must be >=0.72 of frame height (top-left y increases downwards).
+- Furniture context: table, desk, sofa, chair, bed, cabinet, kitchen counter
+  and kitchen island; confidence >=0.25 and area >=0.002.
+- Suppress a candidate if >=50% of its own area lies inside ANY such furniture
+  box AND the candidate's bottom is strictly above that furniture's bottom.
+  At/below the furniture bottom, that furniture box does not suppress it.
+  This retains floor objects under a table whose projection overlaps the box.
+- Emit confidence and saved-photo pixel centre of the highest-confidence
+  qualifying object. A stronger suppressed object does not hide a weaker
+  qualifying object. ONDEVICE_THRESHOLDS['floor-clutter-check'] is 0.30.
+- Class thresholds were selected using this qualitative development review.
+  Clothing near 0.31/0.32 was visibly on the floor. The 0.40 book gate excludes
+  the ~0.33 bathroom/tub false book, and the 0.40 bag gate excludes the ~0.36
+  Viennese cushion candidate. High-confidence false classes remain (below).
+  No shoe qualifies in this review; its 0.30 gate is provisional, inherited
+  from Round 1's object threshold, not supported by a positive shoe example.
+  No threshold optimum, accuracy or calibrated probability is claimed.
+
+Mac review — actual rerun, not just reapplying rules to cached predictions
+Ran review_detector.py against the unchanged bundled Core ML package on the
+exact same 125 + 12 + 12 paths and ordering as Round 1; equality was asserted.
+No locked floor-object dataset, labels, selection or held-out evaluation was
+opened or changed. The runs use the detector-venv and saved JPEG dimensions.
+
+Proposal counts (one winning point per rule per image):
+                         main 125    playroom 12    Viennese 12
+floor-clutter-check          6             2              0
+rug-check                   22             1              1
+cord-check                   2             0              0
+bathroom-support-check       2             0              0
+stair-clutter-check           0             0              0
+unsupported four             0             0              0
+There are 8 floor-clutter proposal/image pairs and 36 total proposal cards.
+Supplemental frames overlap scenes in the main set; these are not independent
+held-out cases and no precision, recall or hazard-accuracy result is computed.
+
+All floor-clutter proposals, including visually bad ones:
+- ov-0001: cardboard box 0.6240; visible loose box on the wood floor. Good
+  object-location example; actual walking use still requires resident review.
+- pr-0001: clothes 0.3081; white cloth pile on floor by/under the desk. Good.
+- pr-0003: toy 0.4399; toy is ON the small table. Bad floor-location proposal:
+  no qualifying furniture box was detected, so the suppression cannot run.
+- pr-0018: cardboard box 0.4636; actually a book on a red beanbag in a rotated
+  image. Bad class/floor-location proposal. Lower-frame position is not gravity.
+- pr-0019: toy 0.4146; red toy vehicle on the floor. Good. The stronger toy
+  detection in the same image is higher in frame and does not take the point.
+- pr-0024: book 0.5571; visible book on the rug/floor. Good object location.
+- supplemental playroom/000000: clothes 0.3201; the floor cloth pile again.
+- supplemental playroom/000013: bag 0.4492; actually the red beanbag. Bad loose
+  bag proposal; furniture-like objects can be mislabeled as portable objects.
+
+Suppression spot-checks: ov-0023's ~0.624 book is on a bed and produces no
+floor-clutter point. pr-0027's ~0.472 tabletop toy is suppressed by the detected
+desk box. pr-0003 shows the unresolved case when that table is missed.
+Floor and furniture-box heuristics do not establish a walking route; they may
+also suppress genuine floor objects, including under furniture when the
+object does not reach its detected bottom. Rotated/occluded/distant objects
+remain a risk. Papers are outside this fixed vocabulary and may be missed.
+
+Review artifacts (outside git)
+Base: /Users/al1234/.local/share/fixlist-scan/detector-review/round2/
+- final/{predictions.json,summary.json,index.html,flags.html}: 125 images.
+- playroom/ and viennese/: corresponding 12-image results and sheets.
+- predictions.json: combined 149 records with reviewGroup labels.
+- flags.html and flags-*.jpg: all 36 winning proposal boxes and centres.
+- floor-clutter/flags.html and floor-clutter/flags-0.jpg: all 8 new proposals.
+- native/{native.json,parity.json,detector-native.swift,detector-native}.
+The top-level detector-review/flags.html now shows Round 2. Round 1's raw
+prediction directories remain available; Round 2's results are under round2/.
+
+Identity / saved-capture migration
+Weights and all mlpackage content bytes are unchanged from Round 1. The
+publish_detector.py identity scheme still hashes the package and pinned native,
+contract, producer/validator/storage/types, rules and question sources. Regenerated
+hazard-prompts.json and ondevice-model.ts have matching identity and nine items.
+Runtime SHA256: 3b5d9695a3db8764402fcb920701f27676f522407ffe81603584ffc1c5fb81fc
+Weight SHA256 remains fc131187cf9ab3f11f209e5d4d7ade76ef09616f37dbbacf33f384909bbf8a9c.
+The exact Round 1 identity (runtime 8deab313cc6f0a8f963ecadce37dd507f048cdfc386eef9368eac7b6106fbf9e)
+is now retired alongside the exact old CLIP identity. Cached eight-item flags
+are dropped on local read; original photos/manifests remain for re-analysis.
+Unknown identities and mutations are still rejected. Migration and durable
+re-analysis tests pass. Older eight-question Mac flag/calibration exports do
+not become nine-question evidence; regenerate flags using the current catalog
+and use --no-calibration unless separately matching calibration is available.
+
+Validation — final actual output, all commands from repo root unless stated
+1. npm run typecheck — exit 0:
+   > fixlist-demo@0.0.0 typecheck
+   > tsc -b --pretty false
+   No TypeScript errors.
+
+2. FIXLIST_REQUIRE_IOS_MODEL=1 npx vitest run
+   src/lib/ondevice-flags.test.ts src/lib/capture-suggestions.test.ts
+   src/lib/capture-storage.test.ts src/lib/scan-suggestions.test.ts
+   src/lib/scan-suggestions-v2.test.ts src/lib/scan-suggestions-binding.test.ts
+   src/app/scan-suggestions-ui.test.tsx scripts/verify-ios-model.test.mjs
+   scripts/setup.test.mjs src/domain/catalog.test.ts src/domain/workflow.test.ts
+   src/app/catalog-views.test.tsx src/app/checklist-presentation.test.tsx
+   src/community/task-rules.test.ts src/i18n/languages.test.tsx
+   src/app/capture-screens.test.tsx
+   Exit 0:
+   Test Files  16 passed (16)
+   Tests  486 passed (486)
+   Duration  1.24s
+   Includes the required real-model/identity/source-hash check.
+
+3. npm test — exit 0:
+   Test Files  111 passed (111)
+   Tests  2560 passed | 1 skipped (2561)
+   Duration  9.08s
+   The skipped optional real-model check passed in command 2 with the env var.
+   No remaining own or unrelated failures in this final shared-checkout run.
+   Initial failures included stale eight-question assertions and a missing
+   guided capture prompt for the new ID. All were resolved. The missing key
+   also caused the initially widespread RoomCapture test failures; those were
+   not independent 3D-worker bugs, and RoomCapture code/tests were not edited.
+
+4. Native macOS harness — exit 0:
+   detector-venv/bin/python scan/ondevice/verify_detector_native.py
+     --compiled ~/.local/share/fixlist-scan/detector-work/compiled/HazardImageEncoder.mlmodelc
+     --predictions ~/.local/share/fixlist-scan/detector-review/round2/final/predictions.json
+     --out ~/.local/share/fixlist-scan/detector-review/round2/native
+     --images ov-0003.jpg wc-0023.jpg ov-0008.jpg ov-0001.jpg ov-0023.jpg
+              pr-0001.jpg pr-0003.jpg pr-0019.jpg pr-0024.jpg
+   ruleChecks: 47; pythonRuleParityCases: 46; images: 9.
+   Covers floor/on-table/below-table/at-table-bottom, exact 50% overlap and
+   less-than-half overlap, all eight furniture contexts, all six class gates,
+   weak furniture, tiny/upper objects, highest qualifying centre and a stronger
+   suppressed object. Actual check count is computed, not hardcoded.
+   All nine real-image proposal/abstention sets agree. Five floor-clutter
+   comparisons: max point error 0.300 px, max confidence difference 0.022461.
+   Across all fired rules: max point error 2.249451 px, confidence delta 0.066651.
+   Pillow and Vision resizing differ. These are macOS checks, not iPhone data.
+
+5. Python schemas/injected pipeline tests — final exits 0:
+   detector-venv/bin/python -m unittest discover -s scan/tests -p 'test_capture*.py' -v
+   Ran 28 tests in 0.254s — OK.
+   scan/venv-python -m unittest discover -s scan/tests -p test_suggest.py -v
+   Ran 49 tests in 1.735s — OK.
+   scan/venv-python -m unittest discover -s scan/tests -p test_evaluate_model.py -v
+   Ran 17 tests in 1.722s — OK.
+   The first suggest-test attempt used detector-venv, which lacks pycolmap.
+   Reran in the documented existing scan/venv-python environment, without
+   installing anything. Stale eight-item counts and the synthetic dry-run
+   response's eight-value list were extended to the ninth trusted ID. No real
+   calibration/model selection/evaluation or protected outcome was rerun.
+
+6. Requested unsigned device build — exit 0:
+   cd ios/App
+   xcodebuild -project App.xcodeproj -scheme App -configuration Debug
+     -destination 'id=00008150-001C71C81A8A401C'
+     -derivedDataPath /Users/al1234/.t3-custom/projects/fixlist/ios/DerivedData/worker-hazard
+     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+   ** BUILD SUCCEEDED **
+   warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+   No compiler errors or CodeSign operation. No signed build, install or launch.
+   This build validates native compilation; the existing bundled web assets
+   are not refreshed by xcodebuild. Parent must sync the final shared web build
+   before signing/installing the combined app.
+
+7. Source and built-app weight verification — exits 0, no output:
+   /bin/sh scripts/verify-ios-model.sh
+   /bin/sh scripts/verify-ios-model.sh
+     ios/DerivedData/worker-hazard/Build/Products/Debug-iphoneos/App.app/HazardImageEncoder.mlmodelc/model0/weights/weight.bin
+   Python py_compile for changed Python modules/tests and git diff --check:
+   exit 0, no output.
+   Full command logs are in round2/{typecheck,targeted,full-test,native,
+   python-capture,python-suggest,python-evaluate-model,device-build-unsigned}.log.
+
+Files changed in ROUND 2 (earlier Round 1 / other workers' changes preserved)
+- ios/App/App/FixListHazardsPlugin.swift
+- ios/App/App/HazardModel/hazard-prompts.json (generated; no weight changes)
+- src/lib/ondevice-model.ts (generated), ondevice-contract.ts,
+  capture-storage.ts (migration comment), ondevice-flags.test.ts,
+  capture-storage.test.ts, capture-suggestions.test.ts
+- src/data/demo-scenario.ts
+- src/i18n/en.ts, es.ts: appended seven new keys per locale only
+- src/domain/catalog.test.ts, workflow.test.ts
+- src/app/capture-screens.test.tsx, catalog-views.test.tsx,
+  checklist-presentation.test.tsx, scan-suggestions-ui.test.tsx
+- src/community/task-rules.test.ts (runtime helper already handles floor clutter)
+- scan/hazard-questions.json, suggestion_schema.py, suggest.py
+- scan/tests/test_capture_pipeline.py, test_suggest.py
+- scan/tests/capture-parity/{valid-flags,invalid-point-below-threshold,
+  invalid-point-not-grid-centre,invalid-wrong-derivation,invalid-wrong-notice}.json
+- scan/ondevice/detector-rules.json, detector_rules.py, review_detector.py,
+  verify_detector_native.py, README.md, DETECTOR-REPORT.txt
+
+Protected capture/3D files, RoomCapture.tsx, RoomSketch*, RoomReviewSketch.tsx,
+room-geometry.ts and FixListCaptureViewController.swift were not edited.
+No reset, stash, clean, checkout, commit, sync, install or phone launch occurred.
+
+Remaining limits / parent gates
+Ready for parent code/evidence review, not a claim of physical acceptance.
+The known false proposals above are unresolved limitations. Review thresholds
+are development heuristics, shoe staging remains unproven, and furniture or
+floor position does not identify actual walking paths. The model cannot assess
+physical risk, lighting, friction, stability or objects it missed. Existing
+AGPL licensing and submission/release gates remain. Parent owns final web sync,
+signing/install and saved-capture tests on Andrew's phone, including staged
+shoes/bags/box, table suppression, coordinates and old-capture re-analysis.

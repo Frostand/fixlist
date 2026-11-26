@@ -19,7 +19,7 @@ export interface LiveJob extends LiveDiscoveryJob {
 export interface LiveEvent { id: string; actorId: string; type: JobEventType; at: string }
 export interface LiveRating { stars: 1 | 2 | 3 | 4 | 5; note: string; at: string; byId: string }
 export interface LiveJobDetails {
-  job: LiveJob; source: JobSource; originalText: string; analysis: JobAnalysis; address: string;
+  job: LiveJob; source: JobSource; originalText: string; analysis: JobAnalysis; address: string; photos?: readonly string[];
   elderName: string; volunteerName: string | null; events: readonly LiveEvent[]; rating: LiveRating | null;
 }
 export interface LiveMessage { id: string; jobId: string; fromId: string; at: string; text: string; language: Language }
@@ -27,7 +27,7 @@ export interface LiveMessage { id: string; jobId: string; fromId: string; at: st
 export interface LiveServiceCredit { jobId: string; volunteerId: string; approvedServiceCreditMinutes: number; confirmedAt: string }
 export interface LivePage<T> { items: readonly T[]; nextCursor: string | null }
 export interface LivePageInput { cursor?: string; limit?: number }
-export interface PostLiveRequest { requestId: string; source: JobSource; originalText: string; analysis: JobAnalysis; address: string }
+export interface PostLiveRequest { requestId: string; source: JobSource; originalText: string; analysis: JobAnalysis; address: string; photos?: readonly string[] }
 export interface LiveMutation { jobId: string; status: JobStatus; messageId: string | null }
 export type LiveAdvance = 'on-the-way' | 'arrived' | 'reported-done';
 

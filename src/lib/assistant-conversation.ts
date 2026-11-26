@@ -5,7 +5,7 @@ import { assistantConversationCopy as copy, assistantFollowupCopy as followup } 
 export type ConversationField = 'task' | 'object' | 'outcome' | 'location' | 'destination' | 'quantity' | 'timing' | 'access' | 'correction' | 'review';
 export interface Evidence { turnId: string; start: number; end: number; quote: string }
 export interface UserFact extends Evidence { value: string; turn: number; source: 'rules' | 'native' }
-export const TASK_SEEDS = { plants: 'Water plants', moving: 'Move furniture', tech: 'Help with phone', groceries: 'Pick up groceries', 'carry-groceries': 'Pick up groceries', bulb: 'Replace a bulb', alarm: 'Check smoke alarm', 'grab-bar': 'Install grab bar', rug: 'Secure rug', 'night-light': 'Install night lights', clutter: 'Clear walkway', plumbing: 'Fix leaking tap', company: 'Help with companionship', yard: 'Help in the yard' } as const;
+export const TASK_SEEDS = { plants: 'Water plants', moving: 'Move furniture', tech: 'Help with phone', groceries: 'Pick up groceries', 'carry-groceries': 'Pick up groceries', bulb: 'Replace a bulb', alarm: 'Check smoke alarm', 'grab-bar': 'Install grab bar', rug: 'Secure rug', 'night-light': 'Install night lights', clutter: 'Clear walkway', plumbing: 'Fix leaking tap', company: 'Help with companionship', yard: 'Help in the yard', general: 'A household task' } as const;
 export type ConversationTaskKind = keyof typeof TASK_SEEDS;
 export interface ConversationTask { kind: ConversationTaskKind; evidence: Evidence }
 export interface NativeConversationPatch {
@@ -35,6 +35,9 @@ export interface ConversationState {
 }
 
 const ROOM = /\b(?:living\s*room|cocina|sala|dining\s*room|bedroom|bathroom|kitchen|hallway|garage|porch|garden|yard|upstairs|downstairs)\b|厨房|廚房|客厅|客廳|부엌|거실|nhà bếp|phòng khách|kusina|кухне|гостиной|cuisine|المطبخ|غرفة المعيشة/giu;
+/** True when the words already name a place in the home, so asking "where" would repeat them. */
+const PLACE = /\b(?:stairs?|staircase|steps|basement|attic|closet|laundry|entry(?:way)?|front door|back door|baño|recámara|dormitorio|escalera)\b/iu;
+export function namesPlace(text: string): boolean { return text.search(ROOM) >= 0 || PLACE.test(text); }
 const OBJECT = /\b(?:chairs?|sofas?|couches?|tables?|beds?|furniture|boxes|box|plants?|flowers?|groceries|phone|computer|printer|wi-?fi)\b|椅子|桌子|沙发|沙發|椅子|의자|소파|teléfono|telefono|computadora|휴대폰|컴퓨터|手机|手機|电脑|電腦|điện thoại|máy tính|telepono|телефон|компьютер|téléphone|ordinateur|الهاتف|كمبيوتر/iu;
 const MOVE = /\bmov(?:e|ing)\b/iu;
 const CARRY = /\bcarry(?:ing)?\b/iu;
@@ -49,8 +52,11 @@ const socialKind = (text: string) => {
   return null;
 };
 const cancellation = /^(?:cancel(?: that| this| the request)?|never mind|nevermind|forget (?:it|that)|stop|取消|취소|hủy|annuler|отмена|إلغاء)[.!\s]*$/iu;
+export const cancellationInput = (text: string): boolean => cancellation.test(text.trim());
 const correction = /^(?:actually\b|no\b|not that\b|instead\b|change\b|correction\b|нет\b|不是|아니|لا\b)/iu;
 const ambiguous = /\b(?:maybe|or|not that|other one)\b|或者/iu;
+export const ambiguousInput = (text: string): boolean => ambiguous.test(text);
+export const unsupportedInstructionInput = (text: string): boolean => /ignore.{0,40}instructions|system\s*[:>]|automatically/iu.test(text);
 const yes = /^(?:yes|yeah|yep|ok|okay|sure|sí|si|oui|да|نعم|是|네)(?:[,!\s]+(?:please|post it|review it))?[.!\s]*$/iu;
 const no = /^(?:no|nope|non|нет|لا|아니요|不是)[.!\s]*$/iu;
 /** Phrase triage, not a safety assessment. Always runs before ordinary task parsing. */
@@ -77,7 +83,7 @@ function pending(field: ConversationField, turn: number | string): PendingQuesti
 function question(field: ConversationField, language: Language): string {
   return field === 'task' ? copy[language].question : followup[language].questions[field];
 }
-function draft(base: JobAnalysis, facts: ResolvedFacts, language: Language): JobAnalysis {
+export function draft(base: JobAnalysis, facts: ResolvedFacts, language: Language): JobAnalysis {
   const keys = ['object', 'outcome', 'quantity', 'origin', 'destination', 'location', 'timing', 'access'] as const;
   const details = (lang: Language) => keys.flatMap(key => facts[key] ? [`${followup[lang].labels[key]}: ${facts[key]!.value}`] : []).join('; ');
   const english = details('en'), local = details(language);
@@ -130,7 +136,7 @@ function reduceWindow(recent: readonly ChatTurn[], language: Language, rules: ty
         continue;
       }
       // Never take alternatives, negated tasks or instructions as resolved details.
-      const unsafeInstruction = /ignore.{0,40}instructions|system\s*[:>]|automatically/iu.test(text);
+      const unsafeInstruction = unsupportedInstructionInput(text);
       const negatedTask = negatedActionInput(text);
       if (ambiguous.test(text) || contradictory(text) || unsafeInstruction || negatedTask || /^no[,\s]+not\b/iu.test(text)) {
         ask(base ? (negatedTask && state.pending?.field !== 'review' ? state.pending?.field ?? 'task' : fieldHint(text, moving)) : 'task', base ? strings.unsupported : ''); continue;
@@ -240,7 +246,7 @@ function taskKind(job: JobAnalysis): ConversationTaskKind | null {
   const byTitle: Record<string, ConversationTaskKind> = { 'Water the plants': 'plants', 'Move furniture': 'moving', 'Help with a phone or computer': 'tech', 'Pick up groceries': 'groceries', 'Replace a light bulb': 'bulb', 'Check a smoke alarm': 'alarm', 'Install a grab bar': 'grab-bar', 'Secure or remove a loose rug': 'rug', 'Install night lights': 'night-light', 'Clear a walkway': 'clutter', 'Review a leaking tap': 'plumbing', 'Spend some time together': 'company', 'Help in the yard': 'yard' };
   return byTitle[job.titleEnglish] ?? null;
 }
-function taskAnalysis(kind: ConversationTaskKind, language: Language, rules: typeof analyzeTaskWithRules): JobAnalysis {
+export function taskAnalysis(kind: ConversationTaskKind, language: Language, rules: typeof analyzeTaskWithRules): JobAnalysis {
   const base = rules(TASK_SEEDS[kind], language);
   if (kind !== 'carry-groceries') return { ...base, urgency: 'this-week' };
   const titles: Record<Language, string> = { en: 'Help carry groceries', es: 'Ayuda para llevar la compra', zh: '帮忙搬运食品', ko: '장본 물건 나르기', vi: 'Giúp mang thực phẩm', tl: 'Tulong sa pagdadala ng pinamili', ru: 'Помочь донести продукты', fr: 'Aider à porter les courses', ar: 'المساعدة في حمل البقالة' };
@@ -268,7 +274,7 @@ function validEvidence(v: unknown, request: NativeConversationRequest): v is Evi
     && (v.end as number) <= user.text.length && user.text.slice(v.start as number, v.end as number) === v.quote;
 }
 function contradictory(text: string) { return /\b(?:larger|bigger|aumentar)\b.*\b(?:smaller|disminuir)\b|\b(?:smaller|disminuir)\b.*\b(?:larger|bigger|aumentar)\b/iu.test(text); }
-function negatedEvidence(text: string, span: Evidence): boolean {
+export function negatedEvidence(text: string, span: Evidence): boolean {
   // Exact quoting is insufficient when a selected option is negated just outside
   // the quote. Keep this conservative: ask rather than choose the opposite option.
   const prefix = text.slice(0, span.start).split(/[.!?;,\n]/u).at(-1)!;
@@ -292,7 +298,7 @@ export function applyNativeExtraction(before: ConversationState, request: Native
     || !['amend', 'replace', 'cancel', 'clarify'].includes(value.intent as string) || !Array.isArray(value.operations) || value.operations.length > 9) return null;
   const user = request.turns.at(-1)!, text = user.text;
   const fields = ['action', 'object', 'outcome', 'location', 'origin', 'destination', 'quantity', 'timing', 'access'];
-  if (ambiguous.test(text) || contradictory(text) || negatedActionInput(text) || emergencyInput(text) || /ignore.{0,40}instructions|system\s*[:>]|automatically/iu.test(text)) return null;
+  if (ambiguous.test(text) || contradictory(text) || negatedActionInput(text) || emergencyInput(text) || unsupportedInstructionInput(text)) return null;
   if (value.task !== null && (!shape(value.task, ['kind', 'evidence']) || !Object.hasOwn(TASK_SEEDS, value.task.kind as string) || !validEvidence(value.task.evidence, request))) return null;
   const seen = new Set<string>();
   for (const op of value.operations) {

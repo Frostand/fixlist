@@ -1,0 +1,22 @@
+/* Post-scan room view. Scoped aliases adapt the shared sketch to community colors. */
+.community .c-room-sketch {
+  --sheet: var(--card); --sheet-tint: #f3f6f2; --rule-strong: var(--control-line);
+  --radius: 14px; --moss-wash: var(--green-tint); --graphite: var(--ink-2);
+  --plaster: var(--paper); --amber: #97610a; --amber-ink: #674307; --amber-wash: #fff3d6;
+  min-inline-size: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 18px; background: var(--card);
+}
+.community .c-room-sketch__modes { display: flex; gap: .5rem; margin-block-end: 1rem; }
+.community .c-room-sketch__modes button { flex: 1; min-block-size: 44px; padding: .5em; }
+.community .c-room-sketch__modes button[aria-pressed=true] { border-color: var(--green); background: var(--green-tint); color: var(--green); }
+.community .c-room-sketch .small-text { color: var(--ink-2); font-size: .8em; line-height: 1.45; }
+.community .c-room-sketch .room-sketch__notice { font-size: .85em; font-weight: 400; }
+.community .c-room-sketch .room-sketch__three-scene { box-sizing: border-box; height: clamp(17rem, 75vw, 26rem); }
+.community .c-room-sketch .room-sketch__controls { gap: .35rem; }
+.community .c-room-sketch .room-sketch__controls button { min-inline-size: 44px; min-block-size: 44px; padding: .3em .5em; font-size: 1rem; }
+.community .c-room-sketch .room-sketch__photo-button { min-block-size: 44px; }
+.community .c-room-sketch .room-sketch__marker:active:not(:disabled) { transform: translate(-50%, -50%); }
+.community .c-room-sketch .room-sketch__flag-link { min-inline-size: 0; font-size: .85em; }
+.community .c-review-area[data-selected=true] { border-color: var(--green); box-shadow: 0 0 0 2px var(--green); }
+.community .c-review-area__select { display: block; inline-size: 100%; min-block-size: 44px; margin-block-end: .75rem; padding: .4em; text-align: start; font-size: .85em; color: var(--green); }
+.community .c-review-area__select[aria-pressed=true] { background: var(--green-tint); border-color: var(--green); }
+@media (prefers-reduced-motion: reduce) { .community .c-room-sketch button, .community .c-review-area__select { transition: none; } }

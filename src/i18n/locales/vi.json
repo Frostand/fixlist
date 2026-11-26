@@ -1416,5 +1416,16 @@
   "capture.video.title": "Video phòng",
   "capture.video.privacy": "Video chỉ lưu trên điện thoại này. AI kiểm tra bằng ảnh. Bản xuất chỉ gồm ảnh.",
   "capture.video.playbackFailed": "Không thể phát video này. Hãy thử mở lại phòng.",
-  "c.volunteer.helped": "{name} đã giúp"
+  "c.volunteer.helped": "{name} đã giúp",
+  "c.messages.unread": "Tin nhắn mới: {count}",
+  "c.photos.title": "Ảnh",
+  "c.photos.add": "Thêm ảnh",
+  "c.photos.hint": "Thêm tối đa 3 ảnh để cho thấy vấn đề. Dữ liệu vị trí sẽ được xóa khỏi ảnh.",
+  "c.photos.count": "{count} trong 3 ảnh",
+  "c.photos.alt": "Ảnh yêu cầu số {number}",
+  "c.photos.remove": "Xóa",
+  "c.photos.removeLabel": "Xóa ảnh số {number}",
+  "c.photos.preparing": "Đang chuẩn bị ảnh…",
+  "c.photos.limit": "Quý vị có thể thêm tối đa 3 ảnh. Hãy xóa một ảnh để thêm ảnh khác.",
+  "c.photos.error": "Không thể mở ảnh này. Vui lòng thử ảnh khác."
 }

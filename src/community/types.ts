@@ -138,6 +138,8 @@ export interface Job {
   originalText: string;
   analysis: JobAnalysis;
   evidence: readonly ScanEvidence[];
+  /** Canvas-reencoded JPEG attachments; absent on older saved requests. */
+  photos?: readonly string[];
   preferredSlots: readonly AvailabilitySlot[];
   repeatEveryDays: number | null;
   status: JobStatus;
@@ -219,15 +221,21 @@ export interface ChatTurn {
   id?: string;
   /** Controller-validated operations with user evidence, never assistant text as evidence. */
   extraction?: import('../lib/assistant-conversation').NativeConversationPatch;
+  /** Transient host-created checkpoint, independent of the recent dialogue window. */
+  dialogue?: import('../lib/native-dialogue').DialogueLedger;
 }
 export interface AssistantReply {
   text: string;            // reply in the user's language, short, warm, plain
   job: JobAnalysis | null; // present when the assistant has enough to draft a request
   engine: AnalysisEngine;
-  /** Original user turns in the bounded context window, in order. Never model-produced or assistant text. */
+  /** Bounded original user evidence, retained independently of recent dialogue. Never model-produced. */
   originalText?: string;
   conversation?: import('../lib/assistant-conversation').ConversationState;
   extraction?: import('../lib/assistant-conversation').NativeConversationPatch;
+  dialogue?: import('../lib/native-dialogue').DialogueLedger;
+  retryable?: boolean;
+  /** Draft stays visible while unprocessed conversation input blocks posting. */
+  requiresResolution?: boolean;
 }
 export interface ListeningSession {
   readonly sessionId: string;
@@ -238,7 +246,8 @@ export interface ListeningSession {
 export interface Assistant {
   availability(language: Language): Promise<AssistantAvailability>;
   analyzeTask(text: string, language: Language): Promise<JobAnalysis>;
-  chat(turns: readonly ChatTurn[], language: Language, context: { firstName: string }): Promise<AssistantReply>;
+  chat(turns: readonly ChatTurn[], language: Language, context: { firstName: string; retry?: boolean }): Promise<AssistantReply>;
+  cancelConversation(): void;
   startListening(language: Language, onPartial: (text: string) => void, signal?: AbortSignal): Promise<ListeningSession>;
   speak(text: string, language: Language): Promise<void>;
   stopSpeaking(): void;

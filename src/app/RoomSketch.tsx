@@ -1,8 +1,8 @@
 import { Component, Suspense, lazy, useId, useState, type ReactNode } from 'react';
 import { useLanguage } from '../i18n';
 import { roomSketchCopy } from '../i18n/room-sketch';
-import { CAPTURE_FLAG_EXCLUDED, type RoomSketchProps, type Vec2 } from '../lib/capture-types';
-import { buildRoomGeometry, createPlanProjection, drawableRoomOutline, placeSketchFlag, roomWallSegments, usablePhotoCamera } from '../lib/room-geometry';
+import { type RoomSketchProps, type Vec2 } from '../lib/capture-types';
+import { buildRoomSketchGeometry, createPlanProjection, drawableRoomOutline, placeSketchFlag, roomWallSegments, usableRoomPhotoCamera } from '../lib/room-geometry';
 import '../styles/room-sketch.css';
 
 // Three.js and its controls remain outside the initial application module graph.
@@ -18,24 +18,26 @@ export function RoomSketch(props: RoomSketchProps) {
   const language = useLanguage(), copy = roomSketchCopy(language), titleId = useId();
   const [failedCapture, setFailedCapture] = useState<string | null>(null);
   const { capture, mode, photoUrls, selectedId, onSelect } = props;
-  const flags = props.flags.filter((flag) => !CAPTURE_FLAG_EXCLUDED.has(flag.checklistItemId) && capture.photos.some((p) => p.photoId === flag.photoId));
+  // The caller owns review eligibility. Keep every supplied flag, regardless of model IDs.
+  const flags = props.flags.filter((flag) => capture.photos.some((p) => p.photoId === flag.photoId));
   const outline = capture.mode === 'arkit' && capture.floorY !== null && Number.isFinite(capture.floorY) ? drawableRoomOutline(capture.outline) : null;
-  const room = buildRoomGeometry(capture);
+  const room = buildRoomSketchGeometry(capture, flags);
   const placed = new Map(flags.map((flag) => [flag.id, placeSketchFlag(capture, flag, room)]));
   const cameras = capture.photos.flatMap((photo, index) => {
-    const camera = usablePhotoCamera(photo);
-    if (!camera || Math.abs(camera.transform[12]!) > 50 || Math.abs(camera.transform[14]!) > 50) return [];
+    const camera = capture.floorY === null ? null : usableRoomPhotoCamera(photo, capture.floorY);
+    if (!camera) return [];
     return [{ photo, index, camera, position: [camera.transform[12]!, camera.transform[14]!] as Vec2 }];
   });
-  const projection = outline ? createPlanProjection(outline.points, cameras.map((p) => p.position)) : null;
+  const points = room?.points ?? outline?.points;
+  const projection = points ? createPlanProjection(points, [...cameras.map((p) => p.position), ...[...placed.values()].flatMap((hit): Vec2[] => hit ? [[hit.position[0], hit.position[2]]] : [])]) : null;
   const failed = failedCapture === capture.captureId;
-  const plan = outline && projection ? <div className="room-sketch__plan" aria-label={copy.plan}>
+  const plan = points && projection ? <div className="room-sketch__plan" aria-label={room?.floorOnly ? copy.posePlan : copy.plan}>
     <svg viewBox={`0 0 ${projection.width} ${projection.height}`} aria-hidden="true" focusable="false">
-      {outline.closed ? <polygon className="room-sketch__floor" points={outline.points.map((p) => projection.project(p).join(',')).join(' ')} /> : null}
+      {room ? <polygon className="room-sketch__floor" points={points.map((p) => projection.project(p).join(',')).join(' ')} /> : null}
       {room ? room.walls.flatMap((wall) => roomWallSegments(wall).map((span, i) => {
         const start = projection.project(span.start), end = projection.project(span.end);
         return <line key={`${wall.index}-${i}`} className="room-sketch__wall" x1={start[0]} y1={start[1]} x2={end[0]} y2={end[1]} />;
-      })) : <polyline className="room-sketch__wall room-sketch__wall--open" points={outline.points.map((p) => projection.project(p).join(',')).join(' ')} />}
+      })) : <polyline className="room-sketch__wall room-sketch__wall--open" points={points.map((p) => projection.project(p).join(',')).join(' ')} />}
       {room?.walls.flatMap((wall) => wall.gaps.map((gap, i) => {
         const a = projection.project([wall.start[0] + (wall.end[0] - wall.start[0]) * gap.start, wall.start[1] + (wall.end[1] - wall.start[1]) * gap.start]);
         const b = projection.project([wall.start[0] + (wall.end[0] - wall.start[0]) * gap.end, wall.start[1] + (wall.end[1] - wall.start[1]) * gap.end]);
@@ -64,10 +66,12 @@ export function RoomSketch(props: RoomSketchProps) {
 
   return <section className="room-sketch" aria-labelledby={titleId} lang={language}>
     <h3 id={titleId}>{copy.title}</h3>
-    {outline ? <p className="room-sketch__notice">{copy.approximate}</p> : null}
-    {!outline ? <p role="status">{capture.mode === 'arkit' && capture.outline ? copy.invalidOutline : copy.noOutline}</p> : <>
-      {!outline.closed ? <p className="small-text">{copy.openOutline}</p> : null}
-      <p className="small-text">{copy.assumptions}</p>
+    {points ? <p className="room-sketch__notice">{copy.approximate}</p> : null}
+    {!points ? <p role="status">{capture.mode === 'arkit' && capture.outline ? copy.invalidOutline : copy.noOutline}</p> : <>
+      {room?.floorOnly ? <p className="small-text">{copy.poseOnly} {copy.addWalls}</p> : <>
+        {outline && !outline.closed ? <p className="small-text">{copy.openOutline}</p> : null}
+        <p className="small-text">{copy.assumptions}</p>
+      </>}
       {mode === '3d' && !room ? <p role="status">{copy.needsClosed}</p> : null}
       {failed && mode === '3d' ? <p role="status">{copy.unavailable}</p> : null}
       {mode === '3d' && room && !failed ? <Sketch3DBoundary key={capture.captureId} fallback={plan} onError={() => setFailedCapture(capture.captureId)}><Suspense fallback={<p role="status">{copy.loading}</p>}><RoomSketch3D {...props} flags={flags} onUnavailable={() => setFailedCapture(capture.captureId)} /></Suspense></Sketch3DBoundary> : plan}

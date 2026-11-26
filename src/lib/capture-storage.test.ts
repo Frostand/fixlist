@@ -13,6 +13,30 @@ async function data() { const parsed = await parseCaptureBundle(JSON.stringify(f
 afterEach(() => vi.unstubAllGlobals());
 describe('community capture namespaces in the shared database', () => {
   afterEach(async () => { await resetCaptureStorage(getCaptureStore()); });
+  it.each(['clip', 'round1'] as const)('drops only exact retired %s flags while preserving photos and rejecting unknown identities', async (kind) => {
+    const factory = databaseFactory(), store = createIndexedDbCaptureStore(factory), { manifest, photos } = await data();
+    vi.stubGlobal('indexedDB', factory);
+    const retired = kind === 'round1' ? { name: 'YOLO-World-v2-small/fixlist-visible-objects-v1', backend: 'coreml', engine: 'yolo-world-object-rules', license: 'AGPL-3.0 weights and runtime', identity: {
+      version: 1, weightsSHA256: '9b2c17ab6124a913e9b3a5c170617920d91b0f01111a8479da69f00e2cf27792', runtimeSHA256: '8deab313cc6f0a8f963ecadce37dd507f048cdfc386eef9368eac7b6106fbf9e',
+    } } : { name: 'ViT-B-32/laion2b_s34b_b79k', backend: 'coreml', engine: 'clip-zero-shot', license: 'MIT weights', identity: {
+      version: 1, weightsSHA256: 'ac4f8c4b88af6d963118cbf40ad93176d092abbedfcb752601ae1866352656e6', runtimeSHA256: 'b17daab93c3cf2f9bef87ab78087bf3e6ad285df94fc7935c930839ab9c5e5cf',
+    } };
+    await store.writeCapture(manifest, photos);
+    const original = (await store.read(manifest.roomId))!;
+    await rawRecord(factory, manifest.roomId, () => ({ ...original, flags: { ...flags, model: retired } }));
+    const migrated = (await store.read(manifest.roomId))!;
+    expect(migrated.flags).toBeNull(); expect(migrated.manifest).toEqual(manifest);
+    for (const [id, blob] of photos) expect(await migrated.photos.get(id)!.arrayBuffer()).toEqual(await blob.arrayBuffer());
+    for (const model of [
+      { ...retired, name: 'another model' },
+      { ...retired, identity: { ...retired.identity, runtimeSHA256: '0'.repeat(64) } },
+      { ...retired, identity: { ...retired.identity, weightsSHA256: '0'.repeat(64) } },
+      { ...retired, extra: true },
+    ]) {
+      await rawRecord(factory, manifest.roomId, () => ({ ...original, flags: { ...flags, model } }));
+      await expect(store.read(manifest.roomId)).rejects.toMatchObject({ code: 'INVALID_CAPTURE' });
+    }
+  });
   it('isolates video records by elder/epoch and preserves the exact sidecar and bytes through flags', async () => {
     const factory = databaseFactory(), a = createIndexedDbCaptureStore(factory, { elderId: 'elder-a', resetEpoch: 'one' }), b = createIndexedDbCaptureStore(factory, { elderId: 'elder-b', resetEpoch: 'one' }), next = createIndexedDbCaptureStore(factory, { elderId: 'elder-a', resetEpoch: 'two' });
     const { manifest, photos } = await data(), assets = await syntheticVideoAssets(manifest);

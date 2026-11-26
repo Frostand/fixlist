@@ -12,11 +12,17 @@ import { capturePrompts, GuidedPhotoTour } from '../CaptureScreens';
 import { Button, Heading, Sheet } from './UI';
 import { EvidencePhoto } from './JobCard';
 import { CaptureVideos } from '../CaptureVideos';
+import type { SketchFlag } from '../../lib/capture-types';
+import { buildRoomSketchGeometry } from '../../lib/room-geometry';
+import { RoomReviewSketch } from './RoomReviewSketch';
+import { RoomTour } from './RoomTour';
+import { VisionReviewControl } from './VisionReviewControl';
 interface ReviewArea {
     checklistItemId: string;
     evidence: ScanEvidence;
     question: string;
     sample: boolean;
+    sketchFlag?: SketchFlag;
 }
 /** Authored synthetic illustration: no private photograph, remote fetch, or model result. */
 function sampleThumbnail(): string {
@@ -120,10 +126,12 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType, isCurrent = 
     function invalidate() { epoch.current++; pendingNative.current?.abort(); pendingNative.current = null; photoOperation.current = null; }
     const [roomId, setRoomId] = useState<string | null>(null), [record, setRecord] = useState<StoredCapture | null>(null), [areas, setAreas] = useState<ReviewArea[]>([]), [phase, setPhase] = useState<'choose' | 'ready' | 'busy' | 'photos' | 'review'>('choose'), [error, setError] = useState(''), [replace, setReplace] = useState<'native' | 'photos' | null>(null), [sample, setSample] = useState(false);
     const [cleanupNotice, setCleanupNotice] = useState('');
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const sketchFlags = useMemo(() => areas.flatMap((area) => area.sketchFlag ? [area.sketchFlag] : []), [areas]);
     function retainRecord(saved: StoredCapture | null) { recordScope.current = scope; setRecord(saved); }
     useEffect(() => {
         alive.current = true;
-        setRoomId(null); setRecord(null); setAreas([]); setPhase('choose'); setError(''); setCleanupNotice(''); setReplace(null); setSample(false);
+        setRoomId(null); setRecord(null); setAreas([]); setPhase('choose'); setError(''); setCleanupNotice(''); setReplace(null); setSample(false); setSelectedId(null);
         return () => { alive.current = false; invalidate(); };
     }, [scope]);
     function guard() {
@@ -140,18 +148,22 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType, isCurrent = 
         const thumb = await thumbnail(blob);
         if (!current())
             return;
-        next.push({ checklistItemId: flag.checklistItemId, question: saved.flags?.model.engine === 'clip-zero-shot' ? ondeviceFlagCopy(flag.checklistItemId).question : flag.question, sample: false, evidence: { roomId: saved.manifest.roomId, photoId: photo.photoId, flagId: `flag-${flag.checklistItemId}`, label: catalogText(t, 'check', flag.checklistItemId), thumbnail: thumb, point: flag.point ? { u: flag.point.u / photo.width, v: flag.point.v / photo.height } : null } });
+        const id = `flag-${flag.checklistItemId}`, question = saved.flags?.model.engine === 'clip-zero-shot' ? ondeviceFlagCopy(flag.checklistItemId).question : flag.question;
+        next.push({ checklistItemId: flag.checklistItemId, question, sample: false,
+            sketchFlag: { id, checklistItemId: flag.checklistItemId, photoId: photo.photoId, point: flag.point, label: question },
+            evidence: { roomId: saved.manifest.roomId, photoId: photo.photoId, flagId: id, label: catalogText(t, 'check', flag.checklistItemId), thumbnail: thumb, point: flag.point ? { u: flag.point.u / photo.width, v: flag.point.v / photo.height } : null } });
     } if (current()) {
         setAreas(next);
+        setSelectedId(null);
         setSample(false);
         setPhase('review');
     } }
-    async function selectRoom(id: string) { const current = guard(); if (!current()) return; setRoomId(id); setAreas([]); setSample(false); setError(''); setRecord(null); setPhase('busy'); try {
+    async function selectRoom(id: string) { const current = guard(); if (!current()) return; setRoomId(id); setAreas([]); setSelectedId(null); setSample(false); setError(''); setRecord(null); setPhase('busy'); try {
         const saved = await store.read(id);
         if (!current())
             return;
         retainRecord(saved);
-        if (saved?.flags)
+        if (saved && (saved.flags || saved.manifest.tour || saved.aiReview))
             await readAreas(saved, current);
         else
             setPhase('ready');
@@ -168,7 +180,8 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType, isCurrent = 
         const durable = await store.read(id);
         if (!current()) return;
         retainRecord(durable);
-        await analyzeAndSaveFlags(id, { store, isCurrent: current });
+        setAreas([]); setSelectedId(null); setSample(false);
+        if (durable?.manifest.photos.length) await analyzeAndSaveFlags(id, { store, isCurrent: current });
         if (!current())
             return;
         const saved = await store.read(id);
@@ -211,7 +224,7 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType, isCurrent = 
             setPhase('photos');
         }
         else {
-            setPhase(outcome.status === 'cancelled' && record?.flags ? 'review' : 'ready');
+            setPhase(outcome.status === 'cancelled' && (record?.flags || record?.manifest.tour || record?.aiReview) ? 'review' : 'ready');
             if (outcome.status !== 'cancelled')
                 setError([t('c.scan.captureFailed'), outcome.reason].filter(Boolean).join(' '));
         }
@@ -239,9 +252,14 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType, isCurrent = 
         } catch { setError(t('c.scan.captureFailed')); }
     }
     // A retained tour must check its own guard before guard() invalidates newer work.
-    const photoCurrent = photoOperation.current;
+    const photoCurrent = photoOperation.current, viewVersion = epoch.current;
+    const sketchRecord = !sample && (phase === 'review' || phase === 'ready') && scope === recordScope.current && record?.manifest.roomId === roomId && buildRoomSketchGeometry(record.manifest, sketchFlags) ? record : null;
+    function selectSketch(id: string) { if (alive.current && scope === latestScope.current && authorization.current()) setSelectedId(id); }
     const canStart = phase === 'ready' || (phase === 'review' && !sample && scope === recordScope.current && record?.manifest.roomId === roomId);
-    return <div className="c-stack"><Heading intro={t('c.scan.body')}>{roomId ? catalogText(t, 'room', roomId) : t('c.scan.title')}</Heading>{cleanupNotice ? <p className="c-notice" role="alert">{cleanupNotice}</p> : null}{scope === recordScope.current && record && record.manifest.roomId === roomId ? <CaptureVideos record={record} ownerKey={JSON.stringify([ownerId, resetEpoch])} /> : null}{!roomId ? <div className="c-room-list">{demoScenario.rooms.map((r) => <Button key={r.id} kind="secondary" icon="room" onClick={() => void selectRoom(r.id)}>{catalogText(t, 'room', r.id)}</Button>)}</div> : <>{phase === 'busy' ? <p role="status">{t('c.scan.checking')}</p> : null}{error ? <p className="c-notice" role="status">{error}</p> : null}{phase === 'photos' ? <GuidedPhotoTour prompts={capturePrompts(demoScenario, roomId, t)} onCancel={() => { if (photoCurrent?.()) { invalidate(); setPhase(record?.flags ? 'review' : 'ready'); } }} onSave={async (photos, blobs) => { if (!photoCurrent?.()) return; const current = guard(); if (!current()) return; setPhase('busy'); try {
+    return <div className="c-stack"><Heading intro={t('pano.captureIntro')}>{roomId ? catalogText(t, 'room', roomId) : t('c.scan.title')}</Heading>{!sample && phase !== 'photos' && scope === recordScope.current && record?.manifest.roomId === roomId ? <>
+        {(record.manifest.tour || record.aiReview) ? <RoomTour key={`tour-${record.manifest.captureId}`} record={record} onDraft={onDraft} isCurrent={() => alive.current && viewVersion === epoch.current && scope === latestScope.current && authorization.current()}/> : null}
+        {phase !== 'busy' ? <VisionReviewControl key={`vision-${record.manifest.captureId}`} record={record} store={store} isCurrent={() => alive.current && viewVersion === epoch.current && scope === latestScope.current && authorization.current()} onSaved={saved => { retainRecord(saved); }}/> : null}
+    </> : null}{cleanupNotice ? <p className="c-notice" role="alert">{cleanupNotice}</p> : null}{scope === recordScope.current && record && record.manifest.roomId === roomId ? <CaptureVideos record={record} ownerKey={JSON.stringify([ownerId, resetEpoch])} /> : null}{!roomId ? <div className="c-room-list">{demoScenario.rooms.map((r) => <Button key={r.id} kind="secondary" icon="room" onClick={() => void selectRoom(r.id)}>{catalogText(t, 'room', r.id)}</Button>)}</div> : <>{phase === 'busy' ? <p role="status">{t('c.scan.checking')}</p> : null}{error ? <p className="c-notice" role="status">{error}</p> : null}{phase === 'photos' ? <GuidedPhotoTour prompts={capturePrompts(demoScenario, roomId, t)} onCancel={() => { if (photoCurrent?.()) { invalidate(); setPhase((record?.flags || record?.manifest.tour || record?.aiReview) ? 'review' : 'ready'); } }} onSave={async (photos, blobs) => { if (!photoCurrent?.()) return; const current = guard(); if (!current()) return; setPhase('busy'); try {
         await store.writeCapture({ format: 'fixlist-room-capture', version: 1, captureId: newCaptureId(), roomId, createdAt: new Date().toISOString(), mode: 'photos', floorY: null, outline: null, doors: [], photos }, blobs, !!record, current, record?.manifest.captureId ?? null);
         if (current())
             await analyze(roomId, current);
@@ -251,5 +269,5 @@ export function RoomCapture({ ownerId, resetEpoch, onDraft, onType, isCurrent = 
             setError(t('c.scan.captureFailed'));
             setPhase('ready');
         }
-    } }}/> : null}{phase === 'review' ? <><h2>{t('c.scan.review')}</h2><p className="c-small">{t(sample ? 'c.scan.sampleNote' : 'c.scan.unverified')}</p>{areas.length ? areas.map((area) => <article className="c-review-area" key={area.evidence.flagId}><EvidencePhoto evidence={area.evidence} caption={false}/><p>{t('c.scan.question', { question: area.question })}</p><Button kind={areas.length === 1 ? 'primary' : 'secondary'} onClick={() => { if (alive.current && scope === latestScope.current && authorization.current()) onDraft(scanFlagAnalysis(area.checklistItemId, area.evidence.label, language), area.evidence); }}>{t('c.scan.ask')}</Button></article>) : <><p>{t('c.scan.empty')}</p><Button onClick={() => { if (alive.current && authorization.current()) onType(); }}>{t('c.home.type')}</Button></>}</> : null}{canStart ? <><Button icon="room" onClick={() => record ? setReplace('native') : void start()}>{t('c.scan.start')}</Button><Button kind="secondary" onClick={() => record ? setReplace('photos') : void start('photos')}>{t('room.startPhotos')}</Button></> : null}{phase !== 'busy' ? <Button kind="secondary" onClick={useSample}>{t('c.scan.sample')}</Button> : null}<Button kind="quiet" onClick={() => { invalidate(); setRoomId(null); setPhase('choose'); setError(''); setReplace(null); }}>{t('c.scan.restart')}</Button></>}<p className="c-small">{t('c.scan.privacy')}</p>{replace ? <Sheet title={t(replace === 'photos' ? 'room.startPhotos' : 'c.scan.start')} onClose={() => setReplace(null)}><p>{t('c.scan.replace')}</p><Button onClick={() => { setReplace(null); void start(replace); }}>{t('c.scan.replaceYes')}</Button></Sheet> : null}</div>;
+    } }}/> : null}{sketchRecord && !record?.manifest.tour ? <RoomReviewSketch key={JSON.stringify([ownerId, resetEpoch, sketchRecord.manifest.captureId])} record={sketchRecord} flags={sketchFlags} selectedId={selectedId} onSelect={selectSketch} /> : null}{phase === 'review' && (sample || areas.length > 0 || !record?.manifest.tour && !record?.aiReview) ? <><h2>{t('c.scan.review')}</h2><p className="c-small">{t(sample ? 'c.scan.sampleNote' : 'c.scan.unverified')}</p>{areas.length ? areas.map((area, index) => <article className="c-review-area" key={area.evidence.flagId} data-selected={selectedId === area.evidence.flagId} onClick={() => selectSketch(area.evidence.flagId)}>{sketchRecord ? <button type="button" className="c-review-area__select" aria-label={t('sketch.selectFlag', { number: index + 1 })} aria-pressed={selectedId === area.evidence.flagId} onClick={() => selectSketch(area.evidence.flagId)}>{t('sketch.flag')} {index + 1}</button> : null}<EvidencePhoto evidence={area.evidence} caption={false}/><p>{t('c.scan.question', { question: area.question })}</p><Button kind={areas.length === 1 ? 'primary' : 'secondary'} onClick={() => { if (alive.current && scope === latestScope.current && authorization.current()) onDraft(scanFlagAnalysis(area.checklistItemId, area.evidence.label, language), area.evidence); }}>{t('c.scan.ask')}</Button></article>) : <><p>{t('c.scan.empty')}</p><Button onClick={() => { if (alive.current && authorization.current()) onType(); }}>{t('c.home.type')}</Button></>}</> : null}{canStart ? <><Button icon="room" onClick={() => record ? setReplace('native') : void start()}>{t('pano.captureStart')}</Button><Button kind="secondary" onClick={() => record ? setReplace('photos') : void start('photos')}>{t('room.startPhotos')}</Button></> : null}{phase !== 'busy' ? <Button kind="secondary" onClick={useSample}>{t('c.scan.sample')}</Button> : null}<Button kind="quiet" onClick={() => { invalidate(); setRoomId(null); setPhase('choose'); setError(''); setReplace(null); }}>{t('c.scan.restart')}</Button></>}<p className="c-small">{t('c.scan.privacy')}</p>{replace ? <Sheet title={t(replace === 'photos' ? 'room.startPhotos' : 'c.scan.start')} onClose={() => setReplace(null)}><p>{t('c.scan.replace')}</p><Button onClick={() => { setReplace(null); void start(replace); }}>{t('c.scan.replaceYes')}</Button></Sheet> : null}</div>;
 }

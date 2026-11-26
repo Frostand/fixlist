@@ -2,7 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { Language } from '../domain/roles';
 import { translate } from '../i18n';
 import { NATIVE_CAPTURE_STRING_KEYS, type FixListCapturePlugin, type NativeCaptureOutcome, type NativeCaptureStartOptions } from './capture-types';
-import { CaptureError, isJpegBytes, newCaptureId, sha256Blob, validateCaptureManifest, validateNativeCaptureResult } from './capture-model';
+import { CaptureError, jpegDimensions, newCaptureId, sha256Blob, validateCaptureManifest, validateNativeCaptureResult } from './capture-model';
 import { getCaptureStore, type CaptureStore } from './capture-storage';
 import { readNativeVideo } from './capture-video-transfer';
 
@@ -50,16 +50,20 @@ export async function runNativeCapture(options: RunCaptureOptions): Promise<Nati
       const valid = validateCaptureManifest(capture);
       if (!valid.ok) throw new CaptureError(valid.code, valid.error);
       const photos = new Map<string, Blob>();
-      for (const p of valid.value.photos) {
+      const panoramaBlobs = new Map<string, Blob>();
+      const images = [...valid.value.photos.map(p => ({ ...p, fileId: p.photoId, panorama: false })),
+        ...(valid.value.tour?.stops ?? []).map(s => ({ ...s.panorama, panorama: true }))];
+      for (const p of images) {
         requireCurrent();
-        const response = await fetch(Capacitor.convertFileSrc(files[p.photoId]!), options.signal ? { signal: options.signal } : undefined);
+        const response = await fetch(Capacitor.convertFileSrc(files[p.fileId]!), options.signal ? { signal: options.signal } : undefined);
         requireCurrent();
         if (!response.ok) throw new CaptureError('INVALID_CAPTURE', 'A captured photo could not be read.');
         const bytes = await response.arrayBuffer(), blob = new Blob([bytes], { type: 'image/jpeg' });
         requireCurrent();
-        if (!isJpegBytes(new Uint8Array(bytes)) || await sha256Blob(blob) !== p.sha256) throw new CaptureError('INVALID_CAPTURE', 'A captured photo does not match its SHA-256.');
+        const dimensions = jpegDimensions(new Uint8Array(bytes), p.panorama ? 4096 : 1600);
+        if (!dimensions || dimensions.width !== p.width || dimensions.height !== p.height || await sha256Blob(blob) !== p.sha256) throw new CaptureError('INVALID_CAPTURE', 'A captured photo does not match its SHA-256.');
         requireCurrent();
-        photos.set(p.photoId, blob);
+        (p.panorama ? panoramaBlobs : photos).set(p.fileId, blob);
       }
       requireCurrent();
       const videoBlobs = new Map<string, Blob>();
@@ -69,7 +73,7 @@ export async function runNativeCapture(options: RunCaptureOptions): Promise<Nati
         videoBlobs.set('v01', await readNativeVideo(response, videos.clips[0], requireCurrent, options.signal));
       }
       requireCurrent();
-      await store.writeCapture(valid.value, photos, options.replaceConfirmed ?? false, isCurrent, options.expectedCaptureId, { videos: videos ?? null, videoBlobs });
+      await store.writeCapture(valid.value, photos, options.replaceConfirmed ?? false, isCurrent, options.expectedCaptureId, { videos: videos ?? null, videoBlobs, panoramaBlobs });
       result = { status: 'completed' };
     }
   } catch (error) { result = { status: !isCurrent() || error instanceof CaptureError && error.code === 'CANCELLED' ? 'cancelled' : 'failed', reason: error instanceof Error ? error.message : 'The walk-through could not finish.' }; }

@@ -4,7 +4,7 @@ import type { CaptureStore, StoredCapture } from './capture-storage';
 import { getCaptureStore } from './capture-storage';
 import { validateCaptureSuggestions } from './capture-suggestions';
 import type { CaptureSuggestionsFile, PixelPoint } from './capture-types';
-import { ONDEVICE_MODEL, ONDEVICE_THRESHOLDS } from './ondevice-model';
+import { ONDEVICE_LOCATION_THRESHOLD, ONDEVICE_MODEL, ONDEVICE_THRESHOLDS } from './ondevice-model';
 import { isTrustedOndeviceModel, ondeviceFlagCopy } from './ondevice-contract';
 export { ondeviceFlagCopy } from './ondevice-contract';
 import { trustedPhotoQuestions, TRUSTED_SUGGESTION_NOTICE } from './scan-suggestions';
@@ -51,9 +51,11 @@ function nativePhoto(value: unknown, photoId: string, width: number, height: num
 }
 
 /**
- * Local, relevance-only inference. Checks immutable JPEG bytes before native work.
+ * Local object proposals. Legacy probability/relevance fields carry uncalibrated
+ * detector confidence, never the probability of a hazard or a checklist answer.
+ * Checks immutable JPEG bytes before native work.
  * One photo per bridge call bounds base64 memory and permits cancellation between
- * photos; the native encoder stays loaded. No checklist/domain command is issued.
+ * photos; the native detector stays loaded. No checklist/domain command is issued.
  */
 export async function analyzeCaptureOnDevice(record: StoredCapture, options: { isCurrent?: () => boolean } = {}): Promise<CaptureSuggestionsFile> {
   assertCurrent(options.isCurrent);
@@ -80,7 +82,7 @@ export async function analyzeCaptureOnDevice(record: StoredCapture, options: { i
   const file: CaptureSuggestionsFile = {
     format: 'fixlist-capture-suggestions', version: 1, createdAt: new Date().toISOString(),
     capture: { captureId: capture.captureId, roomId: capture.roomId, photos: capture.photos.map(({ photoId, sha256 }) => ({ photoId, sha256 })) },
-    model: structuredClone(ONDEVICE_MODEL), thresholds: { suggestion: 1, relevance: 0, location: 0.7, perItem: { ...ONDEVICE_THRESHOLDS } },
+    model: structuredClone(ONDEVICE_MODEL), thresholds: { suggestion: 1, relevance: 0, location: ONDEVICE_LOCATION_THRESHOLD, perItem: { ...ONDEVICE_THRESHOLDS } },
     calibration: null, notice: TRUSTED_SUGGESTION_NOTICE,
     items: trustedPhotoQuestions.map((item) => {
       const perPhoto = capture.photos.map((photo, i) => {
@@ -91,7 +93,7 @@ export async function analyzeCaptureOnDevice(record: StoredCapture, options: { i
       const suggested = best.probability >= ONDEVICE_THRESHOLDS[item.checklistItemId]!;
       return { checklistItemId: item.checklistItemId, concernId: item.concernId, ...ondeviceFlagCopy(item.checklistItemId),
         status: suggested ? 'suggested' : 'below-threshold', score: best.probability, bestPhotoId: best.photoId, perPhoto,
-        point: suggested && best.probability >= 0.7 ? evidence[index]![item.checklistItemId]!.point : null };
+        point: suggested ? evidence[index]![item.checklistItemId]!.point : null };
     }),
   };
   const result = validateCaptureSuggestions(file, capture);

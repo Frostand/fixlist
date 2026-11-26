@@ -43,8 +43,31 @@ struct CaptureOptions {
     // Keep these keys in exact parity with NATIVE_CAPTURE_STRING_KEYS. Missing or
     // empty translations fall back individually; no native UI text is invented.
     static let english = [
-        "stepOutline": "Step 1 of 2 · Outline the floor",
-        "stepPhotos": "Step 2 of 2 · Photos",
+        "stepOutline": "Step 1 of 3 · Outline the floor",
+        "stepPhotos": "Step 3 of 3 · Close-up photos",
+        "tourStepOutline": "Step 1 of 3 · Outline the floor",
+        "tourStepPhotos": "Step 3 of 3 · Close-up photos",
+        "stepTour": "Step 2 of 3 · 360° view",
+        "tourReady": "Stand in one spot and tap Start. Keep the phone in the same place and step around it as you turn.",
+        "tourAim": "Aim at each dot and hold still until it is captured: eye level first, then down toward the floor.",
+        "tourProgress": "{count} of 24 · {ring}",
+        "tourLevel": "Look around at eye level",
+        "tourFloor": "Look down toward the floor",
+        "tourStart": "Start",
+        "tourFinishSpot": "Finish this spot",
+        "tourCancelSpot": "Cancel this spot",
+        "tourBuilding": "Building 360° view…",
+        "tourSaved": "{count} of 6 spots saved. Add another spot or finish.",
+        "tourAnother": "Add another spot",
+        "tourWalk": "Walk to the next spot, then tap Start. Keep the phone in place while you turn.",
+        "tourCloseups": "Add close-up photos",
+        "tourFinish": "Finish",
+        "tourReturn": "Return to the starting spot. Turn without walking.",
+        "tourFailed": "This 360° view could not be saved. Try this spot again.",
+        "tourResetTitle": "Restart room tracking and clear 360° views?",
+        "tourResetMessage": "The outline, 360° views and photo positions will be cleared. Close-up photos will be kept.",
+        "tourResetNotice": "Room tracking restarted. The old outline, 360° views and photo positions were cleared.",
+        "tourCancelMessage": "Stop this scan and delete its 360° views, photos and video?",
         "aimCorner": "Aim the dot at a floor corner, then tap +.",
         "moreCorners": "Add more corners, or tap Done.",
         "closeAtFirst": "Tap + to close the outline.",
@@ -233,9 +256,9 @@ enum CapturePortraitMath {
     }
 
     static func make(width: Int, height: Int, intrinsics k: simd_float3x3,
-                     cameraToWorld: simd_float4x4) -> Geometry? {
-        guard width > 0, height > 0 else { return nil }
-        let scale = min(1, 1600 / Double(max(width, height)))
+                     cameraToWorld: simd_float4x4, maxDimension: Int = 1600) -> Geometry? {
+        guard width > 0, height > 0, maxDimension > 0 else { return nil }
+        let scale = min(1, Double(maxDimension) / Double(max(width, height)))
         let outputWidth = max(1, Int((Double(height) * scale).rounded()))
         let outputHeight = max(1, Int((Double(width) * scale).rounded()))
         let sx = Double(outputWidth) / Double(height)
@@ -340,10 +363,43 @@ struct CapturePhoto {
     }
 }
 
+/// CGImage carries pixels, not the source photo's metadata. ImageIO receives only
+/// our JPEG quality setting, yet it always writes a minimal Exif IFD holding the
+/// pixel dimensions (verified with iOS/macOS 26 ImageIO). Those fields describe
+/// only the image itself, so they are the one Exif content allowed.
+enum CaptureJPEG {
+    enum Failure: Error { case jpeg, metadata }
+    static let allowedExif: Set<String> = [kCGImagePropertyExifPixelXDimension as String,
+                                           kCGImagePropertyExifPixelYDimension as String,
+                                           kCGImagePropertyExifColorSpace as String]
+
+    static func encode(_ image: CGImage) throws -> Data {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil)
+        else { throw Failure.jpeg }
+        CGImageDestinationSetProperties(destination, [:] as CFDictionary)
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw Failure.jpeg }
+        let bytes = data as Data
+        guard let source = CGImageSourceCreateWithData(bytes as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              isPrivate(properties) else { throw Failure.metadata }
+        return bytes
+    }
+
+    static func isPrivate(_ properties: [CFString: Any]) -> Bool {
+        guard properties[kCGImagePropertyGPSDictionary] == nil,
+              properties[kCGImagePropertyTIFFDictionary] == nil,
+              properties[kCGImagePropertyExifAuxDictionary] == nil else { return false }
+        guard let exif = properties[kCGImagePropertyExifDictionary] else { return true }
+        guard let fields = exif as? [String: Any] else { return false }
+        return Set(fields.keys).isSubset(of: allowedExif)
+    }
+}
+
 enum CapturePhotoWriter {
-    enum Failure: Error { case geometry, rendering, jpeg, metadata }
-    // Called only on CaptureFiles.queue. CGImage carries pixels, not the source
-    // photo's metadata. ImageIO receives only our JPEG quality setting.
+    enum Failure: Error { case geometry, rendering }
+    // Called only on CaptureFiles.queue.
     static func write(frame: ARFrame, options: CaptureOptions, photoId: String,
                       checklistItemId: String?, takenAt: String) throws -> (CapturePhoto, Data) {
         let buffer = frame.capturedImage
@@ -359,19 +415,7 @@ enum CapturePhotoWriter {
                                                                y: CGFloat(geometry.height) / upright.extent.height))
         let rect = CGRect(x: 0, y: 0, width: geometry.width, height: geometry.height)
         guard let image = CIContext().createCGImage(resized, from: rect) else { throw Failure.rendering }
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil)
-        else { throw Failure.jpeg }
-        CGImageDestinationSetProperties(destination, [:] as CFDictionary)
-        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { throw Failure.jpeg }
-        let bytes = data as Data
-        guard let source = CGImageSourceCreateWithData(bytes as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              properties[kCGImagePropertyExifDictionary] == nil,
-              properties[kCGImagePropertyGPSDictionary] == nil,
-              properties[kCGImagePropertyTIFFDictionary] == nil,
-              properties[kCGImagePropertyExifAuxDictionary] == nil else { throw Failure.metadata }
+        let bytes = try CaptureJPEG.encode(image)
         let url = CaptureFiles.folder(options.captureId).appendingPathComponent(photoId + ".jpg")
         try bytes.write(to: url, options: [.atomic, .completeFileProtection])
         let camera: [String: Any] = ["transform": geometry.flatTransform, "intrinsics": geometry.intrinsics, "tracking": "normal"]
@@ -379,6 +423,314 @@ enum CapturePhotoWriter {
                              width: geometry.width, height: geometry.height,
                              sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
                              camera: camera, url: url), bytes)
+    }
+}
+
+/// Shared pure geometry. Equirect pixels use edge coordinates; callers pass
+/// pixel centres (u + 0.5, v + 0.5). Camera translation never affects rays.
+enum CaptureTourMath {
+    static func direction(x: Float, y: Float, width: Int, height: Int) -> SIMD3<Float> {
+        let longitude = (x / Float(width) - 0.5) * 2 * Float.pi
+        let latitude = (0.5 - y / Float(height)) * Float.pi
+        return SIMD3(sin(longitude) * cos(latitude), sin(latitude), -cos(longitude) * cos(latitude))
+    }
+    static func pixel(_ d: SIMD3<Float>, width: Int, height: Int) -> SIMD2<Float> {
+        let n = simd_normalize(d)
+        var u = (atan2(n.x, -n.z) / (2 * Float.pi) + 0.5) * Float(width)
+        if u >= Float(width) { u = 0 }
+        return SIMD2(u, (0.5 - asin(max(-1, min(1, n.y))) / Float.pi) * Float(height))
+    }
+    static func ray(x: Float, y: Float, geometry g: CapturePortraitMath.Geometry) -> SIMD3<Float> {
+        let p = SIMD3((x - Float(g.intrinsics[2])) / Float(g.intrinsics[0]),
+                      (Float(g.intrinsics[3]) - y) / Float(g.intrinsics[1]), -1)
+        return simd_normalize(g.transform[0].xyz * p.x + g.transform[1].xyz * p.y + g.transform[2].xyz * p.z)
+    }
+    static func project(_ d: SIMD3<Float>, geometry g: CapturePortraitMath.Geometry) -> SIMD2<Float>? {
+        let z = -simd_dot(g.transform[2].xyz, d)
+        guard z > 0.0001 else { return nil }
+        return SIMD2(Float(g.intrinsics[2]) + Float(g.intrinsics[0]) * simd_dot(g.transform[0].xyz, d) / z,
+                     Float(g.intrinsics[3]) - Float(g.intrinsics[1]) * simd_dot(g.transform[1].xyz, d) / z)
+    }
+    static func targets(yaw: Float) -> [SIMD3<Float>] {
+        [Float(0), -.pi / 4].flatMap { pitch in
+            (0..<12).map { index in
+                let angle = yaw + Float(index) * .pi / 6
+                return SIMD3(sin(angle) * cos(pitch), sin(pitch), -cos(angle) * cos(pitch))
+            }
+        }
+    }
+    static func angularVelocity(previous: simd_float4x4, current: simd_float4x4, elapsed: TimeInterval) -> Float {
+        guard elapsed > 0, elapsed < 0.25 else { return .infinity }
+        let a = simd_quatf(simd_float3x3(columns: (previous[0].xyz, previous[1].xyz, previous[2].xyz)))
+        let b = simd_quatf(simd_float3x3(columns: (current[0].xyz, current[1].xyz, current[2].xyz)))
+        return 2 * acos(min(1, abs(simd_dot(a.vector, b.vector)))) / Float(elapsed)
+    }
+    static func select(forward: SIMD3<Float>, targets: [SIMD3<Float>], captured: Set<Int>,
+                       trackingNormal: Bool, angularVelocity: Float) -> Int? {
+        // About 6°/s: indoor exposures smear frames captured while still turning.
+        guard trackingNormal, angularVelocity.isFinite, angularVelocity <= 0.10 else { return nil }
+        var best = cos(Float.pi / 36) // five degrees
+        var result: Int?
+        for i in targets.indices where !captured.contains(i) {
+            let dot = simd_dot(forward, targets[i])
+            if dot >= best { best = dot; result = i }
+        }
+        return result
+    }
+    static func canFinish(_ count: Int) -> Bool { count >= 15 && count <= 24 }
+    static func nearOrigin(_ position: SIMD3<Float>, origin: SIMD3<Float>) -> Bool {
+        // Turning in place naturally moves a hand-held camera around the body.
+        // Allow that small circle while rejecting walking to a different spot.
+        simd_distance(position, origin) <= 0.65
+    }
+}
+
+final class CaptureTourCancellation {
+    private let lock = NSLock()
+    private var stopped = false
+    func cancel() { lock.lock(); stopped = true; lock.unlock() }
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return stopped }
+}
+
+struct CaptureTourStop {
+    let stopId: String
+    let position: SIMD3<Float>
+    let capturedAt: String
+    let width: Int
+    let height: Int
+    let sha256: String
+    let coverage: Double
+    let url: URL
+    var fileId: String { "pano-" + stopId }
+    var json: [String: Any] {
+        ["stopId": stopId, "position": [Double(position.x), Double(position.y), Double(position.z)],
+         "capturedAt": capturedAt,
+         "panorama": ["fileId": fileId, "width": width, "height": height, "sha256": sha256, "coverage": coverage]]
+    }
+}
+
+/// Bounded upright sRGB rasters, never retained ARFrames/CVPixelBuffers.
+/// 24 x 1080 x 1440 x 4 is 142 MiB; one pending conversion and one 32 MiB output.
+struct CaptureTourFrame {
+    let geometry: CapturePortraitMath.Geometry
+    let pixels: Data // top row first, RGBA8, alpha ignored
+}
+
+enum CaptureTourStitcher {
+    enum Failure: Error { case rendering, cancelled, empty }
+    struct Result {
+        let image: CGImage
+        let coverage: Double
+        let seconds: Double
+    }
+    private struct Prepared {
+        let right: SIMD3<Float>
+        let up: SIMD3<Float>
+        let forward: SIMD3<Float>
+        let fx: Float, fy: Float, cx: Float, cy: Float
+        let width: Int, height: Int
+        let halfAngle: Float
+        init(_ frame: CaptureTourFrame) {
+            let g = frame.geometry
+            right = g.transform[0].xyz; up = g.transform[1].xyz; forward = -g.transform[2].xyz
+            fx = Float(g.intrinsics[0]); fy = Float(g.intrinsics[1])
+            cx = Float(g.intrinsics[2]); cy = Float(g.intrinsics[3])
+            width = g.width; height = g.height
+            let dx = max(cx, Float(width) - cx) / fx
+            let dy = max(cy, Float(height) - cy) / fy
+            halfAngle = atan(sqrt(dx * dx + dy * dy))
+        }
+        func projection(_ d: SIMD3<Float>) -> SIMD3<Float>? {
+            let z = simd_dot(forward, d)
+            guard z > 0.001 else { return nil }
+            let x = cx + fx * simd_dot(right, d) / z
+            let y = cy - fy * simd_dot(up, d) / z
+            guard x >= 0.5, y >= 0.5, x < Float(width) - 0.5, y < Float(height) - 0.5 else { return nil }
+            let edge = min(min(x, Float(width) - x) / Float(width), min(y, Float(height) - y) / Float(height))
+            return SIMD3(x, y, min(1, edge * 8) * z * z)
+        }
+    }
+    private static func sample(_ p: UnsafePointer<UInt8>, width: Int, x: Float, y: Float) -> SIMD3<Float> {
+        let xx = x - 0.5, yy = y - 0.5
+        let ix = Int(xx), iy = Int(yy), ax = xx - Float(ix), ay = yy - Float(iy)
+        let offset = (iy * width + ix) * 4
+        func color(_ i: Int) -> SIMD3<Float> { SIMD3(Float(p[i]), Float(p[i + 1]), Float(p[i + 2])) }
+        return simd_mix(simd_mix(color(offset), color(offset + 4), SIMD3(repeating: ax)),
+                        simd_mix(color(offset + width * 4), color(offset + width * 4 + 4), SIMD3(repeating: ax)), SIMD3(repeating: ay))
+    }
+    // All Data pointer scopes stay alive until concurrentPerform returns.
+    private static func withPixels<T>(_ frames: [CaptureTourFrame], index: Int = 0,
+                                      pointers: [UnsafePointer<UInt8>] = [], body: ([UnsafePointer<UInt8>]) throws -> T) rethrows -> T {
+        if index == frames.count { return try body(pointers) }
+        return try frames[index].pixels.withUnsafeBytes { bytes in
+            try withPixels(frames, index: index + 1, pointers: pointers + [bytes.bindMemory(to: UInt8.self).baseAddress!], body: body)
+        }
+    }
+    /// Estimate exposure only from common rays, so a dark floor does not get
+    /// normalized to a bright wall. Robust pairwise log ratios, clamped gains.
+    private static func gains(_ frames: [Prepared], pixels: [UnsafePointer<UInt8>]) -> [Float] {
+        var edges: [(Int, Int, Float)] = []
+        for i in frames.indices {
+            for j in frames.indices where j > i && simd_dot(frames[i].forward, frames[j].forward) > 0.25 {
+                var ratios: [Float] = []
+                for y in 0..<7 { for x in 0..<7 {
+                    let a = frames[i]
+                    let u = (Float(x) + 1) / 8 * Float(a.width)
+                    let v = (Float(y) + 1) / 8 * Float(a.height)
+                    let d = simd_normalize(a.right * ((u - a.cx) / a.fx) + a.up * ((a.cy - v) / a.fy) + a.forward)
+                    guard let b = frames[j].projection(d), b.z > 0.15 else { continue }
+                    let ca = sample(pixels[i], width: a.width, x: u, y: v)
+                    let cb = sample(pixels[j], width: frames[j].width, x: b.x, y: b.y)
+                    let la = simd_dot(ca, SIMD3(0.2126, 0.7152, 0.0722))
+                    let lb = simd_dot(cb, SIMD3(0.2126, 0.7152, 0.0722))
+                    if la > 20, lb > 20, la < 235, lb < 235 { ratios.append(log(lb / la)) }
+                } }
+                if ratios.count >= 6 { ratios.sort(); edges.append((i, j, ratios[ratios.count / 2])) }
+            }
+        }
+        var logs = [Float](repeating: 0, count: frames.count)
+        for _ in 0..<16 {
+            var sums = [Float](repeating: 0, count: frames.count), counts = sums
+            for (i, j, delta) in edges {
+                sums[i] += logs[j] + delta; counts[i] += 1
+                sums[j] += logs[i] - delta; counts[j] += 1
+            }
+            let next = frames.indices.map { counts[$0] > 0 ? (logs[$0] + sums[$0] / counts[$0]) * 0.5 : 0 }
+            let mean = next.reduce(0, +) / Float(max(1, next.count))
+            logs = next.map { max(-0.22, min(0.22, $0 - mean)) }
+        }
+        return logs.map { exp($0) }
+    }
+    static func stitch(_ frames: [CaptureTourFrame], width: Int = 4096, height: Int = 2048,
+                       cancellation: CaptureTourCancellation = CaptureTourCancellation()) throws -> Result {
+        guard !frames.isEmpty, frames.count <= 24, width > 0, height > 0,
+              width <= 4096, height <= 2048,
+              frames.allSatisfy({ $0.geometry.width >= 2 && $0.geometry.height >= 2 &&
+                  $0.pixels.count == $0.geometry.width * $0.geometry.height * 4 }) else { throw Failure.empty }
+        let start = ProcessInfo.processInfo.systemUptime
+        let prepared = frames.map(Prepared.init)
+        let output = UnsafeMutablePointer<UInt8>.allocate(capacity: width * height * 4)
+        output.initialize(repeating: 128, count: width * height * 4)
+        defer { output.deallocate() }
+        let covered = UnsafeMutablePointer<Int>.allocate(capacity: height)
+        covered.initialize(repeating: 0, count: height)
+        defer { covered.deallocate() }
+        let longitudes = (0..<width).map { (Float($0) + 0.5) / Float(width) * 2 * Float.pi - Float.pi }
+        let sins = longitudes.map { sin($0) }, coses = longitudes.map { cos($0) }
+        withPixels(frames) { pixels in
+            let gain = gains(prepared, pixels: pixels)
+            DispatchQueue.concurrentPerform(iterations: height) { row in
+                if cancellation.isCancelled { return }
+                let latitude = (0.5 - (Float(row) + 0.5) / Float(height)) * Float.pi
+                let sy = sin(latitude), cy = cos(latitude)
+                // Pre-cull each row, then each 64-pixel longitude tile by each
+                // frame's diagonal field of view. Typically 2–5 candidates/pixel.
+                let rowFrames = prepared.indices.filter { i in
+                    let f = prepared[i].forward
+                    return sqrt(f.x * f.x + f.z * f.z) * cy + f.y * sy >= cos(prepared[i].halfAngle)
+                }
+                var count = 0
+                for tile in stride(from: 0, to: width, by: 64) {
+                    let end = min(width, tile + 64), centre = (tile + end - 1) / 2
+                    let middle = SIMD3(sins[centre] * cy, sy, -coses[centre] * cy)
+                    let margin = Float(end - tile) / Float(width) * Float.pi
+                    let candidates = rowFrames.filter { simd_dot(prepared[$0].forward, middle) >= cos(prepared[$0].halfAngle + margin) }
+                    for column in tile..<end {
+                        let d = SIMD3(sins[column] * cy, sy, -coses[column] * cy)
+                        var best = SIMD3<Float>(repeating: -1)
+                        var indices = SIMD3<Int>(repeating: 0)
+                        var px = SIMD3<Float>.zero, py = SIMD3<Float>.zero
+                        for i in candidates {
+                            guard let p = prepared[i].projection(d) else { continue }
+                            if p.z > best.z {
+                                var slot = 2
+                                if p.z > best.y { slot = 1 }
+                                if p.z > best.x { slot = 0 }
+                                if slot < 2 { for k in stride(from: 2, through: slot + 1, by: -1) {
+                                    best[k] = best[k - 1]; indices[k] = indices[k - 1]; px[k] = px[k - 1]; py[k] = py[k - 1]
+                                } }
+                                best[slot] = p.z; indices[slot] = i; px[slot] = p.x; py[slot] = p.y
+                            }
+                        }
+                        guard best.x > 0 else { continue }
+                        // The best-centred frame owns each pixel; blend with the runner-up
+                        // only in a narrow band where both are nearly equal (its seam).
+                        // Hand-held spins are not pure rotations, so averaging more
+                        // frames everywhere ghosts and blurs edges.
+                        let first = indices.x
+                        var color = sample(pixels[first], width: prepared[first].width, x: px.x, y: py.x) * gain[first]
+                        if best.y > 0 {
+                            let t = max(0, min(1, (best.y / best.x - 0.6) / 0.4))
+                            let share = 0.5 * t * t * (3 - 2 * t)
+                            if share > 0 {
+                                let second = indices.y
+                                color = color * (1 - share)
+                                    + sample(pixels[second], width: prepared[second].width, x: px.y, y: py.y) * (gain[second] * share)
+                            }
+                        }
+                        let offset = (row * width + column) * 4
+                        for channel in 0..<3 { output[offset + channel] = UInt8(max(0, min(255, color[channel].rounded()))) }
+                        output[offset + 3] = 255
+                        count += 1
+                    }
+                }
+                covered[row] = count
+            }
+        }
+        guard !cancellation.isCancelled else { throw Failure.cancelled }
+        let data = Data(bytes: output, count: width * height * 4)
+        guard let provider = CGDataProvider(data: data as CFData),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                  bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent) else { throw Failure.rendering }
+        let count = (0..<height).reduce(0) { $0 + covered[$1] }
+        return Result(image: image, coverage: Double(count) / Double(width * height),
+                      seconds: ProcessInfo.processInfo.systemUptime - start)
+    }
+}
+
+enum CaptureTourRaster {
+    static func rgba(_ image: CGImage) throws -> Data {
+        var data = Data(count: image.width * image.height * 4)
+        let ok = data.withUnsafeMutableBytes { bytes -> Bool in
+            guard let cg = CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
+            cg.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return true
+        }
+        guard ok else { throw CaptureTourStitcher.Failure.rendering }
+        return data
+    }
+}
+
+/// iOS boundary: immediately downscale the one reserved frame, then release it.
+enum CaptureTourWriter {
+    private static let context = CIContext(options: [.cacheIntermediates: false])
+    static func compact(frame: ARFrame) throws -> CaptureTourFrame {
+        let buffer = frame.capturedImage
+        guard let geometry = CapturePortraitMath.make(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer),
+            intrinsics: frame.camera.intrinsics, cameraToWorld: frame.camera.transform, maxDimension: 1440) else {
+            throw CaptureTourStitcher.Failure.rendering
+        }
+        let upright = CIImage(cvPixelBuffer: buffer).oriented(.right)
+        let resized = upright.transformed(by: CGAffineTransform(scaleX: CGFloat(geometry.width) / upright.extent.width,
+                                                               y: CGFloat(geometry.height) / upright.extent.height))
+        let rect = CGRect(x: 0, y: 0, width: geometry.width, height: geometry.height)
+        guard let image = context.createCGImage(resized, from: rect) else { throw CaptureTourStitcher.Failure.rendering }
+        return CaptureTourFrame(geometry: geometry, pixels: try CaptureTourRaster.rgba(image))
+    }
+    static func write(frames: [CaptureTourFrame], captureId: String, stopId: String, position: SIMD3<Float>,
+                      capturedAt: String, cancellation: CaptureTourCancellation) throws -> CaptureTourStop {
+        let result = try CaptureTourStitcher.stitch(frames, cancellation: cancellation)
+        let bytes = try CaptureJPEG.encode(result.image)
+        guard !cancellation.isCancelled else { throw CaptureTourStitcher.Failure.cancelled }
+        let url = CaptureFiles.folder(captureId).appendingPathComponent("pano-" + stopId + ".jpg")
+        try bytes.write(to: url, options: [.atomic, .completeFileProtection])
+        os_log("FixListCapture panorama: %.3f s, coverage %.3f", log: captureLog, type: .info, result.seconds, result.coverage)
+        return CaptureTourStop(stopId: stopId, position: position, capturedAt: capturedAt, width: 4096, height: 2048,
+            sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(), coverage: result.coverage, url: url)
     }
 }
 

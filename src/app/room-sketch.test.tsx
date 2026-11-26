@@ -34,7 +34,7 @@ describe('room sketch static UI', () => {
   });
   it('uses photos for absent geometry and keeps flags selectable without inventing a position', () => {
     for (const fallback of [
-      { ...capture, outline: null },
+      { ...capture, outline: null, photos: capture.photos.map((p) => ({ ...p, camera: null })) },
       { ...capture, mode: 'photos' as const, floorY: null, outline: null, doors: [], photos: capture.photos.map((p) => ({ ...p, camera: null })) },
     ]) {
       const result = html({ capture: fallback, mode: '3d' });
@@ -43,8 +43,16 @@ describe('room sketch static UI', () => {
       expect(result).not.toContain('room-sketch__marker--flag'); expect(result).not.toContain('Loading the approximate 3D sketch');
     }
   });
+  it('draws pose-only floor/markers and only floor-reaching flag pins without invented walls', () => {
+    const result = html({ capture: { ...capture, outline: null }, flags: [...flags, { ...flags[0]!, id: 'floor-pin', point: { u: 500, v: 950 } }] });
+    expect(result).toContain('room-sketch__floor'); expect(result).toContain('room-sketch__wedge');
+    expect(result).toContain('Floor and photo positions only'); expect(result).toContain('Tap the room&#x27;s corners during the scan to add walls.');
+    expect(result).toContain('Review flag 3: Review the rug in this photo. Approximate spot from one photo');
+    expect(result.match(/class="room-sketch__marker room-sketch__marker--flag"/g)).toHaveLength(1);
+    expect(result).not.toContain('class="room-sketch__wall"'); expect(result).not.toContain('Wall height and door openings');
+  });
   it('draws open outlines dashed with no floor fill or placed flags and no 3D load', () => {
-    const result = html({ capture: { ...capture, outline: { ...capture.outline!, closed: false } }, mode: '3d' });
+    const result = html({ capture: { ...capture, photos: [], outline: { ...capture.outline!, closed: false } }, mode: '3d' });
     expect(result).toContain('room-sketch__wall--open'); expect(result).toContain('Open outline.');
     expect(result).toContain('A closed room outline is needed for the 3D view.');
     expect(result).not.toContain('<polygon'); expect(result).not.toContain('room-sketch__marker--flag');
@@ -52,7 +60,7 @@ describe('room sketch static UI', () => {
   });
   it('rejects self-crossing or zero-area geometry in the drawing as well as placement', () => {
     for (const points of [[[0, 0], [4, 4], [0, 4], [4, 0]], [[0, 0], [1, 0], [2, 0]]] as const) {
-      const result = html({ capture: { ...capture, outline: { closed: true, points } } });
+      const result = html({ capture: { ...capture, photos: [], outline: { closed: true, points } } });
       expect(result).toContain('This outline cannot be drawn reliably. Photos only.'); expect(result).not.toContain('<svg');
     }
   });
@@ -73,15 +81,14 @@ describe('room sketch static UI', () => {
     expect(button).toContain('<span class="small-text">Approximate spot from one photo</span>');
     expect(button).not.toContain('>Review the distant rug in this photo</span>');
   });
-  it('filters both excluded checklist flags and flags for unknown photos defensively', () => {
+  it('keeps caller-approved flags independent of model IDs and filters unknown photos defensively', () => {
     const result = html({ flags: [
       ...flags,
-      { ...flags[0]!, id: 'handrail', checklistItemId: 'handrail-check', label: 'Excluded handrail flag' },
-      { ...flags[0]!, id: 'lighting', checklistItemId: 'stair-lighting-check', label: 'Excluded lighting flag' },
+      { ...flags[0]!, id: 'future', checklistItemId: 'new-model-item', label: 'New model review flag' },
       { ...flags[0]!, id: 'orphan', photoId: 'p99', label: 'Orphan flag' },
     ] });
-    expect(result).not.toContain('Excluded'); expect(result).not.toContain('Orphan flag');
-    expect(result.match(/class="room-sketch__marker room-sketch__marker--flag"/g)).toHaveLength(1);
+    expect(result).toContain('New model review flag'); expect(result).not.toContain('Orphan flag');
+    expect(result.match(/class="room-sketch__marker room-sketch__marker--flag"/g)).toHaveLength(2);
   });
   it.each(['en', 'es'] as const)('uses current-language labels and exposes only selection callbacks in %s', (language) => {
     const copy = roomSketchCopy(language), onSelect = vi.fn();

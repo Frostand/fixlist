@@ -123,6 +123,17 @@ const samples: readonly SampleConcern[] = [
       source: syntheticSource, guidance: guidance('Bathrooms — tub and toilet support'), fundingTags: ['bathroom_support'], helpRouting: professionalReview, cost: unknownCost,
     },
   },
+  {
+    checklistId: 'floor-clutter-check', concernId: 'clutter-concern', evidenceId: 'clutter-observation', roomId: 'living-room',
+    prompt: 'Are there papers, shoes, books, or other objects on the floor where you walk?',
+    observation: 'Scripted sample observation: shoes and a bag occupy part of the walking area.',
+    action: {
+      nextStep: 'Pick up items from the floor and keep walkways clear; find a nearby storage spot for shoes and bags.', effort: 'quick_fix', nextStepSource: 'Based on CDC 2017 Check for Safety',
+      id: 'review-floor-clutter', title: 'Review objects on the floor',
+      description: 'Discuss the documented floor objects with the resident and agree on where to store them.',
+      source: syntheticSource, guidance: guidance('Floors — loose objects'), fundingTags: ['general_repair'], helpRouting: familyReview, cost: unknownCost,
+    },
+  },
 ];
 
 export const demoScenario: DemoScenario = {

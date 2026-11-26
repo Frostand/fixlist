@@ -15,7 +15,7 @@ describe('accessible suggestion review path with no workflow mutation', () => {
     const html = renderToStaticMarkup(<ChecklistSection scenario={demoScenario} state={state} onCommand={onCommand} scanSuggestions={suggestions} />);
     expect(html).toContain(`href="#${suggestionAnchor(item)}"`);
     expect(html).toContain('AI review suggested · score 0.86');
-    expect(html).toContain('0 of 8 answered');
+    expect(html).toContain('0 of 9 answered');
     expect(html).toContain('Confirmation is enabled only when every backing checklist answer is yes');
     expect(onCommand).not.toHaveBeenCalled();
     expect(state).toEqual(before);
